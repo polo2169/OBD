@@ -1,0 +1,13 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+pyserial>=3.5,<4
+python-can>=4.6,<5
+cantools>=42.0,<43
+can-isotp>=2.0,<3
+udsoncan>=1.25,<2
+PyYAML>=6,<7
+python-multipart>=0.0.20,<1
+pytest>=8,<9
+httpx>=0.28,<1

@@ -1,0 +1,229 @@
+manufacturer: Peugeot
+model: 308 II
+platform: T9
+year: 2018
+architecture: AEE2010.full
+confidence: community_catalog
+sources:
+  architecture:
+    url: https://github.com/prototux/PSA-RE/blob/74294e99bd8f4decbfcdceabb11c7413dd977f4d/cars/T9.yml
+    revision: 74294e99bd8f4decbfcdceabb11c7413dd977f4d
+    license: Apache-2.0
+  ecu_addresses:
+    url: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md
+    revision: c1409e60798f66bb63149505826170b5eb3c163f
+    license: GPL-3.0
+notes:
+  - PSA-RE confirme l'architecture AEE2010.full pour la plateforme T9.
+  - Les paires de diagnostic proviennent d'un catalogue communautaire de familles ECU.
+  - La présence exacte des calculateurs optionnels dépend de l'équipement du véhicule.
+  - Toute adresse doit être confirmée par une réponse UDS avant d'être considérée présente.
+
+networks:
+  diagnostic_can:
+    bitrate: 500000
+    access: obd_pins_6_14
+    confidence: community_confirmed
+
+diagnostic:
+  # Un NRC UDS valide suffit à confirmer qu'un calculateur répond. En l'absence
+  # totale de réponse au probe, les autres DIDs ne sont pas envoyés.
+  probe_did: 0xF190
+  read_dtcs: true
+  dtc_status_mask: 0xFF
+  # Adressage OBD-II physique standard du calculateur moteur pour le mode
+  # capteurs normalisés. Ce mode est distinct des adresses diagnostic PSA.
+  obd_request_id: 0x7E0
+  obd_response_id: 0x7E8
+  identification_dids:
+    - 0xF180
+    - 0xF181
+    - 0xF186
+    - 0xF187
+    - 0xF189
+    - 0xF18C
+    - 0xF190
+
+ecus:
+  - key: engine
+    name: Calculateur moteur / injection
+    family: INJ
+    request_id: 0x6A8
+    response_id: 0x688
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L243
+    dtc_catalogs:
+      - EDC17C60
+      - DCM62
+      - DCM62_F
+      - CMM_DCM71
+      - CMM_DCM71_F
+      - VD46
+      - V46
+      - V46_21
+      - V46_6
+      - MEVD17_4_2
+      - MEVD17_4_4
+
+  - key: gearbox
+    name: Boîte de vitesses pilotée / automatique
+    family: BOITEVIT
+    request_id: 0x6A9
+    response_id: 0x689
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L250
+    dtc_catalogs:
+      - BVA_EATN8
+      - BVA_AM6_AT6_UDS
+
+  - key: abs_esp
+    name: ABS / ESP
+    family: ABRASR
+    request_id: 0x6AD
+    response_id: 0x68D
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L227
+    dtc_catalogs:
+      - ABSMK100_UDS
+      - ESPMK100
+
+  - key: bsi
+    name: Boîtier de servitude intelligent
+    family: BMF_UDS_PSA
+    request_id: 0x752
+    response_id: 0x652
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L347
+    dtc_catalogs:
+      - BSI2010
+
+  - key: airbag
+    name: Airbags / prétensionneurs
+    family: AIRBAG
+    request_id: 0x744
+    response_id: 0x644
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L229
+    dtc_catalogs:
+      - RBG_UDS
+      - RBG_SPEED_UDS
+      - SRS
+      - ORC
+
+  - key: power_steering
+    name: Direction assistée électrique
+    family: DIRECTN
+    request_id: 0x6B5
+    response_id: 0x695
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L241
+    dtc_catalogs:
+      - DAE_UDS
+      - EPS
+
+  - key: instrument_cluster
+    name: Combiné d'instruments
+    family: COMBINE
+    request_id: 0x75F
+    response_id: 0x65F
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L238
+    dtc_catalogs:
+      - COMBINE_UDS
+      - IP
+
+  - key: climate_control
+    name: Climatisation
+    family: CLIM
+    request_id: 0x76D
+    response_id: 0x66D
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L237
+    dtc_catalogs:
+      - CLIM_REGULEE_UDS
+      - HVAC
+
+  - key: front_camera
+    name: Caméra vidéo multifonction
+    family: CVM
+    request_id: 0x74A
+    response_id: 0x64A
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L289
+    aliases:
+      - CVM
+      - CVM_2
+      - CVM_3
+      - CPL / capteur pluie-luminosité (même paire d'adresses selon variante)
+    dtc_catalogs:
+      - CVM
+      - CVM_2
+      - CVM_3
+    notes:
+      - Présente uniquement si le véhicule possède les aides à la conduite correspondantes.
+
+  - key: parking_assistance
+    name: Aide au stationnement
+    family: AAS
+    request_id: 0x75D
+    response_id: 0x65D
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L226
+    dtc_catalogs:
+      - AAS_UDS
+      - AAS_UDS_G6
+
+  - key: telematics
+    name: Autoradio / télématique (SMEG, NAC ou RCC)
+    family: TELEMAT
+    request_id: 0x764
+    response_id: 0x664
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L247
+    dtc_catalogs:
+      - NAC
+      - RCC

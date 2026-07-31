@@ -1,0 +1,13 @@
+{
+  "name": "psa_aee2010_r3",
+  "format": "DBC",
+  "upstream": "commaai/opendbc",
+  "upstream_url": "https://github.com/commaai/opendbc",
+  "source_url": "https://github.com/commaai/opendbc/blob/a0febba355168a5cb6168b535144c8c41a5ce323/opendbc/dbc/psa_aee2010_r3.dbc",
+  "revision": "a0febba355168a5cb6168b535144c8c41a5ce323",
+  "retrieved_at": "2026-07-31",
+  "license": "MIT",
+  "vehicle_scope": "PSA AEE2010 R3; upstream car port validated for Peugeot 208 2019-2025 only",
+  "local_usage": "Passive decoding and hypothesis enrichment for Peugeot 308 T9 2018 captures",
+  "validation_status": "external_unverified_for_308_t9"
+}

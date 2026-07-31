@@ -1,0 +1,19 @@
+P0300:
+  title: Ratés d'allumage aléatoires ou multiples
+  domain: powertrain
+  source: SAE
+  confidence: generic
+  checks:
+    - Lire les compteurs de ratés si disponibles.
+    - Contrôler bougies et bobines.
+    - Contrôler pression carburant et prises d'air.
+
+P0420:
+  title: Rendement catalyseur inférieur au seuil
+  domain: powertrain
+  source: SAE
+  confidence: generic
+  checks:
+    - Contrôler les sondes lambda.
+    - Rechercher une fuite d'échappement.
+    - Comparer les signaux amont et aval.

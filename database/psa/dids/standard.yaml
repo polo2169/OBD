@@ -1,0 +1,48 @@
+"0xF180":
+  name: Boot software identification
+  codec: bytes
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF181":
+  name: Application software identification
+  codec: bytes
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF186":
+  name: Active diagnostic session
+  codec: uint8
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF187":
+  name: Vehicle manufacturer spare part number
+  codec: ascii
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF189":
+  name: Vehicle manufacturer ECU software number
+  codec: ascii
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF18C":
+  name: ECU serial number
+  codec: ascii
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
+
+"0xF190":
+  name: Vehicle Identification Number
+  codec: ascii
+  source: ISO-14229
+  confidence: confirmed
+  access: read_only
