@@ -10,6 +10,17 @@
 #define READ_ONLY 1
 #endif
 
+// Allows CAN transmission, but only for a small, firmware-enforced set of
+// read-only ISO-TP/UDS/OBD requests. This is intentionally independent from
+// the PC-side safety filter.
+#ifndef DIAGNOSTIC_READ_ONLY
+#define DIAGNOSTIC_READ_ONLY 0
+#endif
+
+#if READ_ONLY && DIAGNOSTIC_READ_ONLY
+#error "READ_ONLY and DIAGNOSTIC_READ_ONLY are mutually exclusive firmware modes"
+#endif
+
 #ifndef USE_MCP2515
 #define USE_MCP2515 0
 #endif

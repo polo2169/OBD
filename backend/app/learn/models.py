@@ -124,6 +124,64 @@ class OpendbcCatalog(BaseModel):
     messages: list[OpendbcMessageDefinition] = Field(default_factory=list)
 
 
+class PassiveCanSignal(BaseModel):
+    key: str
+    arbitration_id: int
+    message: str
+    signal: str
+    display_name: str
+    description: str
+    category: str
+    value: str | int | float | bool | None = None
+    raw_value: str | int | float | bool | None = None
+    unit: str | None = None
+    source_unit: str | None = None
+    factor: float = 1.0
+    offset: float = 0.0
+    customized: bool = False
+    essential: bool = False
+    updated_at_us: int
+    raw_hex: str
+    confidence: Literal["validated", "dbc_candidate"] = "dbc_candidate"
+
+
+class PassiveSensorOverride(BaseModel):
+    key: str = Field(min_length=3, max_length=160, pattern=r"^[A-Za-z0-9_]+\.[A-Za-z0-9_]+$")
+    label: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    unit: str | None = Field(default=None, max_length=24)
+    factor: float = Field(default=1.0, ge=-1_000_000, le=1_000_000)
+    offset: float = Field(default=0.0, ge=-1_000_000_000, le=1_000_000_000)
+
+
+class PassiveSteeringSnapshot(BaseModel):
+    detected: bool = False
+    angle_degrees: float | None = None
+    rate_degrees_s: float | None = None
+    driver_torque: float | None = None
+    angle_source: str | None = None
+    torque_source: str | None = None
+    warning: str | None = None
+
+
+class PassiveSensorSnapshot(BaseModel):
+    session_id: str
+    active: bool
+    strict_passive: bool | None = None
+    frame_count: int
+    observed_can_id_count: int
+    observed_message_count: int
+    unknown_can_id_count: int
+    unknown_can_ids: list[int] = Field(default_factory=list)
+    decoded_signal_count: int
+    generated_at_us: int
+    cursor_us: int
+    steering: PassiveSteeringSnapshot
+    signals: list[PassiveCanSignal] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    source_url: str | None = None
+
+
 class ByteProfile(BaseModel):
     index: int
     distinct_values: int
@@ -187,3 +245,84 @@ class BehavioralAnalysisReport(BaseModel):
     opendbc: OpendbcSourceInfo | None = None
     warnings: list[str] = Field(default_factory=list)
     analysis_path: str | None = None
+
+
+class ReplaySample(BaseModel):
+    t_ms: int
+    speed_kph: float | None = None
+    engine_rpm: float | None = None
+    steering_angle_deg: float | None = None
+    steering_rate_deg_s: float | None = None
+    driver_torque: float | None = None
+    accelerator_pct: float | None = None
+    engine_torque_nm: float | None = None
+    longitudinal_accel_ms2: float | None = None
+    brake_active: bool | None = None
+    brake_system_state: int | None = None
+    brake_pressure_raw: float | None = None
+    turn_signal: Literal["off", "right", "left", "hazard"] | None = None
+    low_beam: bool | None = None
+    high_beam: bool | None = None
+    reverse: bool | None = None
+    parking_brake: bool | None = None
+    driver_door: bool | None = None
+    passenger_door: bool | None = None
+    front_wiper_status: int | None = None
+    fuel_liters: float | None = None
+    oil_temperature_c: float | None = None
+    coolant_temperature_c: float | None = None
+    intake_air_temperature_c: float | None = None
+    oil_pressure_switch: bool | None = None
+    battery_voltage_v: float | None = None
+    battery_temperature_c: float | None = None
+    battery_charge_pct: float | None = None
+    ambient_temperature_c: float | None = None
+    atmospheric_pressure_hpa: float | None = None
+    lane_assist_status: int | None = None
+    lane_departure: int | None = None
+    lka_active: bool | None = None
+    acc_mode: int | None = None
+    acc_requested: bool | None = None
+    speed_setpoint_kph: float | None = None
+    wheel_front_left_kph: float | None = None
+    wheel_front_right_kph: float | None = None
+    wheel_rear_left_kph: float | None = None
+    wheel_rear_right_kph: float | None = None
+    x_m: float = 0
+    y_m: float = 0
+    heading_deg: float = 0
+    distance_m: float = 0
+
+
+class ReplayEvent(BaseModel):
+    t_ms: int
+    kind: str
+    label: str
+    value: str | int | float | bool | None = None
+
+
+class ReplayData(BaseModel):
+    version: int
+    session_id: str
+    name: str
+    vehicle: str
+    source: str
+    source_size_bytes: int
+    source_mtime_ns: int
+    start_timestamp_us: int
+    duration_ms: int
+    sample_period_ms: int
+    frame_count: int
+    decoded_frame_count: int
+    max_speed_kph: float
+    average_moving_speed_kph: float
+    distance_km: float
+    gps_available: bool = False
+    route_method: str
+    steering_zero_offset_deg: float
+    route_bounds: dict[str, float]
+    available_fields: list[str] = Field(default_factory=list)
+    field_quality: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    events: list[ReplayEvent] = Field(default_factory=list)
+    points: list[ReplaySample] = Field(default_factory=list)

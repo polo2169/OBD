@@ -1,0 +1,25 @@
+[
+  {
+    "code": "C0031",
+    "ecu_key": "abs_esp",
+    "label": "Capteur de vitesse de roue avant gauche",
+    "note": "Code relevé par l'utilisateur; état UDS et sous-type non fournis.",
+    "source": "user_reported",
+    "recorded_at": "2026-07-31T22:15:00+02:00"
+  },
+  {
+    "code": "B1003",
+    "label": "Défaut de configuration sécurisée",
+    "note": "Le calculateur d'origine doit être confirmé; ce code est partagé par plusieurs ECU PSA.",
+    "source": "user_reported",
+    "recorded_at": "2026-07-31T22:15:00+02:00"
+  },
+  {
+    "code": "B1238",
+    "ecu_key": "front_camera",
+    "label": "Champ de vision de la caméra vidéo multifonction",
+    "note": "Code relevé par l'utilisateur; état UDS et sous-type non fournis.",
+    "source": "user_reported",
+    "recorded_at": "2026-07-31T22:15:00+02:00"
+  }
+]

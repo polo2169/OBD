@@ -62,6 +62,28 @@ def test_dtc_clear_is_locked_by_default():
     assert "DTC_CLEAR_ENABLED=false" in response.json()["detail"]
 
 
+def test_observed_dtcs_are_persisted_and_enriched(tmp_path, monkeypatch):
+    path = tmp_path / "observed_dtcs.json"
+    monkeypatch.setattr(settings, "observed_dtcs_file", path)
+
+    recorded = client.post("/api/diagnostic/dtcs/observed", json={
+        "code": "c0031",
+        "ecu_key": "abs_esp",
+        "source": "user_reported",
+        "note": "Relevé de test",
+    })
+
+    assert recorded.status_code == 200
+    assert recorded.json()["code"] == "C0031"
+    assert recorded.json()["ecu_name"] == "ABS / ESP"
+    assert recorded.json()["title"] == "Front left wheel speed sensor"
+    assert path.exists()
+
+    reopened = client.get("/api/diagnostic/dtcs/observed")
+    assert reopened.status_code == 200
+    assert [item["code"] for item in reopened.json()] == ["C0031"]
+
+
 def test_behavioral_analysis_is_saved_and_can_be_reopened(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "session_dir", tmp_path)
     session_id = "learn-20260731T130000Z-api"

@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import os
 import threading
 import time
 import uuid
+from typing import TextIO
 
 from app.config import settings
 from app.learn.models import CaptureStatus
@@ -13,6 +15,8 @@ from app.transports.factory import build_transport
 
 
 class PassiveCaptureManager:
+    _FLUSH_INTERVAL_SECONDS = 0.25
+    _FLUSH_EVENT_COUNT = 256
     _RECORDED_TRANSPORT_EVENTS = {
         "gateway_sequence_gap",
         "gateway_sequence_reset",
@@ -21,6 +25,8 @@ class PassiveCaptureManager:
         "gateway_reconnect_failed",
         "gateway_receive_overflow",
         "gateway_reported_error",
+        "gateway_stats",
+        "transport_close",
     }
 
     def __init__(self) -> None:
@@ -37,12 +43,19 @@ class PassiveCaptureManager:
         self._started_at_us: int | None = None
         self._strict_passive: bool | None = None
         self._last_error: str | None = None
+        self._write_lock = threading.Lock()
+        self._write_handle: TextIO | None = None
+        self._unflushed_events = 0
+        self._last_flush_monotonic = 0.0
+        self._latest_frames_lock = threading.Lock()
+        self._latest_frames: dict[tuple[int, bool], dict] = {}
 
     def start(self, name: str = "Nouvelle découverte", note: str | None = None) -> CaptureStatus:
         with self._lock:
             if self._active:
                 return self.status()
 
+            self._close_writer()
             settings.session_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             self._session_id = f"learn-{stamp}-{uuid.uuid4().hex[:8]}"
@@ -53,9 +66,12 @@ class PassiveCaptureManager:
             self._started_at_us = time.time_ns() // 1000
             self._strict_passive = None
             self._last_error = None
+            with self._latest_frames_lock:
+                self._latest_frames = {}
             self._stop.clear()
             self._active = True
             self._source = settings.transport
+            self._open_writer()
 
             self._write({
                 "type": "meta",
@@ -74,7 +90,7 @@ class PassiveCaptureManager:
     def stop(self) -> CaptureStatus:
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=max(2.0, settings.esp32_handshake_timeout + 1.0))
         with self._lock:
             self._active = False
             self._write({
@@ -82,6 +98,7 @@ class PassiveCaptureManager:
                 "timestamp_us": time.time_ns() // 1000,
                 "event": "capture_stopped",
             })
+            self._close_writer()
             return self.status()
 
     def marker(self, name: str, note: str | None = None) -> CaptureStatus:
@@ -111,6 +128,16 @@ class PassiveCaptureManager:
             error=self._last_error,
         )
 
+    def latest_frames(self) -> list[dict]:
+        """Return one immutable snapshot containing the newest frame per CAN ID."""
+        with self._latest_frames_lock:
+            return [dict(frame) for frame in self._latest_frames.values()]
+
+    def reset_latest_frames(self) -> None:
+        """Start a fresh passive inventory without interrupting the recording."""
+        with self._latest_frames_lock:
+            self._latest_frames = {}
+
     def _capture_loop(self) -> None:
         transport = build_transport(debug_sink=self._transport_debug)
         try:
@@ -139,6 +166,14 @@ class PassiveCaptureManager:
                     "data_hex": frame.data.hex().upper(),
                     "direction": frame.direction,
                 })
+                with self._latest_frames_lock:
+                    self._latest_frames[(frame.arbitration_id, frame.extended)] = {
+                        "timestamp_us": time.time_ns() // 1000,
+                        "arbitration_id": frame.arbitration_id,
+                        "extended": frame.extended,
+                        "data": bytes(frame.data),
+                        "raw_hex": frame.data.hex().upper(),
+                    }
                 self._frame_count += 1
         except Exception as exc:
             self._last_error = str(exc)
@@ -164,8 +199,49 @@ class PassiveCaptureManager:
     def _write(self, event: dict) -> None:
         if not self._path:
             return
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        with self._write_lock:
+            if self._write_handle is None or self._write_handle.closed:
+                self._write_handle = self._path.open(
+                    "a",
+                    encoding="utf-8",
+                    buffering=64 * 1024,
+                )
+                self._last_flush_monotonic = time.monotonic()
+                self._unflushed_events = 0
+            self._write_handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+            self._unflushed_events += 1
+            now = time.monotonic()
+            if (
+                self._unflushed_events >= self._FLUSH_EVENT_COUNT
+                or now - self._last_flush_monotonic >= self._FLUSH_INTERVAL_SECONDS
+            ):
+                self._write_handle.flush()
+                self._unflushed_events = 0
+                self._last_flush_monotonic = now
+
+    def _open_writer(self) -> None:
+        if not self._path:
+            return
+        with self._write_lock:
+            self._write_handle = self._path.open(
+                "a",
+                encoding="utf-8",
+                buffering=64 * 1024,
+            )
+            self._unflushed_events = 0
+            self._last_flush_monotonic = time.monotonic()
+
+    def _close_writer(self) -> None:
+        with self._write_lock:
+            if self._write_handle is None:
+                return
+            try:
+                self._write_handle.flush()
+                os.fsync(self._write_handle.fileno())
+            finally:
+                self._write_handle.close()
+                self._write_handle = None
+                self._unflushed_events = 0
 
 
 capture_manager = PassiveCaptureManager()

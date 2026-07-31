@@ -20,6 +20,7 @@
 static uint32_t rx_count = 0;
 static uint32_t tx_count = 0;
 static uint32_t tx_failed_count = 0;
+static uint32_t tx_policy_blocked_count = 0;
 static uint32_t dropped_count = 0;
 static uint32_t filtered_count = 0;
 static uint32_t bus_off_count = 0;
@@ -31,6 +32,75 @@ static bool can_ready = false;
 
 namespace {
 constexpr size_t OUTPUT_PACKET_MAX_BYTES = 512;
+
+#if DIAGNOSTIC_READ_ONLY
+// Peugeot 308 T9 diagnostic request identifiers documented in the selected
+// vehicle profile. No broadcast, extended or arbitrary CAN identifiers.
+constexpr uint16_t DIAGNOSTIC_REQUEST_IDS[] = {
+    0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x744, 0x74A,
+    0x752, 0x75D, 0x75F, 0x764, 0x76D, 0x7E0,
+};
+
+static bool diagnostic_request_id_allowed(uint32_t id) {
+  for (const uint16_t allowed : DIAGNOSTIC_REQUEST_IDS) {
+    if (id == allowed) return true;
+  }
+  return false;
+}
+
+static const char *diagnostic_tx_rejection(
+    uint32_t id,
+    bool extended,
+    const uint8_t *payload,
+    size_t length) {
+  if (extended) return "extended CAN identifiers are locked";
+  if (!diagnostic_request_id_allowed(id)) return "CAN identifier is not a known diagnostic request";
+  if (length == 0 || length > 8) return "invalid ISO-TP frame length";
+
+  const uint8_t pci_type = payload[0] >> 4;
+  if (pci_type == 0x3) {
+    // Flow-control frames are needed to receive long identification/DTC
+    // responses. They do not carry a diagnostic service.
+    if (length < 3 || (payload[0] & 0x0F) > 0x02) {
+      return "invalid ISO-TP flow-control frame";
+    }
+    return nullptr;
+  }
+  // Read requests used here fit in one CAN frame. Blocking host-originated
+  // first/consecutive frames prevents a forbidden service being fragmented.
+  if (pci_type != 0x0) return "multi-frame diagnostic requests are locked";
+
+  const uint8_t application_length = payload[0] & 0x0F;
+  if (application_length == 0 || application_length > 7 || length < application_length + 1) {
+    return "invalid ISO-TP single frame";
+  }
+  const uint8_t service = payload[1];
+  if (id == 0x7E0) {
+    if ((service == 0x01 || service == 0x09) && application_length == 2) return nullptr;
+    return "only OBD sensor and vehicle-information reads are allowed on 0x7E0";
+  }
+
+  switch (service) {
+    case 0x10: {
+      if (application_length != 2) return "invalid DiagnosticSessionControl request";
+      const uint8_t session = payload[2] & 0x7F;
+      return (session == 0x01 || session == 0x03)
+          ? nullptr
+          : "programming or supplier sessions are locked";
+    }
+    case 0x19:
+      return application_length >= 2 ? nullptr : "invalid ReadDTCInformation request";
+    case 0x22:
+      return application_length == 3 ? nullptr : "invalid ReadDataByIdentifier request";
+    case 0x3E:
+      return application_length == 2 && (payload[2] == 0x00 || payload[2] == 0x80)
+          ? nullptr
+          : "invalid TesterPresent request";
+    default:
+      return "diagnostic service is locked by firmware";
+  }
+}
+#endif
 }
 
 #if WIFI_ENABLED
@@ -118,12 +188,17 @@ static bool id_allowed(uint32_t id) {
 static size_t format_hello(char *output, size_t capacity) {
   JsonDocument doc;
   doc["type"] = "hello";
-  doc["protocol"] = 3;
+  doc["protocol"] = 6;
   doc["device"] = "opendiag-esp32";
-  doc["firmware"] = "0.6.0-wifi";
+  doc["firmware"] = "0.7.2-framed-diagnostic-lock";
   doc["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
   doc["can_ready"] = can_ready;
   doc["readonly"] = READ_ONLY != 0;
+  doc["diagnostic_read_only"] = DIAGNOSTIC_READ_ONLY != 0;
+  doc["write_services_locked"] = (READ_ONLY != 0) || (DIAGNOSTIC_READ_ONLY != 0);
+  doc["tx_policy"] = READ_ONLY
+      ? "strict_passive"
+      : (DIAGNOSTIC_READ_ONLY ? "read_only_diagnostics" : "unrestricted");
   doc["bitrate"] = cfg::CAN_BITRATE;
 #if USE_MCP2515
   doc["spi_sck_pin"] = cfg::MCP2515_SPI_SCK_PIN;
@@ -172,6 +247,7 @@ static void emit_stats() {
   doc["type"] = "stats";
   doc["rx"] = rx_count;
   doc["tx"] = tx_count;
+  doc["tx_policy_blocked"] = tx_policy_blocked_count;
   doc["filtered"] = filtered_count;
   doc["bus_off"] = bus_off_count;
   doc["bus_recovered"] = bus_recovered_count;
@@ -264,17 +340,25 @@ static void emit_frame(
       data_hex[i * 2 + 1] = hex[data[i] & 0x0F];
     }
   }
-  JsonDocument doc;
-  doc["type"] = "can_rx";
-  doc["ts_us"] = esp_timer_get_time();
-  doc["seq"] = frame_sequence++;
-  doc["id"] = identifier;
-  doc["ext"] = extended;
-  doc["dlc"] = data_length;
-  doc["rtr"] = remote;
-  doc["ss"] = false;
-  doc["data"] = data_hex;
-  emit_json(doc, true);
+  // Protocol v6 uses a compact, hexadecimal transport line for CAN frames:
+  // F,timestamp,sequence,id,flags,data. The PC expands it back to JSONL.
+  const uint8_t flags = static_cast<uint8_t>(
+      (data_length << 2) | (extended ? 0x01 : 0x00) | (remote ? 0x02 : 0x00));
+  char output[96];
+  const int length = snprintf(
+      output,
+      sizeof(output),
+      "F,%llX,%lX,%lX,%X,%s",
+      static_cast<unsigned long long>(esp_timer_get_time()),
+      static_cast<unsigned long>(frame_sequence++),
+      static_cast<unsigned long>(identifier),
+      flags,
+      data_hex);
+  if (length <= 0 || static_cast<size_t>(length) >= sizeof(output)) {
+    emit_error("FRAME_OVERFLOW", "Compact CAN frame exceeds output buffer");
+    return;
+  }
+  emit_line(output, true);
 }
 
 static int hex_nibble(char value) {
@@ -323,6 +407,21 @@ static void transmit_can(JsonDocument &doc) {
     emit_error("INVALID_DATA", "CAN data must contain 0 to 8 hexadecimal bytes");
     return;
   }
+
+#if DIAGNOSTIC_READ_ONLY
+  const char *rejection = diagnostic_tx_rejection(id, extended, payload, length);
+  if (rejection != nullptr) {
+    ++tx_policy_blocked_count;
+    JsonDocument error;
+    error["type"] = "error";
+    error["code"] = "TX_POLICY_BLOCKED";
+    error["message"] = rejection;
+    error["id"] = id;
+    error["service"] = length > 1 ? payload[1] : 0;
+    emit_json(error);
+    return;
+  }
+#endif
 
 #if USE_MCP2515
   struct can_frame frame{};
@@ -636,7 +735,9 @@ void setup() {
   } else {
     JsonDocument status;
     status["type"] = "status";
-    status["can"] = READ_ONLY ? "listen_only" : "active";
+    status["can"] = READ_ONLY
+        ? "listen_only"
+        : (DIAGNOSTIC_READ_ONLY ? "read_only_diagnostics" : "active");
     status["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
     status["bitrate"] = cfg::CAN_BITRATE;
     emit_json(status);

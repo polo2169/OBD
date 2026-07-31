@@ -1,0 +1,23 @@
+{
+  "DAT4_BSI_AEE2010.P015_Com_lTotDst": {
+    "label": "Com ltotdst",
+    "description": "Signal P015_Com_lTotDst du message CAN DAT4_BSI_AEE2010. Interprétation OpenDBC à confirmer sur Peugeot 308 T9.\nc\nkilometrage voiture",
+    "unit": "km",
+    "factor": 1.0,
+    "offset": 0.0
+  },
+  "LANE_KEEP_ASSIST.STATUS": {
+    "label": "État maintien dans la voie",
+    "description": "État diffusé par la fonction d'aide au maintien dans la voie. 1 desactivé, 2 activé",
+    "unit": "",
+    "factor": 1.0,
+    "offset": 0.0
+  },
+  "STEERING_ALT.ANGLE": {
+    "label": "Angle du volant",
+    "description": "Position angulaire du volant. Zéro proche des roues droites; le signe indique le sens.\nil faut corrige le sens il est inversé",
+    "unit": "degrees",
+    "factor": 1.0,
+    "offset": 0.0
+  }
+}

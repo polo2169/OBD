@@ -25,7 +25,7 @@ Starter kit open source pour construire un outil de diagnostic automobile modula
 Fonctions disponibles :
 
 - écoute CAN passive sur l'ESP32 ;
-- protocole JSON Lines USB entre ESP32 et RDK/PC ;
+Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compactes sans filtrage ;
 - lecture et journalisation de trames ;
 - transport virtuel pour les tests ;
 - lecture OBD-II générique simulée ;
@@ -41,6 +41,8 @@ Fonctions disponibles :
 - sessions JSONL détaillées : CAN, passerelle, ISO-TP, UDS/OBD, NRC et durées ;
 - API FastAPI ;
 - interface React ;
+- replay temporel des captures CAN avec Peugeot vue du dessus, instruments, commandes et états ADAS ;
+- reconstruction locale du mouvement par vitesse et angle du volant, avec cache de post-traitement sur le PC ;
 - base PSA extensible avec niveaux de confiance ;
 - séparation entre autorisation matérielle TX et filtrage applicatif lecture seule.
 
@@ -53,7 +55,7 @@ OBD-II
 Transceiver CAN automobile
   │
 ESP32-S3
-  │ Wi-Fi privé / TCP JSONL (ou USB série sur banc)
+  │ Wi-Fi privé / TCP ou USB série (protocole v6)
   │
 RDK X5 ou PC
   ├── FastAPI
@@ -98,6 +100,27 @@ Interface :
 
 ```text
 http://localhost:5173
+```
+
+### Replay véhicule et trajectoire
+
+Ouvrir **Replay véhicule** dans la barre latérale, puis choisir une session. Le
+backend parcourt le JSONL en flux, échantillonne les signaux à 10 Hz et conserve
+le résultat dans `data/sessions/<session>.replay.json`. La capture originale n'est
+jamais modifiée.
+
+Le replay anime la vitesse, le régime moteur, le volant, les pédales, les
+clignotants, les feux et les signaux ADAS disponibles. Sans latitude/longitude CAN,
+la carte représente une trajectoire locale estimée par la vitesse ABS et l'angle
+du volant. Son origine et son orientation sont arbitraires : elle ne doit pas être
+superposée à une route réelle. Pour retrouver l'emplacement exact en France, une
+source GPS horodatée devra être enregistrée lors d'une prochaine capture.
+
+API correspondante :
+
+```text
+GET /api/learn/replay/{session_id}
+GET /api/learn/replay/{session_id}?force=true
 ```
 
 ### Simulation
@@ -146,6 +169,13 @@ lecture UDS/OBD, car une lecture implique d'émettre une requête CAN :
 ```bash
 pio run -e esp32-active
 pio run -e esp32-active -t upload
+```
+
+Pour le TJA1050 sur GPIO 5/4 et la liaison USB série, préférer le profil verrouillé
+qui n'autorise dans le firmware que les lectures OBD/UDS documentées :
+
+```bash
+pio run -e esp32-tja1050-serial-diagnostic -t upload
 ```
 
 Pour une carte ESP32-S3, utiliser respectivement `esp32-s3-readonly` et
@@ -274,13 +304,20 @@ sur le module avant raccordement au véhicule.
 
 ## Protocole passerelle
 
-Une ligne JSON par message :
+Les messages de contrôle restent en JSON Lines. Depuis le protocole 6, les trames
+CAN utilisent sur le fil une ligne hexadécimale compacte afin de rester sous la
+limite du pont CP2102 à 921 600 bauds, même sur un bus chargé :
 
-```json
-{"type":"hello","protocol":3,"device":"opendiag-esp32","firmware":"0.5.0-debug","readonly":true,"bitrate":500000}
-{"type":"can_rx","ts_us":123456,"seq":42,"id":2024,"ext":false,"dlc":8,"rtr":false,"data":"0362F19000000000"}
+```text
+{"type":"hello","protocol":6,"device":"opendiag-esp32","firmware":"0.7.2-framed-diagnostic-lock","diagnostic_read_only":true,"bitrate":500000}
+F,1E240,2A,7E8,20,0362F19000000000
 {"type":"stats","rx":1200,"tx":0,"dropped":0,"bus_off":0,"rx_error_counter":0,"tx_error_counter":0}
 ```
+
+Le backend développe immédiatement chaque ligne `F` et écrit toujours un JSONL
+complet dans `data/sessions`, avec horodatages ESP/PC, identifiant, données et
+événements de perte. Le fichier est vidé périodiquement puis synchronisé sur disque
+à l'arrêt de la capture avant de lancer le post-traitement.
 
 Commandes autorisées par défaut :
 
@@ -291,8 +328,10 @@ Commandes autorisées par défaut :
 {"type":"get_status"}
 ```
 
-La commande `can_tx` n'est disponible que dans un firmware `*-active`.
-Les identifiants, le format étendu et les huit octets maximum sont validés avant émission.
+La commande `can_tx` n'est disponible que dans un firmware actif ou dans le profil
+`esp32-tja1050-serial-diagnostic`. Ce dernier verrouille aussi côté ESP les
+identifiants et services autorisés en lecture. Le format étendu et les huit octets
+maximum sont validés avant émission.
 
 ## Base PSA
 

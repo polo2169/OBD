@@ -2,9 +2,13 @@ import json
 
 from app.config import settings
 from app.learn.analyzer import analyze_behavior, list_sessions
+from app.learn.capture import capture_manager
 from app.learn.isotp import parse_isotp_frame, uds_service
-from app.learn.models import CorrelationOptions
+from app.learn.models import CaptureStatus, CorrelationOptions, PassiveSensorOverride
 from app.learn.opendbc import get_opendbc_decoder
+from app.learn.passive_sensors import passive_sensor_snapshot
+from app.learn.replay import prepare_replay
+from app.learn.sensor_metadata import save_override
 from app.safety import authorize_uds
 
 
@@ -39,6 +43,158 @@ def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
     assert values is not None
     assert values["P000_Com_nEng"]["value"] == 1000.0
     assert values["P000_Com_nEng"]["unit"] == "1/min"
+
+
+def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    session_id = "learn-20260731T150000Z-replay"
+    decoder = get_opendbc_decoder()
+
+    def payload(arbitration_id: int, **updates: float) -> str:
+        message = decoder.message_for_frame(arbitration_id, False)
+        assert message is not None
+        values = {signal.name: 0 for signal in message.signals}
+        values.update(updates)
+        return message.encode(values, strict=False).hex().upper()
+
+    frames: list[dict] = [{
+        "type": "meta",
+        "timestamp_us": 1_000_000,
+        "session_id": session_id,
+        "name": "Replay de test",
+        "source": "fixture",
+    }]
+    for index in range(5):
+        timestamp_us = 1_000_000 + index * 100_000
+        turn_signal = 1 if index >= 2 else 0
+        brake = 1 if index == 3 else 0
+        messages = [
+            (0x38D, payload(0x38D, VITESSE_VEHICULE_ROUES=36, ACCEL_LONGI_ROUES=0)),
+            (0x305, payload(0x305, ANGLE=45 if index >= 2 else 0, RATE=5)),
+            (0x452, payload(0x452, TURN_SIGNAL_STATUS=turn_signal)),
+            (0x612, payload(0x612, ETAT_FEUX_CROIST=1)),
+            (0x412, payload(0x412, P013_MainBrake=brake)),
+            (0x3F2, payload(0x3F2, STATUS=2)),
+            (0x488, payload(0x488, P005_CEngDst_tSens=88, P011_Oil_tSwmp=90, P158_Air_tAFS=32)),
+            (0x588, payload(0x588, P278_Oil_stPSwmp=-1, P338_EnvP_p=1000)),
+            (0x592, payload(0x592, P272_Com_rBattCh=86, P273_Com_tBatt=51, P418_Com_uBattRaw=13.8)),
+            (0x5B2, payload(0x5B2, P146_Com_tEnvT=21.5)),
+        ]
+        for arbitration_id, data_hex in messages:
+            frames.append({
+                "type": "can_frame",
+                "timestamp_us": timestamp_us,
+                "arbitration_id": arbitration_id,
+                "extended": False,
+                "data_hex": data_hex,
+                "direction": "rx",
+            })
+
+    path = tmp_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(json.dumps(frame) for frame in frames) + "\n", encoding="utf-8")
+
+    replay = prepare_replay(session_id)
+
+    assert replay.name == "Replay de test"
+    assert replay.duration_ms == 400
+    assert replay.frame_count == 50
+    assert replay.max_speed_kph == 36
+    assert replay.distance_km > 0
+    assert not replay.gps_available
+    assert replay.route_method == "dead_reckoning_speed_steering"
+    # Sur la 308, un angle DBC positif correspond au virage visuel gauche :
+    # la reconstruction doit donc partir vers les x négatifs.
+    assert replay.points[-1].x_m < 0
+    assert replay.points[-1].low_beam is True
+    assert replay.points[-1].turn_signal == "right"
+    assert replay.points[-1].oil_temperature_c == 90
+    assert replay.points[-1].coolant_temperature_c == 88
+    assert replay.points[-1].oil_pressure_switch is True
+    assert replay.points[-1].battery_voltage_v == 13.8
+    assert replay.points[-1].ambient_temperature_c == 21.5
+    assert any(event.kind == "turn_signal" for event in replay.events)
+    assert any(event.kind == "brake" for event in replay.events)
+    assert (tmp_path / f"{session_id}.replay.json").exists()
+    assert prepare_replay(session_id).points == replay.points
+
+
+def test_passive_sensor_snapshot_prefers_valid_steering_angle(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "sensor_overrides_file", tmp_path / "sensor_overrides.json")
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-test",
+        active=True,
+        source="fixture",
+        frame_count=3,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=True,
+    ))
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [
+        {
+            "timestamp_us": 1_000_000,
+            "arbitration_id": 0x2F5,
+            "extended": False,
+            "data": bytes.fromhex("0501007FFF0001"),
+            "raw_hex": "0501007FFF0001",
+        },
+        {
+            "timestamp_us": 1_000_100,
+            "arbitration_id": 0x305,
+            "extended": False,
+            "data": bytes.fromhex("005F0007D00020"),
+            "raw_hex": "005F0007D00020",
+        },
+        {
+            "timestamp_us": 1_000_200,
+            "arbitration_id": 0x7FF,
+            "extended": False,
+            "data": bytes.fromhex("0000000000000000"),
+            "raw_hex": "0000000000000000",
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+
+    assert snapshot.strict_passive is True
+    assert snapshot.steering.detected
+    assert snapshot.steering.angle_degrees == 9.5
+    assert snapshot.steering.driver_torque == 1
+    assert snapshot.steering.angle_source == "0x305 STEERING_ALT.ANGLE"
+    assert snapshot.observed_can_id_count == 3
+    assert snapshot.observed_message_count == 2
+    assert snapshot.unknown_can_id_count == 1
+    assert snapshot.unknown_can_ids == [0x7FF]
+    assert snapshot.cursor_us == 1_000_200
+    assert any(
+        signal.key == "STEERING_ALT.ANGLE"
+        and signal.display_name == "Angle du volant"
+        and signal.essential
+        and signal.confidence == "validated"
+        for signal in snapshot.signals
+    )
+    assert not any(signal.key == "STEERING.ANGLE" for signal in snapshot.signals)
+
+    delta = passive_sensor_snapshot(since_us=1_000_050)
+    assert delta.cursor_us == 1_000_200
+    assert {signal.message for signal in delta.signals} == {"STEERING_ALT"}
+    assert delta.decoded_signal_count == snapshot.decoded_signal_count
+
+    save_override(PassiveSensorOverride(
+        key="STEERING_ALT.ANGLE",
+        label="Angle corrigé",
+        description="Correction de test",
+        unit="tour",
+        factor=2,
+        offset=1,
+    ))
+    corrected = passive_sensor_snapshot()
+    angle = next(signal for signal in corrected.signals if signal.key == "STEERING_ALT.ANGLE")
+    assert angle.display_name == "Angle corrigé"
+    assert angle.description == "Correction de test"
+    assert angle.value == 20
+    assert angle.raw_value == 9.5
+    assert angle.unit == "tour"
+    assert angle.customized
 
 
 def test_post_processing_finds_repeated_bit_correlation(tmp_path, monkeypatch):

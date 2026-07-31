@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     safety_ecu_clear_enabled: bool = False
     database_dir: Path = Path("../database")
     session_dir: Path = Path("../data/sessions")
+    sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
+    observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
     vehicle_profile: str = "peugeot_308_t9_2018"
     opendbc_enabled: bool = True
 

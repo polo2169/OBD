@@ -60,6 +60,24 @@ class DtcReadResult(BaseModel):
     confidence: str = "raw_only"
 
 
+class ObservedDtcInput(BaseModel):
+    code: str = Field(pattern=r"^[PpBbCcUu][0-9A-Fa-f]{4}$")
+    ecu_key: str | None = Field(default=None, max_length=80)
+    label: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=500)
+    source: str = Field(default="user_reported", max_length=80)
+
+
+class ObservedDtcResult(ObservedDtcInput):
+    code: str
+    ecu_name: str
+    title: str | None = None
+    catalogs: list[str] = Field(default_factory=list)
+    catalog_source: str | None = None
+    confidence: str = "user_reported"
+    recorded_at: str
+
+
 class DebugSummary(BaseModel):
     session_id: str | None = None
     trace_file: str | None = None

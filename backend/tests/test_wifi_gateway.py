@@ -8,9 +8,12 @@ from app.transports.wifi_gateway import Esp32WifiTransport
 
 
 class FakeSocket:
-    def __init__(self, messages: list[dict]) -> None:
+    def __init__(self, messages: list[dict | str]) -> None:
         self._chunks = [
-            "".join(json.dumps(message) + "\n" for message in messages).encode()
+            "".join(
+                (message if isinstance(message, str) else json.dumps(message)) + "\n"
+                for message in messages
+            ).encode()
         ]
         self.closed = False
         self.sent: list[bytes] = []
@@ -53,24 +56,8 @@ def hello(**overrides) -> dict:
 def test_wifi_gateway_receives_frames_and_detects_sequence_gaps(monkeypatch):
     device = FakeSocket([
         hello(),
-        {
-            "type": "can_rx",
-            "ts_us": 100,
-            "seq": 10,
-            "id": 0x208,
-            "ext": False,
-            "dlc": 2,
-            "data": "1234",
-        },
-        {
-            "type": "can_rx",
-            "ts_us": 200,
-            "seq": 12,
-            "id": 0x1A8,
-            "ext": False,
-            "dlc": 1,
-            "data": "56",
-        },
+        "F,64,A,208,8,1234",
+        "F,C8,C,1A8,4,56",
     ])
     monkeypatch.setattr(wifi_gateway.socket, "create_connection", lambda *_args, **_kwargs: device)
     events: list[dict] = []

@@ -51,41 +51,62 @@ def list_sessions() -> list[DiscoverySessionSummary]:
     settings.session_dir.mkdir(parents=True, exist_ok=True)
     summaries: list[DiscoverySessionSummary] = []
     for path in sorted(settings.session_dir.glob("learn-*.jsonl"), reverse=True):
+        analysis_path = settings.session_dir / f"{path.stem}.correlations.json"
         name = path.stem
         source = ""
         started_at_us: int | None = None
-        timestamps: list[int] = []
+        min_timestamp: int | None = None
+        max_timestamp: int | None = None
         markers: list[str] = []
         frame_count = 0
+        cached_duration_ms: float | None = None
+        cached_marker_count: int | None = None
         error: str | None = None
         try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                event = json.loads(line)
-                timestamp = int(event.get("timestamp_us", 0) or 0)
-                # Les anciennes captures mélangeaient parfois temps ESP32 et temps hôte.
-                if timestamp > 1_000_000_000_000:
-                    timestamps.append(timestamp)
-                if event.get("type") == "meta":
-                    name = str(event.get("name") or name)
-                    source = str(event.get("source") or source)
-                    if started_at_us is None and timestamp:
-                        started_at_us = timestamp
-                    if event.get("event") == "capture_error":
-                        error = str(event.get("error") or "Erreur de capture")
-                elif event.get("type") == "can_frame":
-                    frame_count += 1
-                elif event.get("type") == "marker":
-                    marker = str(event.get("name") or "").strip()
-                    if marker:
-                        markers.append(marker)
+            # Les grosses captures ont déjà un inventaire de corrélation compact.
+            # Il évite de reparcourir plusieurs centaines de Mio à chaque ouverture UI.
+            use_analysis_cache = path.stat().st_size > 16 * 1024 * 1024 and analysis_path.exists()
+            if use_analysis_cache:
+                cached = json.loads(analysis_path.read_text(encoding="utf-8"))
+                frame_count = int(cached.get("total_frames", 0) or 0)
+                cached_duration_ms = float(cached.get("duration_ms", 0) or 0)
+                cached_marker_count = int(cached.get("marker_count", 0) or 0)
+                markers = [
+                    str(item.get("marker") or "").strip()
+                    for item in cached.get("correlations", [])
+                    if str(item.get("marker") or "").strip()
+                ]
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    timestamp = int(event.get("timestamp_us", 0) or 0)
+                    # Les anciennes captures mélangeaient parfois temps ESP32 et temps hôte.
+                    if timestamp > 1_000_000_000_000:
+                        min_timestamp = timestamp if min_timestamp is None else min(min_timestamp, timestamp)
+                        max_timestamp = timestamp if max_timestamp is None else max(max_timestamp, timestamp)
+                    if event.get("type") == "meta":
+                        name = str(event.get("name") or name)
+                        source = str(event.get("source") or source)
+                        if started_at_us is None and timestamp:
+                            started_at_us = timestamp
+                        if event.get("event") == "capture_error":
+                            error = str(event.get("error") or "Erreur de capture")
+                    elif event.get("type") == "can_frame":
+                        if use_analysis_cache:
+                            break
+                        frame_count += 1
+                    elif event.get("type") == "marker":
+                        marker = str(event.get("name") or "").strip()
+                        if marker:
+                            markers.append(marker)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             error = f"Session illisible : {exc}"
 
-        duration_ms = 0.0
-        if len(timestamps) >= 2:
-            duration_ms = max(0.0, (max(timestamps) - min(timestamps)) / 1000)
+        duration_ms = cached_duration_ms or 0.0
+        if cached_duration_ms is None and min_timestamp is not None and max_timestamp is not None:
+            duration_ms = max(0.0, (max_timestamp - min_timestamp) / 1000)
         summaries.append(DiscoverySessionSummary(
             session_id=path.stem,
             name=name,
@@ -93,10 +114,10 @@ def list_sessions() -> list[DiscoverySessionSummary]:
             started_at_us=started_at_us,
             duration_ms=round(duration_ms, 1),
             frame_count=frame_count,
-            marker_count=len(markers),
+            marker_count=cached_marker_count if cached_marker_count is not None else len(markers),
             markers=list(dict.fromkeys(markers)),
             size_bytes=path.stat().st_size,
-            analyzed=(settings.session_dir / f"{path.stem}.correlations.json").exists(),
+            analyzed=analysis_path.exists(),
             error=error,
         ))
     return summaries

@@ -6,6 +6,7 @@ import socket
 import time
 
 from app.models import CanFrame
+from app.safety import authorize_diagnostic_can_frame
 from app.transports.base import Transport
 
 
@@ -88,6 +89,13 @@ class Esp32WifiTransport(Transport):
     def send(self, frame: CanFrame) -> None:
         if not self.tx_enabled:
             raise PermissionError("Émission ESP32 Wi-Fi désactivée par CAN_TX_ENABLED.")
+        decision = authorize_diagnostic_can_frame(
+            frame.arbitration_id,
+            frame.extended,
+            frame.data,
+        )
+        if not decision.allowed:
+            raise PermissionError(decision.reason)
         payload = {
             "type": "can_tx",
             "id": frame.arbitration_id,
@@ -145,6 +153,11 @@ class Esp32WifiTransport(Transport):
             raise RuntimeError(
                 "CAN_TX_ENABLED=true mais le firmware ESP32 Wi-Fi est en écoute seule."
             )
+        if self.tx_enabled and hello.get("diagnostic_read_only") is not True:
+            self._disconnect("gateway_tx_policy_rejected")
+            raise RuntimeError(
+                "Le firmware ESP32 Wi-Fi n'annonce pas le verrou diagnostic lecture seule."
+            )
 
     def _read_json(self, timeout: float) -> dict | None:
         if self.socket is None:
@@ -157,8 +170,12 @@ class Esp32WifiTransport(Transport):
                 if not raw:
                     continue
                 try:
-                    message = json.loads(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    message = (
+                        self._parse_frame_line(raw)
+                        if raw.startswith(b"F,")
+                        else json.loads(raw)
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
                     self.debug(
                         "gateway_invalid_line",
                         error=str(exc),
@@ -168,6 +185,7 @@ class Esp32WifiTransport(Transport):
                 if not isinstance(message, dict):
                     self.debug("gateway_invalid_message", message=message)
                     continue
+                message = self._expand_compact_message(message)
                 self.debug("gateway_message", message=message)
                 return message
 
@@ -183,13 +201,47 @@ class Esp32WifiTransport(Transport):
                 self._buffer.clear()
                 self.debug("gateway_receive_overflow")
 
+    @staticmethod
+    def _parse_frame_line(line: bytes) -> dict:
+        parts = line.decode("ascii").strip().split(",", 5)
+        if len(parts) != 6 or parts[0] != "F":
+            raise ValueError("Trame compacte Wi-Fi invalide.")
+        flags = int(parts[4], 16)
+        return {
+            "type": "can_rx",
+            "ts_us": int(parts[1], 16),
+            "seq": int(parts[2], 16),
+            "id": int(parts[3], 16),
+            "ext": bool(flags & 0x01),
+            "rtr": bool(flags & 0x02),
+            "dlc": flags >> 2,
+            "data": parts[5],
+        }
+
+    @staticmethod
+    def _expand_compact_message(message: dict) -> dict:
+        if message.get("t") != "r":
+            return message
+        data_hex = message.get("d", "")
+        inferred_dlc = len(data_hex) // 2 if isinstance(data_hex, str) else 0
+        return {
+            "type": "can_rx",
+            "ts_us": message.get("u"),
+            "seq": message.get("s"),
+            "id": message.get("i"),
+            "ext": bool(message.get("e", False)),
+            "dlc": message.get("l", inferred_dlc),
+            "rtr": bool(message.get("r", False)),
+            "data": data_hex,
+        }
+
     def _decode_frame(self, message: dict) -> CanFrame:
         data_hex = message.get("data", "")
         if not isinstance(data_hex, str) or len(data_hex) > 16 or len(data_hex) % 2:
             raise ValueError("Champ data CAN invalide.")
         data = bytes.fromhex(data_hex)
         dlc = int(message.get("dlc", len(data)))
-        if dlc != len(data):
+        if not bool(message.get("rtr", False)) and dlc != len(data):
             raise ValueError(f"DLC {dlc} incohérent avec {len(data)} octets.")
         arbitration_id = int(message["id"])
         extended = bool(message.get("ext", False))
@@ -237,6 +289,7 @@ class Esp32WifiTransport(Transport):
             self.hello = message
         elif message_type == "stats":
             self.last_stats = message
+            self.debug("gateway_stats", stats=message)
         elif message_type in {"error", "fatal"}:
             self.debug("gateway_reported_error", message=message)
 

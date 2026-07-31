@@ -48,7 +48,8 @@ cd firmware/esp32-gateway
 /Users/paul/.platformio/penv/bin/pio run -e esp32-waveshare-wifi-readonly -t upload
 ```
 
-Après le flash, le moniteur série doit annoncer `firmware=0.6.0-wifi`,
+Après le flash, le moniteur série doit annoncer `firmware=0.7.2-framed-diagnostic-lock`,
+`protocol=6`,
 `readonly=true`, `tx_pin=17`, `rx_pin=16`, le réseau `OpenDiag-ESP32` et le port
 TCP `35000`. L'USB sert ici uniquement à flasher sur l'établi, avant la connexion
 au véhicule.
@@ -71,6 +72,16 @@ en filtre applicatif lecture seule :
 cd firmware/esp32-gateway
 /Users/paul/.platformio/penv/bin/pio run -e esp32-active -t upload
 ```
+
+Pour le montage TJA1050 série sur GPIO 5/4, utiliser de préférence le profil
+verrouillé testé sur l'ESP32 classique :
+
+```bash
+/Users/paul/.platformio/penv/bin/pio run -e esp32-tja1050-serial-diagnostic -t upload
+```
+
+Le `hello` doit alors annoncer `diagnostic_read_only=true`,
+`write_services_locked=true` et `tx_policy=read_only_diagnostics`.
 
 Avec le montage Waveshare Wi-Fi, l'équivalent est
 `esp32-waveshare-wifi-active`. Ne l'utiliser qu'après validation complète de la
@@ -111,8 +122,11 @@ READ_ONLY=true
 READ_DTCS=true
 DEBUG_SESSIONS_ENABLED=true
 TRACE_CAN_FRAMES=true
+ESP32_HANDSHAKE_TIMEOUT=8.0
 DTC_CLEAR_ENABLED=false
 SAFETY_ECU_CLEAR_ENABLED=false
+SESSION_DIR=../data/sessions
+SENSOR_OVERRIDES_FILE=../data/sensor_overrides.json
 ```
 
 Sur Linux, le port ressemble généralement à `/dev/ttyUSB0` ou `/dev/ttyACM0`.
@@ -131,6 +145,10 @@ Sur macOS, préférer `/dev/cu.usbserial-…`, `/dev/cu.SLAB_USBtoUART` ou
    l'arrêter et vérifier que le nombre de trames augmente sans erreur.
 7. Vérifier dans la capture l'absence de `gateway_sequence_gap`, de bus-off et de
    `wifi_dropped_messages` non nul.
+
+En USB série, vérifier également les événements `gateway_stats` : `dropped`,
+`bus_off`, `rx_error_counter` et `bus_error_count` doivent rester à zéro. L'arrêt
+de la capture synchronise le JSONL sur le disque du PC avant l'analyse.
 
 Le profil passif ne permet pas **Capteurs uniquement** ni **Scanner le véhicule** :
 ces fonctions émettent nécessairement des requêtes CAN. Elles seront testées plus

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.config import settings
@@ -16,9 +16,15 @@ from app.learn.models import (
     CorrelationOptions,
     DiscoverySessionSummary,
     OpendbcCatalog,
+    PassiveSensorOverride,
+    PassiveSensorSnapshot,
+    ReplayData,
     UdsCandidate,
 )
 from app.learn.opendbc import get_opendbc_decoder
+from app.learn.passive_sensors import passive_sensor_snapshot
+from app.learn.replay import prepare_replay
+from app.learn.sensor_metadata import delete_override, save_override
 
 router = APIRouter(prefix="/api/learn", tags=["OpenDiag Learn"])
 
@@ -52,9 +58,55 @@ def sessions() -> list[DiscoverySessionSummary]:
     return list_sessions()
 
 
+@router.get("/replay/{session_id}", response_model=ReplayData)
+def replay(session_id: str, force: bool = Query(default=False)) -> ReplayData:
+    try:
+        return prepare_replay(session_id, force=force)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/opendbc/catalog", response_model=OpendbcCatalog)
 def opendbc_catalog() -> OpendbcCatalog:
     return get_opendbc_decoder().catalog()
+
+
+@router.get("/sensors/passive", response_model=PassiveSensorSnapshot)
+def passive_sensors() -> PassiveSensorSnapshot:
+    return passive_sensor_snapshot()
+
+
+@router.get("/sensors/passive/updates", response_model=PassiveSensorSnapshot)
+def passive_sensor_updates(
+    since_us: int = Query(default=0, ge=0),
+) -> PassiveSensorSnapshot:
+    return passive_sensor_snapshot(since_us=since_us)
+
+
+@router.post("/sensors/passive/detect", response_model=PassiveSensorSnapshot)
+def detect_passive_sensors() -> PassiveSensorSnapshot:
+    """Reset the passive inventory and ensure a receive-only capture is running."""
+    if not capture_manager.status().active:
+        capture_manager.start(
+            "Détection complète des capteurs",
+            "Inventaire CAN passif; aucune requête diagnostic émise.",
+        )
+    capture_manager.reset_latest_frames()
+    return passive_sensor_snapshot()
+
+
+@router.put("/sensors/passive/override", response_model=PassiveSensorOverride)
+def update_passive_sensor_override(
+    override: PassiveSensorOverride,
+) -> PassiveSensorOverride:
+    return save_override(override)
+
+
+@router.delete("/sensors/passive/override/{key}")
+def reset_passive_sensor_override(key: str) -> dict:
+    return {"key": key, "deleted": delete_override(key)}
 
 
 @router.post("/analyze/{session_id}", response_model=AnalysisReport)
