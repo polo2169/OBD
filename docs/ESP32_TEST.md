@@ -35,6 +35,10 @@ prévu : GPIO 5 vers TXD, et RXD vers GPIO 4 uniquement au travers d'une adaptat
 5 V vers 3,3 V. Alimenter le TJA1050 en 5 V USB régulé, relier les masses, CAN-H à
 OBD 6 et CAN-L à OBD 14. Retirer toute terminaison 120 ohms du module.
 
+Pour conserver ce même brochage avec la liaison Wi-Fi, utiliser
+`esp32-tja1050-wifi-readonly`. Le profil actif correspondant reste volontairement
+séparé : `esp32-tja1050-wifi-active`.
+
 ## 2. Choisir le firmware
 
 Pour le montage Waveshare Wi-Fi retenu :

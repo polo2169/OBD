@@ -206,6 +206,10 @@ captures dans `data/sessions`. La file RAM du firmware absorbe les variations
 courtes ; les compteurs `wifi_dropped_messages` et les numéros `seq` rendent toute
 perte visible. Sans carte SD, une coupure Wi-Fi prolongée ne peut pas être récupérée.
 
+Le module TJA1050 câblé selon le tutoriel ESP32 (`TX=GPIO5`, `RX=GPIO4`) dispose
+des profils Wi-Fi équivalents `esp32-tja1050-wifi-readonly` et
+`esp32-tja1050-wifi-active`. Utiliser le premier pour toute validation initiale.
+
 ### Module MCP2515 + TJA1050
 
 Le MCP2515 est pris en charge avec la bibliothèque maintenue
