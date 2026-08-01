@@ -1,14 +1,16 @@
 import json
+import time
 
 from app.config import settings
 from app.learn.analyzer import analyze_behavior, list_sessions
-from app.learn.capture import capture_manager
+from app.learn.capture import PassiveCaptureManager, capture_manager
 from app.learn.isotp import parse_isotp_frame, uds_service
-from app.learn.models import CaptureStatus, CorrelationOptions, PassiveSensorOverride
+from app.learn.models import CaptureGpsPosition, CaptureStatus, CorrelationOptions, PassiveSensorOverride, ReplayGpsPoint, ReplaySample
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.passive_sensors import passive_sensor_snapshot
-from app.learn.replay import prepare_replay
+from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _filter_fuel_level, prepare_replay, replay_geojson
 from app.learn.sensor_metadata import save_override
+from app.learn.validation import validate_replay
 from app.safety import authorize_uds
 
 
@@ -24,13 +26,27 @@ def test_sensitive_service_stays_blocked():
     assert not authorize_uds(bytes.fromhex("2701"), True).allowed
 
 
+def test_fuel_filter_preserves_raw_float_and_damps_tank_slosh():
+    points = [
+        ReplaySample(t_ms=0, fuel_liters_raw=30),
+        ReplaySample(t_ms=1_000, fuel_liters_raw=40),
+        ReplaySample(t_ms=2_000, fuel_liters_raw=20),
+    ]
+
+    assert _filter_fuel_level(points, time_constant_s=1)
+    assert [point.fuel_liters_raw for point in points] == [30, 40, 20]
+    assert points[0].fuel_liters == 30
+    assert points[1].fuel_liters == 36.32
+    assert 25 < (points[2].fuel_liters or 0) < 36.32
+
+
 def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
     decoder = get_opendbc_decoder()
     source = decoder.source_info()
     assert source.loaded
     assert source.database == "psa_aee2010_r3"
     assert source.message_count == 107
-    assert source.signal_count == 430
+    assert source.signal_count == 432
 
     message, values, error = decoder.decode_frame(
         0x208,
@@ -78,6 +94,7 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
             (0x348, payload(0x348, P152_Gearbx_stGear=index + 1, P025_Com_stESPErr=0, P343_Com_bOBDErr=0, P344_Com_bMILOn=-1 if index >= 3 else 0, P345_Com_bMILBln=0)),
             (0x349, payload(0x349, P030_Gbx_stDrvTrnEgd=2, P009_Com_bGearShftActv=1 if index >= 3 else 0, P283_Com_stGearTrgtPos=min(6, index + 2))),
             (0x34D, payload(0x34D, P147_Com_bESPIntvActv=1 if index >= 3 else 0)),
+            (0x3CD, payload(0x3CD, LATERAL_ACCELERATION=1.25, YAW_RATE=2.3)),
             (0x452, payload(0x452, TURN_SIGNAL_STATUS=turn_signal)),
             (0x612, payload(0x612, ETAT_FEUX_CROIST=1, DEF_FEU_CROISMNT_D=0, DEF_FEU_CROISMNT_G=0, DEF_FEU_ROUTE_D=0, DEF_FEU_ROUTE_G=0)),
             (0x412, payload(0x412, P013_MainBrake=brake, P040_MainBrakeFault=0, P012_Com_bFlMin=1 if index >= 3 else 0, P086_Com_stFlLvlDia=0)),
@@ -99,6 +116,15 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
                 "direction": "rx",
             })
 
+    frames.append({
+        "type": "can_frame",
+        "timestamp_us": 1_500_000,
+        "arbitration_id": 0x652,
+        "extended": False,
+        "data_hex": "0762F19056463300",
+        "direction": "rx",
+        "bus": "diagnostic",
+    })
     path = tmp_path / f"{session_id}.jsonl"
     path.write_text("\n".join(json.dumps(frame) for frame in frames) + "\n", encoding="utf-8")
 
@@ -106,13 +132,13 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
 
     assert replay.name == "Replay de test"
     assert replay.duration_ms == 400
-    assert replay.frame_count == 80
+    assert replay.frame_count == 85
     assert replay.max_speed_kph == 36
     assert replay.distance_km > 0
     assert not replay.gps_available
-    assert replay.route_method == "dead_reckoning_speed_steering"
-    # Sur la 308, un angle DBC positif correspond au virage visuel gauche :
-    # la reconstruction doit donc partir vers les x négatifs.
+    assert replay.route_method == "dead_reckoning_speed_yaw"
+    # Le lacet ESP positif correspond à un virage à gauche : le cap de carte
+    # décroît et la reconstruction doit partir vers les x négatifs.
     assert replay.points[-1].x_m < 0
     assert replay.points[-1].low_beam is True
     assert replay.points[-1].turn_signal == "right"
@@ -129,11 +155,142 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
     assert replay.points[-1].current_gear == 4
     assert replay.points[-1].target_gear == 5
     assert replay.points[-1].gear_shift_active is True
+    assert replay.points[-1].lateral_accel_ms2 == 1.25
+    assert replay.points[-1].yaw_rate_deg_s == 2.3
     assert any(event.kind == "turn_signal" for event in replay.events)
     assert any(event.kind == "brake" for event in replay.events)
     assert any(event.kind == "gear" for event in replay.events)
     assert (tmp_path / f"{session_id}.replay.json").exists()
     assert prepare_replay(session_id).points == replay.points
+    validation = validate_replay(session_id)
+    validations = {item.key: item for item in validation.signals}
+    assert validations["steering_angle_deg"].status == "validated"
+    assert validations["lateral_accel_ms2"].status == "validated"
+    assert validations["yaw_rate_deg_s"].status == "validated"
+    assert validations["oil_temperature_c"].status == "plausible"
+    assert validations["oil_pressure_switch"].status == "validated"
+    assert validations["oil_pressure_bar"].status == "unavailable"
+    assert (tmp_path / f"{session_id}.validation.json").exists()
+
+
+def test_gps_positions_are_saved_and_drive_replay_route(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    session_id = "learn-20260801T160000Z-gps"
+    manager = PassiveCaptureManager()
+    manager._active = True
+    manager._session_id = session_id
+    manager._path = tmp_path / f"{session_id}.jsonl"
+    manager._started_at_us = time.time_ns() // 1000
+    manager._open_writer()
+    manager._write({
+        "type": "meta",
+        "timestamp_us": manager._started_at_us,
+        "session_id": session_id,
+        "name": "Trajet GPS test",
+        "source": "fixture",
+    })
+
+    start_us = manager._started_at_us
+    coordinates = [
+        (48.856600, 2.352200),
+        (48.856750, 2.352450),
+        (48.856950, 2.352800),
+    ]
+    for index, (latitude, longitude) in enumerate(coordinates):
+        manager.gps_position(CaptureGpsPosition(
+            session_id=session_id,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_m=4.5,
+            altitude_m=38.0 + index,
+            heading_deg=45.0,
+            speed_m_s=8.0,
+            source_timestamp_us=start_us + index * 1_000_000,
+        ))
+        manager._write({
+            "type": "can_frame",
+            "timestamp_us": start_us + index * 1_000_000,
+            "arbitration_id": 0x123,
+            "extended": False,
+            "data_hex": "0000000000000000",
+            "direction": "rx",
+            "bus": "live",
+        })
+    manager._close_writer()
+
+    replay = prepare_replay(session_id)
+    assert replay.gps_available
+    assert replay.gps_point_count == 3
+    assert replay.route_method == "browser_gps"
+    assert replay.distance_km > 0
+    assert replay.points[0].latitude == coordinates[0][0]
+    assert replay.points[-1].longitude == coordinates[-1][1]
+    assert replay.points[-1].gps_accuracy_m == 4.5
+    assert replay.points[-1].gps_speed_kph == 28.8
+    assert replay.points[-1].x_m > 0
+    assert replay.points[-1].y_m > 0
+
+    geojson = replay_geojson(session_id)
+    feature = geojson["features"][0]
+    assert feature["geometry"]["type"] == "LineString"
+    assert feature["geometry"]["coordinates"][0] == [2.3522, 48.8566]
+    assert feature["properties"]["accuracy_m"] == [4.5, 4.5, 4.5]
+
+
+def test_sparse_gps_is_fused_with_can_route_to_preserve_turns():
+    points = [
+        ReplaySample(t_ms=0, x_m=0, y_m=0),
+        ReplaySample(t_ms=500, x_m=5, y_m=5),
+        ReplaySample(t_ms=1000, x_m=10, y_m=0),
+    ]
+    fixes = [
+        ReplayGpsPoint(
+            t_ms=0,
+            timestamp_us=1_000_000,
+            latitude=48.8566,
+            longitude=2.3522,
+            accuracy_m=5,
+        ),
+        ReplayGpsPoint(
+            t_ms=1000,
+            timestamp_us=2_000_000,
+            latitude=48.8566,
+            longitude=2.352337,
+            accuracy_m=5,
+        ),
+    ]
+
+    method, distance_m, _, used_fix_count = _apply_gps_route(points, fixes)
+
+    assert method == "gps_can_fusion"
+    assert used_fix_count == 2
+    assert distance_m > 10
+    assert points[0].latitude == fixes[0].latitude
+    assert abs(points[-1].longitude - fixes[-1].longitude) < 0.000001
+    # The middle CAN point bends north instead of becoming a straight GPS chord.
+    assert points[1].latitude > fixes[0].latitude
+
+
+def test_driver_confirmed_road_uses_can_distance_for_timing():
+    points = [
+        ReplaySample(t_ms=0, distance_m=0),
+        ReplaySample(t_ms=500, distance_m=50),
+        ReplaySample(t_ms=1000, distance_m=100),
+    ]
+    road = [
+        (1.4000, 43.5000),
+        (1.4005, 43.5000),
+        (1.4005, 43.5005),
+    ]
+
+    distance_m, bounds = _apply_confirmed_road_route(points, road, [0, 50, 100])
+
+    assert distance_m > 70
+    assert points[0].longitude == road[0][0]
+    assert points[-1].latitude == road[-1][1]
+    assert points[1].distance_m == round(distance_m / 2, 1)
+    assert points[1].longitude == road[1][0]
+    assert bounds["max_x"] > 0
 
 
 def test_passive_sensor_snapshot_prefers_valid_steering_angle(tmp_path, monkeypatch):
@@ -252,6 +409,10 @@ def test_post_processing_finds_repeated_bit_correlation(tmp_path, monkeypatch):
             events.append(frame(marker_time + offset, 0x123, 0x04))
             events.append(frame(marker_time + offset, 0x456, 0x55))
 
+    diagnostic_event = frame(7_500_000, 0x652, 0x62)
+    diagnostic_event["bus"] = "diagnostic"
+    events.append(diagnostic_event)
+
     path = tmp_path / f"{session_id}.jsonl"
     path.write_text(
         "\n".join(json.dumps(event) for event in sorted(events, key=lambda e: e["timestamp_us"])) + "\n",
@@ -283,7 +444,9 @@ def test_post_processing_finds_repeated_bit_correlation(tmp_path, monkeypatch):
 
     sessions = list_sessions()
     assert sessions[0].name == "Essai frein"
-    assert sessions[0].frame_count == 32
+    assert sessions[0].frame_count == 33
+    assert sessions[0].live_frame_count == 32
+    assert sessions[0].diagnostic_frame_count == 1
     assert sessions[0].marker_count == 2
 
 

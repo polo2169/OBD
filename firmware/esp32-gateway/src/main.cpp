@@ -10,10 +10,12 @@
 #include <freertos/task.h>
 #endif
 
-#if USE_MCP2515
+#if USE_MCP2515 || DUAL_CAN
 #include <SPI.h>
 #include <mcp2515.h>
-#else
+#endif
+
+#if !USE_MCP2515 || DUAL_CAN
 #include <driver/twai.h>
 #endif
 
@@ -29,6 +31,46 @@ static uint32_t frame_sequence = 0;
 static uint32_t last_alerts = 0;
 static uint32_t last_stats_ms = 0;
 static bool can_ready = false;
+static bool live_can_ready = false;
+static bool diagnostic_can_ready = false;
+
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+static HardwareSerial interboard_uart(2);
+static char interboard_rx_line[1536]{};
+static size_t interboard_rx_length = 0;
+static bool interboard_rx_discard = false;
+static uint32_t interboard_overflow_count = 0;
+#endif
+
+#if UART_DUAL_CAN_MASTER
+static bool satellite_connected = false;
+static bool satellite_diagnostic_read_only = false;
+static bool satellite_psa_lab = false;
+static uint32_t satellite_last_message_ms = 0;
+static uint32_t satellite_last_request_ms = 0;
+static uint32_t satellite_rx_count = 0;
+static uint32_t satellite_tx_count = 0;
+static uint32_t satellite_dropped_count = 0;
+static char satellite_tx_policy[48] = "unavailable";
+#endif
+
+#if USE_MCP2515 || DUAL_CAN
+// 0 not started, 1 reset, 2 bitrate, 3 operating mode, 4 ready.
+static uint8_t mcp2515_init_stage = 0;
+static int8_t mcp2515_init_error = 0;
+#endif
+
+#if DUAL_CAN
+static uint32_t live_rx_count = 0;
+static uint32_t diagnostic_rx_count = 0;
+static uint32_t live_dropped_count = 0;
+static uint32_t diagnostic_dropped_count = 0;
+static uint32_t live_filtered_count = 0;
+static uint32_t diagnostic_tx_count = 0;
+static uint32_t diagnostic_tx_failed_count = 0;
+static uint32_t live_last_alerts = 0;
+static uint8_t diagnostic_last_error_flags = 0;
+#endif
 
 #if PSA_LAB
 static bool psa_deadman_armed = false;
@@ -41,14 +83,33 @@ constexpr uint8_t PSA_DEADMAN_MAX_ATTEMPTS = 30;
 #endif
 
 namespace {
-constexpr size_t OUTPUT_PACKET_MAX_BYTES = 512;
+// Dual-CAN hello/stats packets include per-bus health and SPI wiring metadata.
+// Leave enough room for the complete JSON object so the backend can diagnose a
+// failed MCP2515 instead of receiving HELLO_OVERFLOW/JSON_OVERFLOW.
+constexpr size_t OUTPUT_PACKET_MAX_BYTES = 1536;
+
+enum class CanChannel : uint8_t {
+  Live = 0,
+  Diagnostic = 1,
+};
+
+static const char *channel_name(CanChannel channel) {
+  return channel == CanChannel::Diagnostic ? "diagnostic" : "live";
+}
+
+static constexpr CanChannel native_can_channel() {
+  return cfg::NATIVE_CAN_IS_DIAGNOSTIC
+      ? CanChannel::Diagnostic
+      : CanChannel::Live;
+}
 
 #if DIAGNOSTIC_READ_ONLY || PSA_LAB
 // Peugeot 308 T9 diagnostic request identifiers documented in the selected
 // vehicle profile. No broadcast, extended or arbitrary CAN identifiers.
 constexpr uint16_t DIAGNOSTIC_REQUEST_IDS[] = {
-    0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x744, 0x74A,
-    0x752, 0x75D, 0x75F, 0x764, 0x76D, 0x7B0, 0x7E0,
+    0x6A8, 0x6A9, 0x6AA, 0x6AD, 0x6AF, 0x6B5, 0x6B6,
+    0x730, 0x744, 0x74A, 0x752, 0x75D, 0x75F, 0x764,
+    0x76D, 0x796, 0x7B0, 0x7E0,
 };
 
 static bool diagnostic_request_id_allowed(uint32_t id) {
@@ -188,7 +249,7 @@ static volatile uint32_t wifi_command_overflows = 0;
 static char wifi_ip[16] = "0.0.0.0";
 #endif
 
-#if USE_MCP2515
+#if USE_MCP2515 || DUAL_CAN
 static MCP2515 mcp2515(cfg::MCP2515_SPI_CS_PIN, cfg::MCP2515_SPI_HZ);
 static uint8_t last_mcp_error_flags = 0;
 #endif
@@ -197,11 +258,20 @@ static uint32_t filter_ids[cfg::MAX_FILTER_IDS];
 static size_t filter_count = 0;
 
 static size_t format_hello(char *output, size_t capacity);
+static void parse_command(const String &line);
+
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+static void poll_interboard_uart();
+static void start_interboard_uart();
+#endif
 
 static void emit_line(const char *line, bool frame = false) {
   if (!frame || cfg::MIRROR_FRAMES_TO_SERIAL) {
     Serial.println(line);
   }
+#if UART_DUAL_CAN_SATELLITE
+  interboard_uart.println(line);
+#endif
 #if WIFI_ENABLED
   if (!wifi_client_connected || wifi_packet_queue == nullptr) return;
   const size_t length = strlen(line);
@@ -245,15 +315,43 @@ static bool id_allowed(uint32_t id) {
 static size_t format_hello(char *output, size_t capacity) {
   JsonDocument doc;
   doc["type"] = "hello";
-  doc["protocol"] = 6;
+  doc["protocol"] = (DUAL_CAN || cfg::UART_MASTER) ? 7 : 6;
   doc["device"] = "opendiag-esp32";
   doc["firmware"] = READ_ONLY
       ? "0.9.0-passive"
       : (DIAGNOSTIC_READ_ONLY
           ? "0.9.0-multibrand-readonly"
           : (PSA_LAB ? "0.9.0-psa-lab-allowlist" : "0.9.0-active"));
-  doc["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
+  doc["driver"] = DUAL_CAN
+      ? "twai+mcp2515"
+      : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
   doc["can_ready"] = can_ready;
+  doc["dual_can"] = (DUAL_CAN != 0) || cfg::UART_MASTER;
+#if UART_DUAL_CAN_MASTER
+  doc["live_can_ready"] = live_can_ready;
+  doc["diagnostic_can_ready"] = diagnostic_can_ready;
+  doc["live_listen_only"] = true;
+  doc["live_bus"] = "obd_6_14";
+  doc["diagnostic_bus"] = "obd_3_8";
+  doc["satellite_connected"] = satellite_connected;
+  doc["readonly"] = false;
+  doc["diagnostic_read_only"] = satellite_diagnostic_read_only;
+  doc["psa_lab"] = satellite_psa_lab;
+  doc["write_services_locked"] = true;
+  doc["tx_policy"] = satellite_tx_policy;
+#elif !DUAL_CAN && !USE_MCP2515
+  doc["bus_role"] = channel_name(native_can_channel());
+  doc["obd_bus"] = cfg::NATIVE_CAN_IS_DIAGNOSTIC ? "obd_3_8" : "obd_6_14";
+  doc["live_can_ready"] = cfg::NATIVE_CAN_IS_DIAGNOSTIC ? false : can_ready;
+  doc["diagnostic_can_ready"] = cfg::NATIVE_CAN_IS_DIAGNOSTIC ? can_ready : false;
+#endif
+#if DUAL_CAN
+  doc["live_can_ready"] = live_can_ready;
+  doc["diagnostic_can_ready"] = diagnostic_can_ready;
+  doc["live_listen_only"] = true;
+  doc["live_bus"] = "obd_6_14";
+  doc["diagnostic_bus"] = "obd_3_8";
+#endif
   doc["readonly"] = READ_ONLY != 0;
   doc["diagnostic_read_only"] = DIAGNOSTIC_READ_ONLY != 0;
   doc["psa_lab"] = PSA_LAB != 0;
@@ -263,19 +361,39 @@ static size_t format_hello(char *output, size_t capacity) {
       : (DIAGNOSTIC_READ_ONLY
           ? "read_only_diagnostics"
           : (PSA_LAB ? "psa_lab_named_actions" : "unrestricted"));
+#if UART_DUAL_CAN_MASTER
+  // The main board is passive on 6/14; the satellite's hardware-enforced
+  // policy is the capability exposed to the PC for diagnostic transmissions.
+  doc["readonly"] = false;
+  doc["diagnostic_read_only"] = satellite_diagnostic_read_only;
+  doc["psa_lab"] = satellite_psa_lab;
+  doc["write_services_locked"] = true;
+  doc["tx_policy"] = satellite_tx_policy;
+#endif
 #if PSA_LAB
   doc["deadman_ms"] = PSA_DEADMAN_MS;
 #endif
   doc["bitrate"] = cfg::CAN_BITRATE;
-#if USE_MCP2515
+#if USE_MCP2515 || DUAL_CAN
   doc["spi_sck_pin"] = cfg::MCP2515_SPI_SCK_PIN;
   doc["spi_miso_pin"] = cfg::MCP2515_SPI_MISO_PIN;
   doc["spi_mosi_pin"] = cfg::MCP2515_SPI_MOSI_PIN;
   doc["spi_cs_pin"] = cfg::MCP2515_SPI_CS_PIN;
+  doc["spi_int_pin"] = cfg::MCP2515_INTERRUPT_PIN;
+  doc["spi_hz"] = cfg::MCP2515_SPI_HZ;
   doc["oscillator_mhz"] = MCP2515_CLOCK_MHZ;
-#else
+  doc["mcp2515_init_stage"] = mcp2515_init_stage;
+  doc["mcp2515_init_error"] = mcp2515_init_error;
+#endif
+#if !USE_MCP2515 || DUAL_CAN
   doc["tx_pin"] = static_cast<int>(cfg::CAN_TX_PIN);
   doc["rx_pin"] = static_cast<int>(cfg::CAN_RX_PIN);
+#endif
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+  doc["interboard_uart"] = cfg::UART_MASTER ? "master" : "satellite";
+  doc["interboard_rx_pin"] = cfg::INTERBOARD_RX_PIN;
+  doc["interboard_tx_pin"] = cfg::INTERBOARD_TX_PIN;
+  doc["interboard_baud"] = cfg::INTERBOARD_BAUD;
 #endif
   doc["reset_reason"] = static_cast<int>(esp_reset_reason());
 #if WIFI_ENABLED
@@ -318,7 +436,39 @@ static void emit_stats() {
   doc["filtered"] = filtered_count;
   doc["bus_off"] = bus_off_count;
   doc["bus_recovered"] = bus_recovered_count;
-#if USE_MCP2515
+#if DUAL_CAN
+  twai_status_info_t live_status{};
+  const esp_err_t live_status_result = live_can_ready
+      ? twai_get_status_info(&live_status)
+      : ESP_ERR_INVALID_STATE;
+  const uint8_t diagnostic_error_flags = diagnostic_can_ready ? mcp2515.getErrorFlags() : 0;
+  doc["live_rx"] = live_rx_count;
+  doc["diagnostic_rx"] = diagnostic_rx_count;
+  doc["live_filtered"] = live_filtered_count;
+  doc["live_dropped"] = live_dropped_count
+      + live_status.rx_missed_count
+      + live_status.rx_overrun_count;
+  doc["diagnostic_dropped"] = diagnostic_dropped_count;
+  doc["diagnostic_tx"] = diagnostic_tx_count;
+  doc["diagnostic_tx_failed"] = diagnostic_tx_failed_count;
+  doc["tx_failed"] = diagnostic_tx_failed_count;
+  doc["dropped"] = doc["live_dropped"].as<uint32_t>() + diagnostic_dropped_count;
+  doc["state"] = static_cast<int>(live_status.state);
+  doc["rx_queue"] = live_status.msgs_to_rx;
+  doc["tx_queue"] = 0;
+  doc["rx_error_counter"] = live_status.rx_error_counter;
+  doc["tx_error_counter"] = live_status.tx_error_counter;
+  doc["bus_error_count"] = live_status.bus_error_count;
+  doc["arb_lost_count"] = live_status.arb_lost_count;
+  doc["last_alerts"] = live_last_alerts;
+  doc["mcp2515_error_flags"] = diagnostic_error_flags;
+  doc["diagnostic_rx_error_counter"] = diagnostic_can_ready ? mcp2515.errorCountRX() : 0;
+  doc["diagnostic_tx_error_counter"] = diagnostic_can_ready ? mcp2515.errorCountTX() : 0;
+  doc["live_status_result"] = static_cast<int>(live_status_result);
+  doc["diagnostic_status_result"] = diagnostic_can_ready ? 0 : -1;
+  doc["mcp2515_init_stage"] = mcp2515_init_stage;
+  doc["mcp2515_init_error"] = mcp2515_init_error;
+#elif USE_MCP2515
   const uint8_t error_flags = can_ready ? mcp2515.getErrorFlags() : 0;
   const uint8_t rx_error_counter = can_ready ? mcp2515.errorCountRX() : 0;
   const uint8_t tx_error_counter = can_ready ? mcp2515.errorCountTX() : 0;
@@ -353,6 +503,17 @@ static void emit_stats() {
 #endif
   doc["free_heap"] = ESP.getFreeHeap();
   doc["uptime_ms"] = millis();
+#if UART_DUAL_CAN_MASTER
+  doc["live_rx"] = rx_count;
+  doc["diagnostic_rx"] = satellite_rx_count;
+  doc["diagnostic_tx"] = satellite_tx_count;
+  doc["diagnostic_dropped"] = satellite_dropped_count;
+  doc["diagnostic_can_ready"] = diagnostic_can_ready;
+  doc["satellite_connected"] = satellite_connected;
+  doc["interboard_overflow"] = interboard_overflow_count;
+#elif UART_DUAL_CAN_SATELLITE
+  doc["interboard_overflow"] = interboard_overflow_count;
+#endif
 #if WIFI_ENABLED
   doc["wifi_ready"] = wifi_ready;
   doc["wifi_client"] = wifi_client_connected;
@@ -367,10 +528,32 @@ static void emit_stats() {
   emit_json(doc);
 }
 
-static void emit_can_status(const char *reason, uint32_t alerts) {
-#if USE_MCP2515
+static void emit_can_status(CanChannel channel, const char *reason, uint32_t alerts) {
+#if DUAL_CAN
   JsonDocument doc;
   doc["type"] = "can_status";
+  doc["bus"] = channel_name(channel);
+  doc["reason"] = reason;
+  doc["alerts"] = alerts;
+  if (channel == CanChannel::Diagnostic) {
+    doc["driver"] = "mcp2515";
+    doc["state"] = (alerts & MCP2515::EFLG_TXBO) ? 3 : 1;
+    doc["rx_error_counter"] = mcp2515.errorCountRX();
+    doc["tx_error_counter"] = mcp2515.errorCountTX();
+  } else {
+    twai_status_info_t status{};
+    twai_get_status_info(&status);
+    doc["driver"] = "twai";
+    doc["state"] = static_cast<int>(status.state);
+    doc["rx_queue"] = status.msgs_to_rx;
+    doc["tx_queue"] = status.msgs_to_tx;
+    doc["rx_error_counter"] = status.rx_error_counter;
+    doc["tx_error_counter"] = status.tx_error_counter;
+  }
+#elif USE_MCP2515
+  JsonDocument doc;
+  doc["type"] = "can_status";
+  doc["bus"] = channel_name(channel);
   doc["driver"] = "mcp2515";
   doc["reason"] = reason;
   doc["alerts"] = alerts;
@@ -382,6 +565,8 @@ static void emit_can_status(const char *reason, uint32_t alerts) {
   twai_get_status_info(&status);
   JsonDocument doc;
   doc["type"] = "can_status";
+  doc["bus"] = channel_name(channel);
+  doc["driver"] = "twai";
   doc["reason"] = reason;
   doc["alerts"] = alerts;
   doc["state"] = static_cast<int>(status.state);
@@ -394,6 +579,7 @@ static void emit_can_status(const char *reason, uint32_t alerts) {
 }
 
 static void emit_frame(
+    CanChannel channel,
     uint32_t identifier,
     bool extended,
     uint8_t data_length,
@@ -408,9 +594,13 @@ static void emit_frame(
     }
   }
   // Protocol v6 uses a compact, hexadecimal transport line for CAN frames:
-  // F,timestamp,sequence,id,flags,data. The PC expands it back to JSONL.
+  // F,timestamp,sequence,id,flags,data. Protocol v7 reserves flag 0x40 for
+  // the diagnostic MCP2515 channel; older parsers still accept live frames.
   const uint8_t flags = static_cast<uint8_t>(
-      (data_length << 2) | (extended ? 0x01 : 0x00) | (remote ? 0x02 : 0x00));
+      (data_length << 2)
+      | (extended ? 0x01 : 0x00)
+      | (remote ? 0x02 : 0x00)
+      | (channel == CanChannel::Diagnostic ? 0x40 : 0x00));
   char output[96];
   const int length = snprintf(
       output,
@@ -502,7 +692,7 @@ static void psa_lab_update_deadman_after_host_tx(
 }
 
 static bool psa_lab_transmit_deadman_stop() {
-#if USE_MCP2515
+#if USE_MCP2515 || DUAL_CAN
   struct can_frame frame{};
   frame.can_id = 0x764;
   frame.can_dlc = psa_deadman_stop_length;
@@ -518,14 +708,21 @@ static bool psa_lab_transmit_deadman_stop() {
 #endif
   if (!sent) {
     ++tx_failed_count;
+#if DUAL_CAN
+    ++diagnostic_tx_failed_count;
+#endif
     return false;
   }
   ++tx_count;
+#if DUAL_CAN
+  ++diagnostic_tx_count;
+#endif
   JsonDocument ack;
   ack["type"] = "ack";
   ack["command"] = "psa_deadman_stop";
   ack["id"] = 0x764;
   ack["attempt"] = psa_deadman_attempts + 1;
+  ack["bus"] = "diagnostic";
   ack["ts_us"] = esp_timer_get_time();
   emit_json(ack);
   return true;
@@ -553,10 +750,31 @@ static void transmit_can(JsonDocument &doc) {
 #if READ_ONLY
   emit_error("READ_ONLY", "CAN TX blocked by firmware build");
 #else
+  const char *requested_bus = doc["bus"]
+      | ((DUAL_CAN || cfg::NATIVE_CAN_IS_DIAGNOSTIC) ? "diagnostic" : "default");
+#if DUAL_CAN
+  if (strcmp(requested_bus, "diagnostic") != 0) {
+    ++tx_policy_blocked_count;
+    emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 is permanently receive-only in dual-CAN mode");
+    return;
+  }
+  if (!diagnostic_can_ready) {
+    emit_error("DIAGNOSTIC_CAN_NOT_READY", "MCP2515 diagnostic controller is not initialized");
+    return;
+  }
+#else
+  if (cfg::NATIVE_CAN_IS_DIAGNOSTIC
+      && strcmp(requested_bus, "default") != 0
+      && strcmp(requested_bus, "diagnostic") != 0) {
+    ++tx_policy_blocked_count;
+    emit_error("LIVE_BUS_TX_LOCKED", "This ESP32 is dedicated to OBD 3/8 diagnostics");
+    return;
+  }
   if (!can_ready) {
     emit_error("CAN_NOT_READY", "CAN controller is not initialized");
     return;
   }
+#endif
   if (!doc["id"].is<uint32_t>()) {
     emit_error("INVALID_ID", "Missing or invalid CAN identifier");
     return;
@@ -591,7 +809,7 @@ static void transmit_can(JsonDocument &doc) {
   }
 #endif
 
-#if USE_MCP2515
+#if USE_MCP2515 || DUAL_CAN
   struct can_frame frame{};
   frame.can_id = id | (extended ? CAN_EFF_FLAG : 0);
   frame.can_dlc = static_cast<uint8_t>(length);
@@ -599,12 +817,16 @@ static void transmit_can(JsonDocument &doc) {
   const MCP2515::ERROR result = mcp2515.sendMessage(&frame);
   if (result != MCP2515::ERROR_OK) {
     ++tx_failed_count;
+#if DUAL_CAN
+    ++diagnostic_tx_failed_count;
+#endif
     JsonDocument error;
     error["type"] = "error";
     error["code"] = "TX_FAILED";
     error["message"] = "MCP2515 transmit failed";
     error["driver_error"] = static_cast<int>(result);
     error["id"] = id;
+    error["bus"] = DUAL_CAN ? "diagnostic" : requested_bus;
     emit_json(error);
     return;
   }
@@ -628,6 +850,9 @@ static void transmit_can(JsonDocument &doc) {
   }
 #endif
   ++tx_count;
+#if DUAL_CAN
+  ++diagnostic_tx_count;
+#endif
 
 #if PSA_LAB
   psa_lab_update_deadman_after_host_tx(id, payload, length);
@@ -637,6 +862,9 @@ static void transmit_can(JsonDocument &doc) {
   ack["type"] = "ack";
   ack["command"] = "can_tx";
   ack["id"] = id;
+  ack["bus"] = (DUAL_CAN || cfg::NATIVE_CAN_IS_DIAGNOSTIC)
+      ? "diagnostic"
+      : requested_bus;
   ack["ts_us"] = esp_timer_get_time();
   ack["tx_count"] = tx_count;
   emit_json(ack);
@@ -666,6 +894,10 @@ static void parse_command(const String &line) {
   }
 
   if (strcmp(type, "get_status") == 0) {
+#if UART_DUAL_CAN_MASTER
+    interboard_uart.println("{\"type\":\"get_status\"}");
+    satellite_last_request_ms = millis();
+#endif
     emit_hello();
     emit_stats();
     return;
@@ -673,6 +905,9 @@ static void parse_command(const String &line) {
 
   if (strcmp(type, "clear_filter") == 0) {
     filter_count = 0;
+#if UART_DUAL_CAN_MASTER
+    interboard_uart.println(line);
+#endif
     emit_line("{\"type\":\"ack\",\"command\":\"clear_filter\"}");
     return;
   }
@@ -692,6 +927,9 @@ static void parse_command(const String &line) {
       }
       filter_ids[filter_count++] = id.as<uint32_t>();
     }
+#if UART_DUAL_CAN_MASTER
+    interboard_uart.println(line);
+#endif
     JsonDocument ack;
     ack["type"] = "ack";
     ack["command"] = "set_filter";
@@ -701,12 +939,111 @@ static void parse_command(const String &line) {
   }
 
   if (strcmp(type, "can_tx") == 0) {
+#if UART_DUAL_CAN_MASTER
+    const char *requested_bus = doc["bus"] | "diagnostic";
+    if (strcmp(requested_bus, "diagnostic") != 0) {
+      ++tx_policy_blocked_count;
+      emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 is permanently receive-only");
+      return;
+    }
+    if (!satellite_connected || !diagnostic_can_ready) {
+      emit_error("DIAGNOSTIC_CAN_NOT_READY", "The UART diagnostic ESP32 is unavailable");
+      return;
+    }
+    interboard_uart.println(line);
+    return;
+#else
     transmit_can(doc);
     return;
+#endif
   }
 
   emit_error("UNKNOWN_COMMAND", "Unsupported command type");
 }
+
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+static void handle_interboard_line(const char *line) {
+#if UART_DUAL_CAN_SATELLITE
+  parse_command(String(line));
+#else
+  satellite_last_message_ms = millis();
+  if (strncmp(line, "F,", 2) == 0) {
+    emit_line(line, true);
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, line)) {
+    ++interboard_overflow_count;
+    return;
+  }
+  const char *type = doc["type"] | "";
+  if (strcmp(type, "hello") == 0) {
+    const char *role = doc["bus_role"] | "";
+    // Ignore an unexpected/echoed hello instead of momentarily disabling a
+    // healthy satellite. Actual link loss is handled by the heartbeat timeout.
+    if (strcmp(role, "diagnostic") != 0) {
+      ++interboard_overflow_count;
+      return;
+    }
+    const bool was_connected = satellite_connected;
+    satellite_connected = true;
+    diagnostic_can_ready = satellite_connected && (doc["can_ready"] | false);
+    satellite_diagnostic_read_only = doc["diagnostic_read_only"] | false;
+    satellite_psa_lab = doc["psa_lab"] | false;
+    const char *policy = doc["tx_policy"] | "unavailable";
+    strlcpy(satellite_tx_policy, policy, sizeof(satellite_tx_policy));
+    if (satellite_connected != was_connected) emit_hello();
+    return;
+  }
+  if (strcmp(type, "stats") == 0) {
+    satellite_rx_count = doc["rx"] | satellite_rx_count;
+    satellite_tx_count = doc["tx"] | satellite_tx_count;
+    satellite_dropped_count = doc["dropped"] | satellite_dropped_count;
+    return;
+  }
+  if (strcmp(type, "status") == 0 || strcmp(type, "pong") == 0) return;
+  emit_line(line);
+#endif
+}
+
+static void poll_interboard_uart() {
+  size_t processed = 0;
+  while (interboard_uart.available() > 0 && processed < 8192) {
+    ++processed;
+    const int value = interboard_uart.read();
+    if (value < 0) break;
+    const char character = static_cast<char>(value);
+    if (character == '\n') {
+      if (!interboard_rx_discard && interboard_rx_length > 0) {
+        if (interboard_rx_line[interboard_rx_length - 1] == '\r') --interboard_rx_length;
+        interboard_rx_line[interboard_rx_length] = '\0';
+        if (interboard_rx_length > 0) handle_interboard_line(interboard_rx_line);
+      }
+      interboard_rx_length = 0;
+      interboard_rx_discard = false;
+      continue;
+    }
+    if (interboard_rx_discard) continue;
+    if (interboard_rx_length + 1 >= sizeof(interboard_rx_line)) {
+      interboard_rx_discard = true;
+      ++interboard_overflow_count;
+      continue;
+    }
+    interboard_rx_line[interboard_rx_length++] = character;
+  }
+}
+
+static void start_interboard_uart() {
+  interboard_uart.setRxBufferSize(8192);
+  interboard_uart.begin(
+      cfg::INTERBOARD_BAUD,
+      SERIAL_8N1,
+      cfg::INTERBOARD_RX_PIN,
+      cfg::INTERBOARD_TX_PIN);
+  interboard_uart.setTimeout(5);
+}
+#endif
 
 #if WIFI_ENABLED
 static void wifi_disconnect_client(WiFiClient &client) {
@@ -841,14 +1178,20 @@ static void poll_wifi_commands() {
 }
 #endif
 
-static bool start_can() {
-#if USE_MCP2515
+static bool start_mcp2515() {
+#if USE_MCP2515 || DUAL_CAN
+  mcp2515_init_stage = 0;
+  mcp2515_init_error = 0;
   SPI.begin(
       cfg::MCP2515_SPI_SCK_PIN,
       cfg::MCP2515_SPI_MISO_PIN,
       cfg::MCP2515_SPI_MOSI_PIN,
       cfg::MCP2515_SPI_CS_PIN);
-  if (mcp2515.reset() != MCP2515::ERROR_OK) return false;
+  pinMode(cfg::MCP2515_INTERRUPT_PIN, INPUT_PULLUP);
+  mcp2515_init_stage = 1;
+  MCP2515::ERROR result = mcp2515.reset();
+  mcp2515_init_error = static_cast<int8_t>(result);
+  if (result != MCP2515::ERROR_OK) return false;
 
 #if MCP2515_CLOCK_MHZ == 8
   constexpr CAN_CLOCK clock = MCP_8MHZ;
@@ -858,18 +1201,32 @@ static bool start_can() {
 #error "MCP2515_CLOCK_MHZ must be 8 or 16"
 #endif
 
-  if (mcp2515.setBitrate(CAN_500KBPS, clock) != MCP2515::ERROR_OK) return false;
-  const MCP2515::ERROR mode_result = READ_ONLY
+  mcp2515_init_stage = 2;
+  result = mcp2515.setBitrate(CAN_500KBPS, clock);
+  mcp2515_init_error = static_cast<int8_t>(result);
+  if (result != MCP2515::ERROR_OK) return false;
+  mcp2515_init_stage = 3;
+  result = READ_ONLY
       ? mcp2515.setListenOnlyMode()
       : mcp2515.setNormalMode();
-  return mode_result == MCP2515::ERROR_OK;
+  mcp2515_init_error = static_cast<int8_t>(result);
+  if (result != MCP2515::ERROR_OK) return false;
+  mcp2515_init_stage = 4;
+  return true;
 #else
+  return false;
+#endif
+}
+
+static bool start_twai(bool force_listen_only = false) {
+#if !USE_MCP2515 || DUAL_CAN
+  const bool listen_only = force_listen_only || (READ_ONLY != 0);
   twai_general_config_t general = TWAI_GENERAL_CONFIG_DEFAULT(
       cfg::CAN_TX_PIN,
       cfg::CAN_RX_PIN,
-      READ_ONLY ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
+      listen_only ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
   general.rx_queue_len = 256;
-  general.tx_queue_len = READ_ONLY ? 0 : 16;
+  general.tx_queue_len = listen_only ? 0 : 16;
   const twai_timing_config_t timing = TWAI_TIMING_CONFIG_500KBITS();
   const twai_filter_config_t filter = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
@@ -887,13 +1244,55 @@ static bool start_can() {
       TWAI_ALERT_ABOVE_ERR_WARN,
       nullptr);
   return true;
+#else
+  (void)force_listen_only;
+  return false;
+#endif
+}
+
+static bool start_can() {
+#if DUAL_CAN
+  // OBD 6/14 never transmits in this build. All approved diagnostic requests
+  // are routed exclusively through the MCP2515 on OBD 3/8.
+  live_can_ready = start_twai(true);
+  diagnostic_can_ready = start_mcp2515();
+  can_ready = live_can_ready;
+  return can_ready;
+#elif USE_MCP2515
+  diagnostic_can_ready = start_mcp2515();
+  can_ready = diagnostic_can_ready;
+  return can_ready;
+#else
+  // In the UART dual-CAN architecture the main ESP32 must never transmit on
+  // the live vehicle network, even though diagnostics are enabled globally.
+  live_can_ready = start_twai(cfg::UART_MASTER);
+  can_ready = live_can_ready;
+  return can_ready;
 #endif
 }
 
 void setup() {
+  Serial.setTxBufferSize(cfg::SERIAL_TX_BUFFER_BYTES);
   Serial.begin(cfg::SERIAL_BAUD);
+  Serial.setTimeout(25);
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+  start_interboard_uart();
+#endif
   delay(500);
   can_ready = start_can();
+#if UART_DUAL_CAN_MASTER
+  const uint32_t satellite_deadline = millis() + 2000;
+  while (!satellite_connected
+      && static_cast<int32_t>(millis() - satellite_deadline) < 0) {
+    const uint32_t now = millis();
+    if (now - satellite_last_request_ms >= 200) {
+      interboard_uart.println("{\"type\":\"get_status\"}");
+      satellite_last_request_ms = now;
+    }
+    poll_interboard_uart();
+    delay(1);
+  }
+#endif
 #if WIFI_ENABLED
   start_wifi();
 #endif
@@ -902,7 +1301,7 @@ void setup() {
   if (!can_ready) {
     JsonDocument fatal;
     fatal["type"] = "fatal";
-    fatal["code"] = USE_MCP2515 ? "MCP2515_INIT_FAILED" : "TWAI_INIT_FAILED";
+    fatal["code"] = (USE_MCP2515 && !DUAL_CAN) ? "MCP2515_INIT_FAILED" : "TWAI_INIT_FAILED";
     emit_json(fatal);
   } else {
     JsonDocument status;
@@ -912,10 +1311,166 @@ void setup() {
         : (DIAGNOSTIC_READ_ONLY
             ? "read_only_diagnostics"
             : (PSA_LAB ? "psa_lab_named_actions" : "active"));
-    status["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
+    status["driver"] = DUAL_CAN
+        ? "twai+mcp2515"
+        : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
     status["bitrate"] = cfg::CAN_BITRATE;
+#if DUAL_CAN
+    status["live_bus"] = "listen_only";
+    status["diagnostic_bus"] = diagnostic_can_ready ? "read_only_diagnostics" : "unavailable";
+#elif UART_DUAL_CAN_MASTER
+    status["live_bus"] = "listen_only";
+    status["diagnostic_bus"] = diagnostic_can_ready ? "uart_read_only_diagnostics" : "unavailable";
+#endif
     emit_json(status);
   }
+#if DUAL_CAN
+  if (!diagnostic_can_ready) {
+    JsonDocument error;
+    error["type"] = "fatal";
+    error["code"] = "MCP2515_DIAGNOSTIC_INIT_FAILED";
+    error["message"] = "Live OBD 6/14 remains available; diagnostic OBD 3/8 is unavailable";
+    emit_json(error);
+  }
+#elif UART_DUAL_CAN_MASTER
+  if (!diagnostic_can_ready) {
+    emit_error(
+        "UART_DIAGNOSTIC_SATELLITE_UNAVAILABLE",
+        "Live OBD 6/14 remains available; check UART GPIO 16/17 and the second ESP32");
+  }
+#endif
+}
+
+static void drain_mcp2515(CanChannel channel, uint8_t limit) {
+#if USE_MCP2515 || DUAL_CAN
+  if (!diagnostic_can_ready) return;
+  for (uint8_t drained = 0; drained < limit; ++drained) {
+    struct can_frame frame{};
+    if (mcp2515.readMessage(&frame) != MCP2515::ERROR_OK) break;
+
+    const bool extended = (frame.can_id & CAN_EFF_FLAG) != 0;
+    const bool remote = (frame.can_id & CAN_RTR_FLAG) != 0;
+    const uint32_t identifier = frame.can_id & (extended ? CAN_EFF_MASK : CAN_SFF_MASK);
+    const uint8_t data_length = min<uint8_t>(frame.can_dlc, 8);
+    ++rx_count;
+#if DUAL_CAN
+    ++diagnostic_rx_count;
+    // Host filters are intended for the high-volume live bus. Diagnostic
+    // responses must always reach ISO-TP, including during a filtered capture.
+    emit_frame(channel, identifier, extended, data_length, remote, frame.data);
+#else
+    if (id_allowed(identifier)) {
+      emit_frame(channel, identifier, extended, data_length, remote, frame.data);
+    } else {
+      ++filtered_count;
+    }
+#endif
+  }
+#else
+  (void)channel;
+  (void)limit;
+#endif
+}
+
+static void service_mcp2515_errors(CanChannel channel) {
+#if USE_MCP2515 || DUAL_CAN
+  if (!diagnostic_can_ready) return;
+  uint8_t error_flags = mcp2515.getErrorFlags();
+  last_alerts = error_flags;
+#if DUAL_CAN
+  uint8_t &previous_flags = diagnostic_last_error_flags;
+#else
+  uint8_t &previous_flags = last_mcp_error_flags;
+#endif
+  if ((error_flags & MCP2515::EFLG_TXBO) && !(previous_flags & MCP2515::EFLG_TXBO)) {
+    ++bus_off_count;
+    emit_can_status(channel, "bus_off", error_flags);
+  }
+  if (!(error_flags & MCP2515::EFLG_TXBO) && (previous_flags & MCP2515::EFLG_TXBO)) {
+    ++bus_recovered_count;
+    emit_can_status(channel, "bus_recovered", error_flags);
+  }
+  const uint8_t overflow_flags = MCP2515::EFLG_RX0OVR | MCP2515::EFLG_RX1OVR;
+  if (error_flags & overflow_flags) {
+    ++dropped_count;
+#if DUAL_CAN
+    ++diagnostic_dropped_count;
+#endif
+    emit_can_status(channel, "rx_overflow", error_flags);
+    mcp2515.clearRXnOVRFlags();
+    error_flags &= ~overflow_flags;
+  }
+  const uint8_t passive_flags = MCP2515::EFLG_TXEP | MCP2515::EFLG_RXEP;
+  if ((error_flags & passive_flags) && !(previous_flags & passive_flags)) {
+    emit_can_status(channel, "error_passive", error_flags);
+  }
+  const uint8_t warning_flags = MCP2515::EFLG_TXWAR | MCP2515::EFLG_RXWAR | MCP2515::EFLG_EWARN;
+  if ((error_flags & warning_flags) && !(previous_flags & warning_flags)) {
+    emit_can_status(channel, "above_error_warning", error_flags);
+  }
+  previous_flags = error_flags;
+#else
+  (void)channel;
+#endif
+}
+
+static void drain_twai(uint8_t limit) {
+#if !USE_MCP2515 || DUAL_CAN
+  if (!live_can_ready) return;
+  for (uint8_t drained = 0; drained < limit; ++drained) {
+    twai_message_t message{};
+    if (twai_receive(&message, 0) != ESP_OK) break;
+    ++rx_count;
+#if DUAL_CAN
+    ++live_rx_count;
+#endif
+    if (id_allowed(message.identifier)) {
+      emit_frame(
+          native_can_channel(),
+          message.identifier,
+          message.extd,
+          message.data_length_code,
+          message.rtr,
+          message.data);
+    } else {
+      ++filtered_count;
+#if DUAL_CAN
+      ++live_filtered_count;
+#endif
+    }
+  }
+#else
+  (void)limit;
+#endif
+}
+
+static void service_twai_alerts() {
+#if !USE_MCP2515 || DUAL_CAN
+  if (!live_can_ready) return;
+  uint32_t alerts = 0;
+  if (twai_read_alerts(&alerts, 0) == ESP_OK) {
+    last_alerts = alerts;
+#if DUAL_CAN
+    live_last_alerts = alerts;
+#endif
+    if (alerts & TWAI_ALERT_BUS_OFF) ++bus_off_count;
+    if (alerts & TWAI_ALERT_BUS_RECOVERED) ++bus_recovered_count;
+    if (alerts & TWAI_ALERT_RX_QUEUE_FULL) {
+      ++dropped_count;
+#if DUAL_CAN
+      ++live_dropped_count;
+#endif
+    }
+    if (alerts & TWAI_ALERT_BUS_OFF) emit_can_status(native_can_channel(), "bus_off", alerts);
+    if (alerts & TWAI_ALERT_BUS_RECOVERED) emit_can_status(native_can_channel(), "bus_recovered", alerts);
+    if (alerts & TWAI_ALERT_RX_QUEUE_FULL) emit_can_status(native_can_channel(), "rx_queue_full", alerts);
+    if (alerts & TWAI_ALERT_BUS_ERROR) emit_can_status(native_can_channel(), "bus_error", alerts);
+    if (alerts & TWAI_ALERT_ARB_LOST) emit_can_status(native_can_channel(), "arbitration_lost", alerts);
+    if (alerts & TWAI_ALERT_TX_FAILED) emit_can_status(native_can_channel(), "tx_failed", alerts);
+    if (alerts & TWAI_ALERT_ERR_PASS) emit_can_status(native_can_channel(), "error_passive", alerts);
+    if (alerts & TWAI_ALERT_ABOVE_ERR_WARN) emit_can_status(native_can_channel(), "above_error_warning", alerts);
+  }
+#endif
 }
 
 void loop() {
@@ -925,85 +1480,24 @@ void loop() {
 #if WIFI_ENABLED
   poll_wifi_commands();
 #endif
-  if (can_ready) {
-#if USE_MCP2515
-  for (uint8_t drained = 0; drained < 32; ++drained) {
-    struct can_frame frame{};
-    if (mcp2515.readMessage(&frame) != MCP2515::ERROR_OK) break;
-
-    const bool extended = (frame.can_id & CAN_EFF_FLAG) != 0;
-    const bool remote = (frame.can_id & CAN_RTR_FLAG) != 0;
-    const uint32_t identifier = frame.can_id & (extended ? CAN_EFF_MASK : CAN_SFF_MASK);
-    const uint8_t data_length = min<uint8_t>(frame.can_dlc, 8);
-    ++rx_count;
-    if (id_allowed(identifier)) {
-      emit_frame(identifier, extended, data_length, remote, frame.data);
-    } else {
-      ++filtered_count;
-    }
-  }
-
-  uint8_t error_flags = mcp2515.getErrorFlags();
-  last_alerts = error_flags;
-  if ((error_flags & MCP2515::EFLG_TXBO) && !(last_mcp_error_flags & MCP2515::EFLG_TXBO)) {
-    ++bus_off_count;
-    emit_can_status("bus_off", error_flags);
-  }
-  if (!(error_flags & MCP2515::EFLG_TXBO) && (last_mcp_error_flags & MCP2515::EFLG_TXBO)) {
-    ++bus_recovered_count;
-    emit_can_status("bus_recovered", error_flags);
-  }
-  const uint8_t overflow_flags = MCP2515::EFLG_RX0OVR | MCP2515::EFLG_RX1OVR;
-  if (error_flags & overflow_flags) {
-    ++dropped_count;
-    emit_can_status("rx_overflow", error_flags);
-    mcp2515.clearRXnOVRFlags();
-    error_flags &= ~overflow_flags;
-  }
-  const uint8_t passive_flags = MCP2515::EFLG_TXEP | MCP2515::EFLG_RXEP;
-  if ((error_flags & passive_flags) && !(last_mcp_error_flags & passive_flags)) {
-    emit_can_status("error_passive", error_flags);
-  }
-  const uint8_t warning_flags = MCP2515::EFLG_TXWAR | MCP2515::EFLG_RXWAR | MCP2515::EFLG_EWARN;
-  if ((error_flags & warning_flags) && !(last_mcp_error_flags & warning_flags)) {
-    emit_can_status("above_error_warning", error_flags);
-  }
-  last_mcp_error_flags = error_flags;
-#else
-  for (uint8_t drained = 0; drained < 64; ++drained) {
-    twai_message_t message{};
-    const TickType_t wait = drained == 0 ? pdMS_TO_TICKS(2) : 0;
-    if (twai_receive(&message, wait) != ESP_OK) break;
-    ++rx_count;
-    if (id_allowed(message.identifier)) {
-      emit_frame(
-          message.identifier,
-          message.extd,
-          message.data_length_code,
-          message.rtr,
-          message.data);
-    } else {
-      ++filtered_count;
-    }
-  }
-
-  uint32_t alerts = 0;
-  if (twai_read_alerts(&alerts, 0) == ESP_OK) {
-    last_alerts = alerts;
-    if (alerts & TWAI_ALERT_BUS_OFF) ++bus_off_count;
-    if (alerts & TWAI_ALERT_BUS_RECOVERED) ++bus_recovered_count;
-    if (alerts & TWAI_ALERT_RX_QUEUE_FULL) ++dropped_count;
-    if (alerts & TWAI_ALERT_BUS_OFF) emit_can_status("bus_off", alerts);
-    if (alerts & TWAI_ALERT_BUS_RECOVERED) emit_can_status("bus_recovered", alerts);
-    if (alerts & TWAI_ALERT_RX_QUEUE_FULL) emit_can_status("rx_queue_full", alerts);
-    if (alerts & TWAI_ALERT_BUS_ERROR) emit_can_status("bus_error", alerts);
-    if (alerts & TWAI_ALERT_ARB_LOST) emit_can_status("arbitration_lost", alerts);
-    if (alerts & TWAI_ALERT_TX_FAILED) emit_can_status("tx_failed", alerts);
-    if (alerts & TWAI_ALERT_ERR_PASS) emit_can_status("error_passive", alerts);
-    if (alerts & TWAI_ALERT_ABOVE_ERR_WARN) emit_can_status("above_error_warning", alerts);
-  }
+#if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
+  poll_interboard_uart();
 #endif
-  }
+
+#if DUAL_CAN
+  // Drain TWAI first on every pass so adding diagnostics never reduces the
+  // sampling priority of steering, speed, lamps and gearbox frames.
+  drain_twai(64);
+  drain_mcp2515(CanChannel::Diagnostic, 32);
+  service_twai_alerts();
+  service_mcp2515_errors(CanChannel::Diagnostic);
+#elif USE_MCP2515
+  drain_mcp2515(CanChannel::Live, 32);
+  service_mcp2515_errors(CanChannel::Live);
+#else
+  drain_twai(64);
+  service_twai_alerts();
+#endif
 
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');
@@ -1012,6 +1506,21 @@ void loop() {
   }
 
   const uint32_t now = millis();
+#if UART_DUAL_CAN_MASTER
+  if (satellite_connected && now - satellite_last_message_ms > 3000) {
+    satellite_connected = false;
+    diagnostic_can_ready = false;
+    satellite_diagnostic_read_only = false;
+    satellite_psa_lab = false;
+    strlcpy(satellite_tx_policy, "unavailable", sizeof(satellite_tx_policy));
+    emit_error("UART_DIAGNOSTIC_SATELLITE_LOST", "No heartbeat from the diagnostic ESP32");
+    emit_hello();
+  }
+  if (!satellite_connected && now - satellite_last_request_ms >= 500) {
+    interboard_uart.println("{\"type\":\"get_status\"}");
+    satellite_last_request_ms = now;
+  }
+#endif
   if (now - last_stats_ms >= cfg::STATS_INTERVAL_MS) {
     last_stats_ms = now;
     emit_stats();

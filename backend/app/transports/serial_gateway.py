@@ -16,12 +16,14 @@ class Esp32SerialTransport(Transport):
         tx_enabled: bool = False,
         handshake_timeout: float = 3.0,
         safety_profile: TxSafetyProfile = "diagnostic_read_only",
+        require_diagnostic_can: bool = True,
     ) -> None:
         self.port = port
         self.baud = baud
         self.tx_enabled = tx_enabled
         self.handshake_timeout = handshake_timeout
         self.safety_profile = safety_profile
+        self.require_diagnostic_can = require_diagnostic_can
         self.serial: serial.Serial | None = None
         self.hello: dict | None = None
         self.last_stats: dict | None = None
@@ -50,6 +52,7 @@ class Esp32SerialTransport(Transport):
                 continue
             if message.get("type") == "hello":
                 self.hello = message
+                self._stabilize_uart_dual_hello(deadline)
                 break
             self._handle_non_frame_message(message)
 
@@ -72,6 +75,15 @@ class Esp32SerialTransport(Transport):
                 "Flashez esp32-tja1050-serial-diagnostic pour un scan UDS en lecture."
             )
         if self.tx_enabled:
+            if (
+                self.require_diagnostic_can
+                and self.hello.get("dual_can") is True
+                and self.hello.get("diagnostic_can_ready") is not True
+            ):
+                self.close()
+                raise RuntimeError(
+                    "Le bus CAN diagnostic 3/8 n'est pas initialisé sur le MCP2515."
+                )
             psa_lab = self.hello.get("psa_lab") is True
             if self.safety_profile == "psa_lab" and not psa_lab:
                 self.close()
@@ -92,6 +104,25 @@ class Esp32SerialTransport(Transport):
                 )
         self.debug("gateway_ready", hello=self.hello)
         self._write_command({"type": "get_status"})
+
+    def _stabilize_uart_dual_hello(self, handshake_deadline: float) -> None:
+        """Let the UART satellite finish its post-reset hello exchange.
+
+        The main ESP32 can announce the cached satellite state just before a
+        fresh satellite hello arrives. Sending UDS immediately in that narrow
+        window makes the main gateway reject an otherwise safe request.
+        """
+        if not self.hello or self.hello.get("driver") != "twai+uart-twai":
+            return
+        stabilization_deadline = min(handshake_deadline, time.monotonic() + 0.75)
+        while time.monotonic() < stabilization_deadline:
+            message = self._read_json(max(0.01, stabilization_deadline - time.monotonic()))
+            if message is None:
+                continue
+            if message.get("type") == "hello":
+                self.hello = message
+                continue
+            self._handle_non_frame_message(message)
 
     def close(self) -> None:
         if self.serial:
@@ -143,6 +174,8 @@ class Esp32SerialTransport(Transport):
             "ext": frame.extended,
             "data": frame.data.hex().upper(),
         }
+        if frame.bus != "default":
+            payload["bus"] = frame.bus
         self._write_command(payload)
 
     def _read_json(self, timeout: float) -> dict | None:
@@ -187,7 +220,8 @@ class Esp32SerialTransport(Transport):
             "id": int(parts[3], 16),
             "ext": bool(flags & 0x01),
             "rtr": bool(flags & 0x02),
-            "dlc": flags >> 2,
+            "dlc": (flags & 0x3C) >> 2,
+            "bus": "diagnostic" if flags & 0x40 else "live",
             "data": parts[5],
         }
 
@@ -206,6 +240,7 @@ class Esp32SerialTransport(Transport):
             "dlc": message.get("l", inferred_dlc),
             "rtr": bool(message.get("r", False)),
             "data": data_hex,
+            "bus": message.get("b", "live"),
         }
 
     def _decode_frame(self, message: dict) -> CanFrame:
@@ -221,12 +256,25 @@ class Esp32SerialTransport(Transport):
         if arbitration_id < 0 or arbitration_id > (0x1FFFFFFF if extended else 0x7FF):
             raise ValueError("Identifiant CAN hors plage.")
         self._track_sequence(message)
+        announced_dual = bool(self.hello and self.hello.get("dual_can") is True)
+        announced_role = str(self.hello.get("bus_role", "")) if self.hello else ""
+        if announced_dual:
+            bus = str(message.get("bus", "live"))
+        elif announced_role in {"live", "diagnostic"}:
+            bus = announced_role
+        else:
+            # Backward compatibility for firmware protocol <= 6, which had no
+            # standalone bus-role announcement.
+            bus = "default"
+        if bus not in {"default", "live", "diagnostic"}:
+            raise ValueError("Canal CAN annoncé par la passerelle invalide.")
         return CanFrame(
             timestamp_us=int(message.get("ts_us", time.time_ns() // 1000)),
             arbitration_id=arbitration_id,
             extended=extended,
             data=data,
             direction="rx",
+            bus=bus,
         )
 
     def _track_sequence(self, message: dict) -> None:
@@ -258,7 +306,9 @@ class Esp32SerialTransport(Transport):
 
     def _handle_non_frame_message(self, message: dict) -> None:
         message_type = message.get("type")
-        if message_type == "stats":
+        if message_type == "hello":
+            self.hello = message
+        elif message_type == "stats":
             self.last_stats = message
             self.debug("gateway_stats", stats=message)
         elif message_type in {"error", "fatal"}:

@@ -10,7 +10,7 @@ import uuid
 from typing import TextIO
 
 from app.config import settings
-from app.learn.models import CaptureStatus
+from app.learn.models import CaptureGpsPosition, CaptureStatus
 from app.transports.factory import build_transport
 
 
@@ -38,10 +38,17 @@ class PassiveCaptureManager:
         self._path: Path | None = None
         self._source = ""
         self._frame_count = 0
+        self._live_frame_count = 0
+        self._diagnostic_frame_count = 0
         self._marker_count = 0
+        self._gps_point_count = 0
+        self._gps_last_accuracy_m: float | None = None
         self._name = ""
         self._started_at_us: int | None = None
         self._strict_passive: bool | None = None
+        self._dual_can = False
+        self._live_can_ready: bool | None = None
+        self._diagnostic_can_ready: bool | None = None
         self._last_error: str | None = None
         self._write_lock = threading.Lock()
         self._write_handle: TextIO | None = None
@@ -61,10 +68,17 @@ class PassiveCaptureManager:
             self._session_id = f"learn-{stamp}-{uuid.uuid4().hex[:8]}"
             self._path = settings.session_dir / f"{self._session_id}.jsonl"
             self._frame_count = 0
+            self._live_frame_count = 0
+            self._diagnostic_frame_count = 0
             self._marker_count = 0
+            self._gps_point_count = 0
+            self._gps_last_accuracy_m = None
             self._name = name
             self._started_at_us = time.time_ns() // 1000
             self._strict_passive = None
+            self._dual_can = False
+            self._live_can_ready = None
+            self._diagnostic_can_ready = None
             self._last_error = None
             with self._latest_frames_lock:
                 self._latest_frames = {}
@@ -97,6 +111,10 @@ class PassiveCaptureManager:
                 "type": "meta",
                 "timestamp_us": time.time_ns() // 1000,
                 "event": "capture_stopped",
+                "frame_count": self._frame_count,
+                "live_frame_count": self._live_frame_count,
+                "diagnostic_frame_count": self._diagnostic_frame_count,
+                "gps_point_count": self._gps_point_count,
             })
             self._close_writer()
             return self.status()
@@ -114,17 +132,60 @@ class PassiveCaptureManager:
             self._marker_count += 1
             return self.status()
 
+    def gps_position(self, position: CaptureGpsPosition) -> CaptureStatus:
+        """Append one browser/device GPS fix to the active CAN session."""
+        with self._lock:
+            if not self._active:
+                raise RuntimeError("Aucune capture active.")
+            if position.session_id != self._session_id:
+                raise RuntimeError("La position GPS appartient à une autre session.")
+
+            received_at_us = time.time_ns() // 1000
+            source_timestamp_us = position.source_timestamp_us
+            # A browser timestamp is normally Unix time. Fall back to server receipt
+            # when a device clock is clearly unrelated, so CAN/GPS ordering stays sane.
+            timestamp_us = (
+                source_timestamp_us
+                if source_timestamp_us is not None
+                and abs(source_timestamp_us - received_at_us) <= 300_000_000
+                else received_at_us
+            )
+            self._write({
+                "type": "gps_position",
+                "timestamp_us": timestamp_us,
+                "source_timestamp_us": source_timestamp_us,
+                "received_at_us": received_at_us,
+                "source": "browser_geolocation",
+                "latitude": position.latitude,
+                "longitude": position.longitude,
+                "accuracy_m": position.accuracy_m,
+                "altitude_m": position.altitude_m,
+                "altitude_accuracy_m": position.altitude_accuracy_m,
+                "heading_deg": position.heading_deg,
+                "speed_m_s": position.speed_m_s,
+            })
+            self._gps_point_count += 1
+            self._gps_last_accuracy_m = position.accuracy_m
+            return self.status()
+
     def status(self) -> CaptureStatus:
         return CaptureStatus(
             session_id=self._session_id or "",
             active=self._active,
             source=self._source,
             frame_count=self._frame_count,
+            live_frame_count=self._live_frame_count,
+            diagnostic_frame_count=self._diagnostic_frame_count,
             marker_count=self._marker_count,
+            gps_point_count=self._gps_point_count,
+            gps_last_accuracy_m=self._gps_last_accuracy_m,
             path=str(self._path or ""),
             name=self._name,
             started_at_us=self._started_at_us,
             strict_passive=self._strict_passive,
+            dual_can=self._dual_can,
+            live_can_ready=self._live_can_ready,
+            diagnostic_can_ready=self._diagnostic_can_ready,
             error=self._last_error,
         )
 
@@ -139,12 +200,24 @@ class PassiveCaptureManager:
             self._latest_frames = {}
 
     def _capture_loop(self) -> None:
-        transport = build_transport(debug_sink=self._transport_debug)
+        transport = build_transport(
+            debug_sink=self._transport_debug,
+            receive_buses=("default", "live", "diagnostic"),
+            require_diagnostic_can=False,
+        )
         try:
             transport.open()
             hello = getattr(transport, "hello", None)
             if isinstance(hello, dict):
-                self._strict_passive = bool(hello.get("readonly", False))
+                self._dual_can = bool(hello.get("dual_can", False))
+                self._live_can_ready = bool(hello.get("live_can_ready", hello.get("can_ready", False)))
+                self._diagnostic_can_ready = bool(
+                    hello.get("diagnostic_can_ready", hello.get("can_ready", False))
+                )
+                self._strict_passive = bool(
+                    hello.get("readonly", False)
+                    or (self._dual_can and hello.get("live_listen_only") is True)
+                )
             else:
                 self._strict_passive = not settings.can_tx_enabled
             self._write({
@@ -152,6 +225,9 @@ class PassiveCaptureManager:
                 "timestamp_us": time.time_ns() // 1000,
                 "event": "capture_transport_ready",
                 "strict_passive": self._strict_passive,
+                "dual_can": self._dual_can,
+                "live_can_ready": self._live_can_ready,
+                "diagnostic_can_ready": self._diagnostic_can_ready,
             })
             while not self._stop.is_set():
                 frame = transport.receive(timeout=0.1)
@@ -165,16 +241,23 @@ class PassiveCaptureManager:
                     "extended": frame.extended,
                     "data_hex": frame.data.hex().upper(),
                     "direction": frame.direction,
+                    "bus": frame.bus,
                 })
-                with self._latest_frames_lock:
-                    self._latest_frames[(frame.arbitration_id, frame.extended)] = {
-                        "timestamp_us": time.time_ns() // 1000,
-                        "arbitration_id": frame.arbitration_id,
-                        "extended": frame.extended,
-                        "data": bytes(frame.data),
-                        "raw_hex": frame.data.hex().upper(),
-                    }
+                if frame.bus in {"default", "live"}:
+                    with self._latest_frames_lock:
+                        self._latest_frames[(frame.arbitration_id, frame.extended)] = {
+                            "timestamp_us": time.time_ns() // 1000,
+                            "arbitration_id": frame.arbitration_id,
+                            "extended": frame.extended,
+                            "data": bytes(frame.data),
+                            "raw_hex": frame.data.hex().upper(),
+                            "bus": frame.bus,
+                        }
                 self._frame_count += 1
+                if frame.bus == "diagnostic":
+                    self._diagnostic_frame_count += 1
+                else:
+                    self._live_frame_count += 1
         except Exception as exc:
             self._last_error = str(exc)
             self._write({

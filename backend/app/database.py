@@ -80,6 +80,16 @@ class KnowledgeBase:
 
     def lookup_dtc(self, code: str, preferred_catalogs: list[str] | None = None) -> dict:
         normalized = code.upper()
+        validated_path = self.root / "psa" / "dtcs" / "vehicle_validated.yaml"
+        validated = yaml.safe_load(validated_path.read_text(encoding="utf-8")) if validated_path.exists() else {}
+        if normalized in (validated or {}):
+            definition = validated[normalized]
+            return {
+                "title": definition.get("title"),
+                "catalogs": [definition.get("system", "vehicle_validated")],
+                "source": definition.get("source"),
+                "confidence": definition.get("confidence", "vehicle_catalog_confirmed"),
+            }
         matches = self._dtc_index.get(normalized, [])
         preferred = preferred_catalogs or []
         preferred_matches = [item for name in preferred for item in matches if item[0] == name]

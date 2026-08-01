@@ -7,6 +7,7 @@ import threading
 
 from app.config import settings
 from app.database import KnowledgeBase
+from app.diagnostic.history import active_identity
 from app.models import ObservedDtcInput, ObservedDtcResult
 
 
@@ -49,7 +50,12 @@ def _enrich(item: dict, kb: KnowledgeBase) -> ObservedDtcResult | None:
     except ValueError:
         return None
     entry.code = entry.code.upper()
-    ecu = next((candidate for candidate in kb.ecus() if candidate.key == entry.ecu_key), None)
+    profile = entry.vehicle_profile or settings.vehicle_profile
+    try:
+        ecus = kb.ecus(profile)
+    except FileNotFoundError:
+        ecus = []
+    ecu = next((candidate for candidate in ecus if candidate.key == entry.ecu_key), None)
     definition = kb.lookup_dtc(entry.code, ecu.dtc_catalogs if ecu else None)
     return ObservedDtcResult(
         **entry.model_dump(),
@@ -62,20 +68,39 @@ def _enrich(item: dict, kb: KnowledgeBase) -> ObservedDtcResult | None:
     )
 
 
-def list_observed_dtcs() -> list[ObservedDtcResult]:
+def list_observed_dtcs(
+    vin: str | None = None,
+    vehicle_profile: str | None = None,
+) -> list[ObservedDtcResult]:
     kb = KnowledgeBase()
-    return [result for item in _load_raw() if (result := _enrich(item, kb)) is not None]
+    results = [result for item in _load_raw() if (result := _enrich(item, kb)) is not None]
+    if vin is not None:
+        results = [result for result in results if result.vin == vin]
+    if vehicle_profile is not None:
+        results = [result for result in results if result.vehicle_profile == vehicle_profile]
+    return results
 
 
 def save_observed_dtc(entry: ObservedDtcInput) -> ObservedDtcResult:
     entry.code = entry.code.upper()
+    entry.vehicle_profile = entry.vehicle_profile or settings.vehicle_profile
+    identity = active_identity(entry.vehicle_profile)
+    entry.vin = entry.vin or (identity or {}).get("vin")
     payload = _load_raw()
     record = {
         **entry.model_dump(exclude_none=True),
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    key = (entry.code, entry.ecu_key)
-    payload = [item for item in payload if (str(item.get("code") or "").upper(), item.get("ecu_key")) != key]
+    key = (entry.vin, entry.vehicle_profile, entry.code, entry.ecu_key)
+    payload = [
+        item for item in payload
+        if (
+            item.get("vin"),
+            item.get("vehicle_profile"),
+            str(item.get("code") or "").upper(),
+            item.get("ecu_key"),
+        ) != key
+    ]
     payload.append(record)
     _write_raw(payload)
     result = _enrich(record, KnowledgeBase())

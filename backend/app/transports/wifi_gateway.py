@@ -21,6 +21,7 @@ class Esp32WifiTransport(Transport):
         handshake_timeout: float = 3.0,
         reconnect_interval: float = 0.5,
         safety_profile: TxSafetyProfile = "diagnostic_read_only",
+        require_diagnostic_can: bool = True,
     ) -> None:
         self.host = host
         self.port = port
@@ -28,6 +29,7 @@ class Esp32WifiTransport(Transport):
         self.handshake_timeout = handshake_timeout
         self.reconnect_interval = reconnect_interval
         self.safety_profile = safety_profile
+        self.require_diagnostic_can = require_diagnostic_can
         self.socket: socket.socket | None = None
         self.hello: dict | None = None
         self.last_stats: dict | None = None
@@ -105,6 +107,8 @@ class Esp32WifiTransport(Transport):
             "ext": frame.extended,
             "data": frame.data.hex().upper(),
         }
+        if frame.bus != "default":
+            payload["bus"] = frame.bus
         self._write_command(payload)
 
     def _connect(self, timeout: float) -> None:
@@ -157,6 +161,15 @@ class Esp32WifiTransport(Transport):
                 "CAN_TX_ENABLED=true mais le firmware ESP32 Wi-Fi est en écoute seule."
             )
         if self.tx_enabled:
+            if (
+                self.require_diagnostic_can
+                and hello.get("dual_can") is True
+                and hello.get("diagnostic_can_ready") is not True
+            ):
+                self._disconnect("gateway_diagnostic_can_not_ready")
+                raise RuntimeError(
+                    "Le bus CAN diagnostic 3/8 n'est pas initialisé sur le MCP2515."
+                )
             psa_lab = hello.get("psa_lab") is True
             if self.safety_profile == "psa_lab" and not psa_lab:
                 self._disconnect("gateway_psa_lab_rejected")
@@ -226,7 +239,8 @@ class Esp32WifiTransport(Transport):
             "id": int(parts[3], 16),
             "ext": bool(flags & 0x01),
             "rtr": bool(flags & 0x02),
-            "dlc": flags >> 2,
+            "dlc": (flags & 0x3C) >> 2,
+            "bus": "diagnostic" if flags & 0x40 else "live",
             "data": parts[5],
         }
 
@@ -245,6 +259,7 @@ class Esp32WifiTransport(Transport):
             "dlc": message.get("l", inferred_dlc),
             "rtr": bool(message.get("r", False)),
             "data": data_hex,
+            "bus": message.get("b", "live"),
         }
 
     def _decode_frame(self, message: dict) -> CanFrame:
@@ -260,12 +275,17 @@ class Esp32WifiTransport(Transport):
         if arbitration_id < 0 or arbitration_id > (0x1FFFFFFF if extended else 0x7FF):
             raise ValueError("Identifiant CAN hors plage.")
         self._track_sequence(message)
+        announced_dual = bool(self.hello and self.hello.get("dual_can") is True)
+        bus = str(message.get("bus", "live")) if announced_dual else "default"
+        if bus not in {"default", "live", "diagnostic"}:
+            raise ValueError("Canal CAN annoncé par la passerelle invalide.")
         return CanFrame(
             timestamp_us=int(message.get("ts_us", time.time_ns() // 1000)),
             arbitration_id=arbitration_id,
             extended=extended,
             data=data,
             direction="rx",
+            bus=bus,
         )
 
     def _track_sequence(self, message: dict) -> None:

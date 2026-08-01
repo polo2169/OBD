@@ -113,7 +113,7 @@ def test_observed_dtcs_are_persisted_and_enriched(tmp_path, monkeypatch):
     assert recorded.status_code == 200
     assert recorded.json()["code"] == "C0031"
     assert recorded.json()["ecu_name"] == "ABS / ESP"
-    assert recorded.json()["title"] == "Front left wheel speed sensor"
+    assert recorded.json()["title"] == "Capteur de vitesse de roue avant gauche"
     assert path.exists()
 
     reopened = client.get("/api/diagnostic/dtcs/observed")

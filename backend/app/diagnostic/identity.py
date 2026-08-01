@@ -5,6 +5,7 @@ import re
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.isotp import UdsSession
+from app.diagnostic.history import save_identity
 from app.diagnostic.uds import read_data_by_identifier
 from app.learn.capture import capture_manager
 from app.models import (
@@ -283,4 +284,5 @@ def read_vehicle_identity(profile_key: str) -> VehicleIdentityResult:
         if opened:
             transport.close()
         result.debug = DebugSummary(**trace.finish())
+    save_identity(result)
     return result

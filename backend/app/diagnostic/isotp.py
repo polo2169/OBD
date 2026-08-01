@@ -215,8 +215,20 @@ class UdsSession:
         return response
 
     def _receive_can(self, timeout: float) -> isotp.CanMessage | None:
-        frame = self.transport.receive(timeout=timeout)
-        if frame is None:
+        deadline = time.monotonic() + timeout
+        frame = None
+        while time.monotonic() < deadline:
+            frame = self.transport.receive(timeout=max(0.001, deadline - time.monotonic()))
+            if frame is None:
+                return None
+            if frame.bus in {"default", "diagnostic"}:
+                break
+            self.transport.debug(
+                "can_frame_ignored",
+                reason="live_bus_during_diagnostic",
+                **frame.as_json(),
+            )
+        if frame is None or frame.bus not in {"default", "diagnostic"}:
             return None
         self.transport.debug(
             "can_frame",
@@ -237,6 +249,7 @@ class UdsSession:
             extended=message.is_extended_id,
             data=bytes(message.data),
             direction="tx",
+            bus="diagnostic",
         )
         self.transport.debug("can_frame", expected=True, **frame.as_json())
         self.transport.send(frame)

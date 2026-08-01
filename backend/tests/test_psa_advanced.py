@@ -25,7 +25,10 @@ def test_catalog_separates_documented_nac_actions_from_unknown_bsi_commands():
     actions = {item["key"]: item for item in advanced_catalog()["actions"]}
     assert actions["nac_black_screen"]["available"] is True
     assert actions["nac_black_screen"]["stop_payload_hex"] == "2FD60000"
+    assert actions["nac_black_screen"]["validation_status"] == "source_confirmed_not_vehicle_tested"
+    assert actions["nac_black_screen"]["vehicle_confirmed"] is False
     assert actions["bsi_turn_left"]["available"] is False
+    assert actions["bsi_turn_left"]["validation_status"] == "not_documented"
     assert "aucune trame" in actions["bsi_turn_left"]["unavailable_reason"]
 
 

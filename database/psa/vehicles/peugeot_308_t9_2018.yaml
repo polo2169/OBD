@@ -22,16 +22,26 @@ notes:
 networks:
   diagnostic_can:
     bitrate: 500000
-    access: obd_pins_6_14
+    access: obd_pins_3_8
     confidence: community_confirmed
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#pinout
 
 diagnostic:
   identity_scope: full_profile
   # Un NRC UDS valide suffit à confirmer qu'un calculateur répond. En l'absence
   # totale de réponse au probe, les autres DIDs ne sont pas envoyés.
   probe_did: 0xF190
+  probe_payloads:
+    - "1001"
+    - "1003"
+    - "3E00"
+    - "22F186"
+    - "22F190"
   read_dtcs: true
   dtc_status_mask: 0xFF
+  dtc_status_masks:
+    - 0xFF
+    - 0x09
   # Adressage OBD-II physique standard du calculateur moteur pour le mode
   # capteurs normalisés. Ce mode est distinct des adresses diagnostic PSA.
   obd_request_id: 0x7E0
@@ -41,9 +51,13 @@ diagnostic:
     - 0xF181
     - 0xF186
     - 0xF187
+    - 0xF188
     - 0xF189
     - 0xF18C
     - 0xF190
+    - 0xF191
+    - 0xF194
+    - 0xF195
   vin_strategies:
     - key: psa_bsi_f190
       label: BSI Peugeot · DID F190
@@ -150,6 +164,9 @@ ecus:
     dtc_catalogs:
       - BVA_EATN8
       - BVA_AM6_AT6_UDS
+    dtc_status_masks:
+      - 0x09
+      - 0xFF
 
   - key: abs_esp
     name: ABS / ESP
@@ -211,6 +228,12 @@ ecus:
     dtc_catalogs:
       - DAE_UDS
       - EPS
+    address_candidates:
+      - request_id: 0x796
+        response_id: 0x797
+        label: Direction motorisée / EPS_M
+        confidence: community_family_catalog
+        source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L191
 
   - key: instrument_cluster
     name: Combiné d'instruments
@@ -257,7 +280,6 @@ ecus:
       - CVM
       - CVM_2
       - CVM_3
-      - CPL / capteur pluie-luminosité (même paire d'adresses selon variante)
     dtc_catalogs:
       - CVM
       - CVM_2
@@ -294,3 +316,63 @@ ecus:
     dtc_catalogs:
       - NAC
       - RCC
+
+  - key: gear_selector
+    name: Commande électrique de boîte / sélecteur
+    family: COMELBVA
+    request_id: 0x6AA
+    response_id: 0x68A
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L66
+    dtc_catalogs:
+      - COMELEC2
+      - GSM
+
+  - key: rain_light_sensor
+    name: Capteur de pluie et luminosité
+    family: CPL
+    request_id: 0x730
+    response_id: 0x710
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L17
+    dtc_catalogs:
+      - PLUIE_LUMINOSITE_UDS
+
+  - key: front_radar
+    name: Radar avant / régulation adaptative
+    family: ARTIV
+    request_id: 0x6B6
+    response_id: 0x696
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L32
+    dtc_catalogs:
+      - ARTIV
+      - ARTIV_UDS
+      - RADAR_AV_4
+
+  - key: tire_pressure
+    name: Surveillance pression pneumatiques
+    family: DSG
+    request_id: 0x6AF
+    response_id: 0x68F
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L26
+    dtc_catalogs:
+      - DSG_UDS
+      - TPMS

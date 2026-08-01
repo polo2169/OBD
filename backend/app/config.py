@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     session_dir: Path = Path("../data/sessions")
     sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
     observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
+    diagnostic_history_dir: Path = Path("../data/diagnostics")
     transport_selection_file: Path = Path("../data/transport_selection.json")
     vehicle_profile: str = "peugeot_308_t9_2018"
     opendbc_enabled: bool = True

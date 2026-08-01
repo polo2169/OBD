@@ -5,6 +5,8 @@
     "label": "Capteur de vitesse de roue avant gauche",
     "note": "Code relevé par l'utilisateur; état UDS et sous-type non fournis.",
     "source": "user_reported",
+    "vin": "VF3LPHNYWJS141966",
+    "vehicle_profile": "peugeot_308_t9_2018",
     "recorded_at": "2026-07-31T22:15:00+02:00"
   },
   {
@@ -12,6 +14,8 @@
     "label": "Défaut de configuration sécurisée",
     "note": "Le calculateur d'origine doit être confirmé; ce code est partagé par plusieurs ECU PSA.",
     "source": "user_reported",
+    "vin": "VF3LPHNYWJS141966",
+    "vehicle_profile": "peugeot_308_t9_2018",
     "recorded_at": "2026-07-31T22:15:00+02:00"
   },
   {
@@ -20,6 +24,8 @@
     "label": "Champ de vision de la caméra vidéo multifonction",
     "note": "Code relevé par l'utilisateur; état UDS et sous-type non fournis.",
     "source": "user_reported",
+    "vin": "VF3LPHNYWJS141966",
+    "vehicle_profile": "peugeot_308_t9_2018",
     "recorded_at": "2026-07-31T22:15:00+02:00"
   }
 ]

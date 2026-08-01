@@ -8,7 +8,7 @@
   },
   "LANE_KEEP_ASSIST.STATUS": {
     "label": "État maintien dans la voie",
-    "description": "État diffusé par la fonction d'aide au maintien dans la voie. 1 desactivé, 2 activé",
+    "description": "0 indisponible, 1 non sélectionné, 2 sélectionné, 3 autorisé, 4 actif, 5 défaut, 6 collision",
     "unit": "",
     "factor": 1.0,
     "offset": 0.0

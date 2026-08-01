@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import settings
 from app.learn.analyzer import analyze_behavior, analyze_session, list_sessions
@@ -11,6 +11,7 @@ from app.learn.models import (
     AnalysisReport,
     BehavioralAnalysisReport,
     CaptureMarker,
+    CaptureGpsPosition,
     CaptureStart,
     CaptureStatus,
     CorrelationOptions,
@@ -19,12 +20,14 @@ from app.learn.models import (
     PassiveSensorOverride,
     PassiveSensorSnapshot,
     ReplayData,
+    ReplayValidation,
     UdsCandidate,
 )
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.passive_sensors import passive_sensor_snapshot
-from app.learn.replay import prepare_replay
+from app.learn.replay import prepare_replay, replay_geojson
 from app.learn.sensor_metadata import delete_override, save_override
+from app.learn.validation import validate_replay
 
 router = APIRouter(prefix="/api/learn", tags=["OpenDiag Learn"])
 
@@ -39,6 +42,14 @@ def start_capture(capture: CaptureStart | None = None) -> CaptureStatus:
 def add_marker(marker: CaptureMarker) -> CaptureStatus:
     try:
         return capture_manager.marker(marker.name, marker.note)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/capture/gps", response_model=CaptureStatus)
+def add_gps_position(position: CaptureGpsPosition) -> CaptureStatus:
+    try:
+        return capture_manager.gps_position(position)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -62,6 +73,31 @@ def sessions() -> list[DiscoverySessionSummary]:
 def replay(session_id: str, force: bool = Query(default=False)) -> ReplayData:
     try:
         return prepare_replay(session_id, force=force)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/replay/{session_id}/route.geojson")
+def replay_route_geojson(session_id: str) -> JSONResponse:
+    try:
+        payload = replay_geojson(session_id)
+        return JSONResponse(
+            content=payload,
+            media_type="application/geo+json",
+            headers={"Content-Disposition": f'attachment; filename="{session_id}.geojson"'},
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/replay/{session_id}/validation", response_model=ReplayValidation)
+def replay_validation(session_id: str, force: bool = Query(default=False)) -> ReplayValidation:
+    try:
+        return validate_replay(session_id, force=force)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

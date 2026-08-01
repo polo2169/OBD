@@ -1,10 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse, HTMLResponse
 from udsoncan.exceptions import NegativeResponseException, TimeoutException
 
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.obd import sensor_catalog, snapshot_sensors
 from app.diagnostic.identity import read_vehicle_identity
+from app.diagnostic.history import (
+    active_identity,
+    find_report,
+    latest_report,
+    list_reports,
+    list_vehicles,
+    report_html,
+)
 from app.diagnostic.observed_dtcs import list_observed_dtcs, save_observed_dtc
 from app.diagnostic.psa_advanced import (
     advanced_catalog,
@@ -28,6 +37,7 @@ from app.models import (
     PsaUnlockRequest,
     PsaUnlockResult,
     ScanReport,
+    ScanRequest,
     SensorSnapshot,
     TransportConnectRequest,
     VehicleIdentityRequest,
@@ -133,8 +143,11 @@ def dtc_catalog_status() -> dict:
 
 
 @router.get("/diagnostic/dtcs/observed", response_model=list[ObservedDtcResult])
-def observed_dtcs() -> list[ObservedDtcResult]:
-    return list_observed_dtcs()
+def observed_dtcs(
+    vin: str | None = Query(default=None),
+    vehicle_profile: str | None = Query(default=None),
+) -> list[ObservedDtcResult]:
+    return list_observed_dtcs(vin=vin, vehicle_profile=vehicle_profile)
 
 
 @router.post("/diagnostic/dtcs/observed", response_model=ObservedDtcResult)
@@ -168,7 +181,7 @@ def diagnostic_sensor_snapshot() -> SensorSnapshot:
 
 
 @router.post("/diagnostic/scan", response_model=ScanReport)
-def diagnostic_scan() -> ScanReport:
+def diagnostic_scan(request: ScanRequest | None = None) -> ScanReport:
     if settings.transport != "virtual" and not settings.can_tx_enabled:
         raise HTTPException(
             status_code=403,
@@ -177,7 +190,76 @@ def diagnostic_scan() -> ScanReport:
                 "listen-only. Aucun message n'a été émis."
             ),
         )
-    return scan_vehicle()
+    try:
+        return scan_vehicle(
+            request.vehicle_profile if request else None,
+            request.vin if request else None,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/diagnostic/vehicles")
+def diagnostic_vehicles() -> list[dict]:
+    return list_vehicles()
+
+
+@router.get("/diagnostic/identity/latest")
+def diagnostic_latest_identity(vehicle_profile: str = Query(default="peugeot_308_t9_2018")) -> dict:
+    identity = active_identity(vehicle_profile)
+    if identity is None:
+        raise HTTPException(status_code=404, detail="Aucune identité enregistrée pour ce profil.")
+    return identity
+
+
+@router.get("/diagnostic/reports")
+def diagnostic_reports(
+    vehicle_profile: str | None = Query(default=None),
+    vin: str | None = Query(default=None),
+) -> list[dict]:
+    return list_reports(vehicle_profile=vehicle_profile, vin=vin)
+
+
+@router.get("/diagnostic/reports/latest", response_model=ScanReport)
+def diagnostic_latest_report(
+    vehicle_profile: str | None = Query(default=None),
+    vin: str | None = Query(default=None),
+) -> ScanReport:
+    report = latest_report(vehicle_profile=vehicle_profile, vin=vin)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Aucun rapport diagnostic enregistré.")
+    return report
+
+
+@router.get("/diagnostic/reports/{scan_id}", response_model=ScanReport)
+def diagnostic_report(scan_id: str) -> ScanReport:
+    found = find_report(scan_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Rapport diagnostic introuvable.")
+    return found[0]
+
+
+@router.get("/diagnostic/reports/{scan_id}/export")
+def diagnostic_report_export(scan_id: str, format: str = Query(default="html")):
+    found = find_report(scan_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Rapport diagnostic introuvable.")
+    report, path = found
+    safe_vin = report.vin or "sans-vin"
+    if format == "json":
+        return FileResponse(
+            path,
+            media_type="application/json",
+            filename=f"opendiag-{safe_vin}-{scan_id}.json",
+        )
+    if format != "html":
+        raise HTTPException(status_code=422, detail="Formats disponibles : html, json.")
+    return HTMLResponse(
+        report_html(report),
+        headers={"Content-Disposition": f'attachment; filename="opendiag-{safe_vin}-{scan_id}.html"'},
+    )
 
 
 @router.post("/diagnostic/identity", response_model=VehicleIdentityResult)

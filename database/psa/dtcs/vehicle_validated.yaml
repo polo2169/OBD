@@ -1,0 +1,27 @@
+C0031:
+  title: Capteur de vitesse de roue avant gauche
+  system: ABS / ESP
+  source: https://github.com/ludwig-v/arduino-psa-diag/tree/c1409e60798f66bb63149505826170b5eb3c163f/dtc
+  confidence: vehicle_catalog_confirmed
+  note: Le statut UDS détermine si le code est actif, historique ou simplement non testé.
+
+U1009:
+  title: Communication réseau suspension et roues / CAN haute vitesse 2
+  system: ABS / ESP
+  source: https://github.com/ludwig-v/arduino-psa-diag/tree/c1409e60798f66bb63149505826170b5eb3c163f/dtc
+  confidence: vehicle_catalog_confirmed
+  note: Confirmé dans le catalogue ABSMK100_UDS ; la cause exacte dépend de la variante de calculateur.
+
+B1003:
+  title: Traçabilité sécurisée ou configuration du calculateur à contrôler
+  system: Calculateur à identifier
+  source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#secured-traceability
+  confidence: community_documented
+  note: Ce code est partagé par plusieurs familles PSA ; le calculateur émetteur doit être identifié.
+
+B1238:
+  title: Champ de vision de la caméra vidéo multifonction
+  system: Caméra vidéo multifonction
+  source: https://github.com/ludwig-v/arduino-psa-diag/tree/c1409e60798f66bb63149505826170b5eb3c163f/dtc
+  confidence: community_preferred_catalog
+  note: Description issue des catalogues CVM_2/CVM_3 ; vérifier l'état UDS et l'obstruction/calibration de la caméra.

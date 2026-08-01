@@ -76,9 +76,61 @@ RDK X5 ou PC
   └── React
 ```
 
-## Démarrage sans matériel
+## Lancer toute l'application
 
-### Backend
+### Première installation
+
+Depuis la racine du dépôt, préparer une fois les dépendances du backend et du
+frontend :
+
+```bash
+cd backend
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+test -f .env || cp .env.example .env
+
+cd ../frontend
+npm install
+cd ..
+```
+
+Le fichier `backend/.env` choisit le matériel utilisé. Pour travailler sans
+voiture, conserver `TRANSPORT=virtual`. Pour la passerelle USB, utiliser
+`TRANSPORT=esp32_serial` et renseigner son `SERIAL_PORT`.
+
+### Frontend et backend en une commande
+
+Toujours depuis la racine du dépôt :
+
+```bash
+./scripts/start_app.sh
+```
+
+Le script lance simultanément :
+
+- l'interface React sur <http://127.0.0.1:5173> ;
+- l'API FastAPI sur <http://127.0.0.1:8000> ;
+- la documentation de l'API sur <http://127.0.0.1:8000/docs>.
+
+Les journaux des deux services restent visibles dans le même terminal. Utiliser
+`Ctrl+C` pour arrêter proprement le frontend et le backend ensemble.
+
+Pour forcer le simulateur sans modifier `backend/.env` :
+
+```bash
+TRANSPORT=virtual ./scripts/start_app.sh
+```
+
+Les ports peuvent également être changés ponctuellement ; le lanceur transmet
+automatiquement le nouveau port du backend au frontend :
+
+```bash
+BACKEND_PORT=8002 FRONTEND_PORT=5174 ./scripts/start_app.sh
+```
+
+### Démarrage manuel, service par service
+
+#### Backend
 
 ```bash
 cd backend
@@ -96,7 +148,7 @@ Documentation :
 http://127.0.0.1:8000/docs
 ```
 
-### Frontend
+#### Frontend
 
 ```bash
 cd frontend
@@ -118,17 +170,24 @@ le résultat dans `data/sessions/<session>.replay.json`. La capture originale n'
 jamais modifiée.
 
 Le replay anime la vitesse, le régime moteur, le volant, les pédales, les
-clignotants, les feux et les signaux ADAS disponibles. Sans latitude/longitude CAN,
-la carte représente une trajectoire locale estimée par la vitesse ABS et l'angle
-du volant. Son origine et son orientation sont arbitraires : elle ne doit pas être
-superposée à une route réelle. Pour retrouver l'emplacement exact en France, une
-source GPS horodatée devra être enregistrée lors d'une prochaine capture.
+clignotants, les feux et les signaux ADAS disponibles. L'option **Enregistrer le
+trajet GPS**, active par défaut, utilise la géolocalisation du navigateur et écrit
+chaque position dans le JSONL avec l'heure, la précision, l'altitude, le cap et la
+vitesse disponibles. Le navigateur doit être ouvert sur `localhost` ou via HTTPS.
+Un refus de permission n'interrompt jamais la capture CAN.
+
+Avec au moins deux positions exploitables, le replay synchronise la trace GPS aux
+échantillons CAN. Une position unique sert seulement d'ancrage à la reconstruction
+vitesse/volant. Sans GPS, l'origine et l'orientation restent arbitraires et la
+trajectoire ne doit pas être superposée à une route réelle. La trace brute est
+exportable en GeoJSON depuis le replay.
 
 API correspondante :
 
 ```text
 GET /api/learn/replay/{session_id}
 GET /api/learn/replay/{session_id}?force=true
+GET /api/learn/replay/{session_id}/route.geojson
 ```
 
 ### Simulation
@@ -299,6 +358,8 @@ esp32-mcp2515-8mhz-readonly
 esp32-mcp2515-8mhz-active
 esp32-mcp2515-16mhz-readonly
 esp32-mcp2515-16mhz-active
+esp32-dual-can-16mhz-serial-diagnostic
+esp32-dual-can-16mhz-serial-psa-lab
 ```
 
 Choisir la fréquence inscrite sur le quartz métallique du module (`8.000` ou
@@ -315,8 +376,8 @@ traducteur, est :
 | SCK | GPIO 18 | ESP32 vers MCP2515 |
 | SO / MISO | GPIO 19 | MCP2515 vers ESP32 |
 | SI / MOSI | GPIO 23 | ESP32 vers MCP2515 |
-| CS | GPIO 5 | ESP32 vers MCP2515 |
-| INT | non connecté | lecture par interrogation |
+| CS | GPIO 5 en MCP seul, GPIO 27 en double CAN | ESP32 vers MCP2515 |
+| INT | non connecté en MCP seul, GPIO 26 en double CAN | MCP2515 vers ESP32 |
 | GND | GND | masse commune |
 
 Alimenter le module en 5 V régulé depuis l'USB, jamais directement depuis le 12 V
@@ -325,8 +386,34 @@ le module présente environ 120 ohms, retirer/désactiver sa terminaison avant d
 brancher au véhicule, déjà terminé. CAN-H va sur OBD 6, CAN-L sur OBD 14 et la masse
 commune sur OBD 4 ou 5.
 
+Dans le montage double CAN de la Peugeot 308 T9, le tableau se lit avec
+`CS=GPIO27` et `INT=GPIO26`. Le TJA/TWAI actuel reste sur OBD `6/14` en écoute
+seule ; le MCP2515 quartz `16.000` est relié à CAN-H OBD `3` et CAN-L OBD `8`.
+Le profil `esp32-dual-can-16mhz-serial-diagnostic` lit les deux réseaux en même
+temps et autorise sur `3/8` uniquement les services de lecture verrouillés. Le
+backend partage alors la même liaison USB entre dashboard, enregistrement et
+diagnostic et inscrit l'origine `live`/`diagnostic` dans chaque capture.
+
 Références électriques : [MCP2515 Microchip](https://www.microchip.com/content/dam/mchp/documents/APID/ProductDocuments/DataSheets/MCP2515-Family-Data-Sheet-DS20001801K.pdf),
 [TJA1050 NXP](https://www.nxp.com/docs/en/data-sheet/TJA1050.pdf).
+
+### Double CAN recommandé : deux ESP32 par UART
+
+Le montage courant n'utilise plus le MCP2515. Une ESP32 principale écoute OBD
+`6/14` avec TWAI et reste connectée au PC ; une seconde ESP32 utilise son TWAI sur
+OBD `3/8`. Elles échangent les trames diagnostic à 2 Mbit/s :
+
+| Principale | Satellite |
+|---|---|
+| GPIO17 TX | GPIO16 RX |
+| GPIO16 RX | GPIO17 TX |
+| GND | GND |
+
+Flasher respectivement `esp32-dual-uart-main-diagnostic` et
+`esp32-dual-uart-satellite-diagnostic`. Le backend continue à voir une seule
+passerelle `dual_can` et sépare les trames `live` et `diagnostic`. Le CAN principal
+6/14 est forcé matériellement en écoute seule ; toutes les émissions autorisées
+sont relayées exclusivement vers le satellite 3/8.
 
 ### Transceiver TJA1050 seul
 
@@ -551,6 +638,7 @@ des captures CAN obtenues légalement sur son propre véhicule ou sur un banc.
 ```text
 POST /api/learn/capture/start
 POST /api/learn/capture/marker
+POST /api/learn/capture/gps
 POST /api/learn/capture/stop
 GET  /api/learn/capture/status
 GET  /api/learn/sessions

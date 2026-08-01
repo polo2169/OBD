@@ -17,7 +17,10 @@ def test_virtual_scan():
     assert {item.did for item in engine.identification} >= {0xF180, 0xF190}
     abs_ecu = next(ecu for ecu in report.ecus if ecu.key == "abs_esp")
     assert abs_ecu.dtcs[0].code == "C0031"
-    assert abs_ecu.dtcs[0].title == "Front left wheel speed sensor"
+    assert abs_ecu.dtcs[0].title == "Capteur de vitesse de roue avant gauche"
+    assert abs_ecu.dtcs[0].state == "active"
+    assert report.dtc_summary.active >= 1
+    assert report.scan_id
     assert "confirmed" in abs_ecu.dtcs[0].status_labels
     assert report.debug.session_id
     assert report.debug.event_types["uds_request"] > 0
@@ -70,6 +73,15 @@ def test_dtc_decoder_keeps_failure_type_separate():
         "confirmed",
         "test_failed_since_last_clear",
     ]
+
+
+def test_dtc_status_classification_does_not_turn_unfinished_tests_into_faults():
+    from app.diagnostic.dtc_status import classify_dtc_status
+
+    assert classify_dtc_status(0x2F)["state"] == "active"
+    assert classify_dtc_status(0x20)["state"] == "historical"
+    assert classify_dtc_status(0x40)["state"] == "not_tested"
+    assert classify_dtc_status(0x50)["state"] == "not_tested"
 
 
 def test_virtual_sensor_only_snapshot():

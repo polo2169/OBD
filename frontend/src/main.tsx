@@ -71,6 +71,10 @@ type DtcValue = {
   catalogs: string[];
   source?: string | null;
   confidence: string;
+  state: "active" | "historical" | "not_tested" | "inactive";
+  state_label: string;
+  state_detail: string;
+  actionable: boolean;
 };
 
 type ObservedDtc = {
@@ -103,7 +107,10 @@ type Ecu = {
   aliases: string[];
   dtcs: DtcValue[];
   dtc_status_availability_mask?: number | null;
+  dtc_status_mask_used?: number | null;
   dtc_error?: string | null;
+  probe_method?: string | null;
+  probe_response_hex?: string | null;
   error?: string | null;
 };
 
@@ -117,12 +124,70 @@ type DebugSummary = {
 };
 
 type Report = {
+  scan_id?: string | null;
+  scanned_at?: string | null;
   vehicle_profile: string;
+  vin?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
   transport: string;
   readonly: boolean;
   ecus: Ecu[];
+  dtc_summary: {
+    active: number;
+    historical: number;
+    not_tested: number;
+    inactive: number;
+    total: number;
+    affected_ecus: number;
+  };
+  comparison?: {
+    previous_scan_id?: string | null;
+    previous_scanned_at?: string | null;
+    comparable_ecus: string[];
+    excluded_ecus: string[];
+    appeared: DtcChange[];
+    resolved: DtcChange[];
+    changed: DtcChange[];
+    unchanged: number;
+  } | null;
   warnings: string[];
   debug: DebugSummary;
+};
+
+type DtcChange = {
+  ecu_key: string;
+  ecu_name: string;
+  code: string;
+  raw_hex: string;
+  title?: string | null;
+  before_state?: DtcValue["state"] | null;
+  after_state?: DtcValue["state"] | null;
+  before_status_hex?: string | null;
+  after_status_hex?: string | null;
+};
+
+type DiagnosticVehicle = {
+  vin: string;
+  vehicle_profile: string;
+  manufacturer: string;
+  model: string;
+  year?: string | number | null;
+  first_seen?: string | null;
+  last_seen?: string | null;
+  latest_scan_id?: string | null;
+  scan_count: number;
+};
+
+type DiagnosticReportSummary = {
+  scan_id: string;
+  scanned_at: string;
+  vin: string;
+  vehicle_profile: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  dtc_summary: Report["dtc_summary"];
+  detected_ecus: number;
 };
 
 type DiagnosticSensorCatalogEntry = {
@@ -235,6 +300,9 @@ type PsaAdvancedAction = {
   confidence: string;
   source: string;
   unavailable_reason?: string | null;
+  validation_status: "source_confirmed_not_vehicle_tested" | "vehicle_confirmed" | "not_documented";
+  requires_detected_ecu: boolean;
+  vehicle_confirmed: boolean;
 };
 type PsaAdvancedCatalog = {
   enabled: boolean;
@@ -243,7 +311,7 @@ type PsaAdvancedCatalog = {
   read_only: boolean;
   can_tx_enabled: boolean;
   required_firmware_policy: string;
-  wiring: { vehicle_can: string; nac_reference: string; warning: string };
+  wiring: { vehicle_can: string; standard_obd: string; source: string; warning: string };
   ecus: PsaAdvancedEcu[];
   actions: PsaAdvancedAction[];
   sources: string[];
@@ -343,11 +411,18 @@ type CaptureStatus = {
   active: boolean;
   source: string;
   frame_count: number;
+  live_frame_count: number;
+  diagnostic_frame_count: number;
   marker_count: number;
+  gps_point_count: number;
+  gps_last_accuracy_m?: number | null;
   path: string;
   name: string;
   started_at_us?: number | null;
   strict_passive?: boolean | null;
+  dual_can?: boolean;
+  live_can_ready?: boolean | null;
+  diagnostic_can_ready?: boolean | null;
   error?: string | null;
 };
 
@@ -358,7 +433,10 @@ type DiscoverySession = {
   started_at_us?: number | null;
   duration_ms: number;
   frame_count: number;
+  live_frame_count?: number;
+  diagnostic_frame_count?: number;
   marker_count: number;
+  gps_point_count?: number;
   markers: string[];
   size_bytes: number;
   analyzed: boolean;
@@ -460,12 +538,18 @@ type ReplaySample = {
   steering_rate_deg_s?: number | null;
   driver_torque?: number | null;
   accelerator_pct?: number | null;
+  accelerator_secondary_pct?: number | null;
   engine_torque_nm?: number | null;
+  idle_setpoint_rpm?: number | null;
+  fuel_consumption_candidate_mm3?: number | null;
+  virtual_fuel_consumption_candidate_mm3?: number | null;
   current_gear?: number | null;
   target_gear?: number | null;
   gear_shift_active?: boolean | null;
   drivetrain_engaged_state?: number | null;
   longitudinal_accel_ms2?: number | null;
+  lateral_accel_ms2?: number | null;
+  yaw_rate_deg_s?: number | null;
   brake_active?: boolean | null;
   brake_system_state?: number | null;
   brake_pressure_raw?: number | null;
@@ -477,6 +561,7 @@ type ReplaySample = {
   driver_door?: boolean | null;
   passenger_door?: boolean | null;
   front_wiper_status?: number | null;
+  fuel_liters_raw?: number | null;
   fuel_liters?: number | null;
   oil_temperature_c?: number | null;
   coolant_temperature_c?: number | null;
@@ -511,6 +596,12 @@ type ReplaySample = {
   wheel_front_right_kph?: number | null;
   wheel_rear_left_kph?: number | null;
   wheel_rear_right_kph?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  gps_accuracy_m?: number | null;
+  gps_altitude_m?: number | null;
+  gps_heading_deg?: number | null;
+  gps_speed_kph?: number | null;
   x_m: number;
   y_m: number;
   heading_deg: number;
@@ -540,6 +631,7 @@ type ReplayData = {
   average_moving_speed_kph: number;
   distance_km: number;
   gps_available: boolean;
+  gps_point_count: number;
   route_method: string;
   steering_zero_offset_deg: number;
   route_bounds: Record<string, number>;
@@ -547,12 +639,49 @@ type ReplayData = {
   field_quality: Record<string, string>;
   warnings: string[];
   events: ReplayEvent[];
+  gps_points: Array<{
+    t_ms: number;
+    timestamp_us: number;
+    latitude: number;
+    longitude: number;
+    accuracy_m: number;
+    altitude_m?: number | null;
+    altitude_accuracy_m?: number | null;
+    heading_deg?: number | null;
+    speed_kph?: number | null;
+  }>;
   points: ReplaySample[];
+};
+
+type SignalValidation = {
+  key: string;
+  label: string;
+  status: "validated" | "plausible" | "candidate" | "suspicious" | "unavailable";
+  sample_count: number;
+  minimum?: number | null;
+  maximum?: number | null;
+  transitions: number;
+  evidence: string[];
+};
+
+type ReplayValidation = {
+  version: number;
+  session_id: string;
+  generated_at: string;
+  signal_count: number;
+  validated_count: number;
+  plausible_count: number;
+  suspicious_count: number;
+  signals: SignalValidation[];
+  warnings: string[];
 };
 
 type RouteGeometry = {
   path: string;
   coordinates: { x: number; y: number }[];
+  gpsCoordinates: { x: number; y: number; accuracyPx: number }[];
+  mapTiles: { key: string; href: string; x: number; y: number }[];
+  mapZoom: number | null;
 };
 
 type ReplayGaugeDefinition = {
@@ -565,13 +694,15 @@ type ReplayGaugeDefinition = {
   color: string;
   note: string;
   status?: boolean;
+  rejected?: boolean;
 };
 
 const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "speed_kph", label: "Vitesse véhicule", unit: "km/h", minimum: 0, maximum: 150, precision: 1, color: "#62e39a", note: "Vitesse véhicule calculée à partir des roues ABS." },
   { key: "engine_rpm", label: "Régime moteur", unit: "tr/min", minimum: 0, maximum: 6500, color: "#8ce9b4", note: "Régime moteur diffusé par le calculateur moteur." },
-  { key: "current_gear", label: "Rapport engagé", unit: "rapport", minimum: 0, maximum: 6, color: "#f2cc60", note: "Rapport réellement engagé diffusé par le calculateur moteur." },
-  { key: "target_gear", label: "Rapport cible", unit: "rapport", minimum: 0, maximum: 6, color: "#ffb45f", note: "Rapport demandé pendant la stratégie de changement de vitesse." },
+  { key: "idle_setpoint_rpm", label: "Consigne de ralenti", unit: "tr/min", minimum: 650, maximum: 1100, color: "#b8efc9", note: "Consigne du calculateur moteur, validée par comparaison avec le régime réel au ralenti." },
+  { key: "current_gear", label: "Rapport engagé", unit: "rapport", minimum: 0, maximum: 9, color: "#f2cc60", note: "Rapport réellement engagé diffusé par le calculateur moteur. Sur cette capture, le code 9 correspond à la marche arrière." },
+  { key: "target_gear", label: "Rapport cible", unit: "rapport", minimum: 0, maximum: 9, color: "#ffb45f", note: "Rapport demandé pendant la stratégie de changement de vitesse. Le code 9 est affiché R." },
   { key: "steering_angle_deg", label: "Angle du volant", unit: "°", minimum: -540, maximum: 540, precision: 1, color: "#b384ff", note: "Angle du volant validé sur ce véhicule; négatif vers la droite." },
   { key: "brake_pressure_raw", label: "Pression de freinage brute", unit: "brut", minimum: 0, maximum: 255, color: "#ff6b65", note: "Signal de freinage non calibré : aucune unité physique ne doit être déduite." },
   { key: "oil_temperature_c", label: "Température d'huile", unit: "°C", minimum: 40, maximum: 150, color: "#ffb45f", note: "Température du carter moteur issue du message Dat_CMM." },
@@ -583,10 +714,12 @@ const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "ambient_temperature_c", label: "Température extérieure", unit: "°C", minimum: -20, maximum: 50, precision: 1, color: "#8fdcff", note: "Température ambiante diffusée à 1 Hz." },
   { key: "intake_air_temperature_c", label: "Air d'admission", unit: "°C", minimum: -20, maximum: 100, color: "#b384ff", note: "Température d'air à l'admission moteur." },
   { key: "atmospheric_pressure_hpa", label: "Pression atmosphérique", unit: "hPa", minimum: 850, maximum: 1100, color: "#a7c7e7", note: "Pression environnementale candidate OpenDBC." },
-  { key: "fuel_liters", label: "Carburant estimé", unit: "L", minimum: 0, maximum: 53, precision: 1, color: "#f2cc60", note: "Quantité estimée par le BSI; valeur à confirmer." },
+  { key: "fuel_liters", label: "Niveau carburant filtré", unit: "L", minimum: 0, maximum: 53, precision: 1, color: "#f2cc60", note: "Mesure du flotteur amortie sur 120 s pour réduire le ballottement; l'étalonnage absolu reste à confirmer." },
   { key: "engine_torque_nm", label: "Couple moteur", unit: "Nm", minimum: -100, maximum: 400, color: "#ff8d72", note: "Estimation de couple moteur réel." },
   { key: "accelerator_pct", label: "Accélérateur", unit: "%", minimum: 0, maximum: 100, color: "#62e39a", note: "Position de pédale diffusée par le moteur." },
   { key: "longitudinal_accel_ms2", label: "Accélération longitudinale", unit: "m/s²", minimum: -4, maximum: 4, precision: 2, color: "#72c6ff", note: "Accélération calculée à partir des roues." },
+  { key: "lateral_accel_ms2", label: "Accélération latérale", unit: "m/s²", minimum: -5, maximum: 5, precision: 2, color: "#ff8ec7", note: "Trame 0x3CD, échelle 0,05 m/s² validée par corrélation avec les quatre roues et le volant." },
+  { key: "yaw_rate_deg_s", label: "Vitesse de lacet", unit: "°/s", minimum: -40, maximum: 40, precision: 1, color: "#63e6e2", note: "Trame 0x3CD, échelle 0,1°/s validée par deux références CAN indépendantes." },
   { key: "driver_torque", label: "Effort au volant", unit: "brut", minimum: -60, maximum: 60, color: "#b5a2ff", note: "Valeur de colonne validée mais non calibrée en N·m." },
   { key: "steering_rate_deg_s", label: "Vitesse du volant", unit: "°/s", minimum: -120, maximum: 120, color: "#b384ff", note: "Vitesse et sens de rotation du volant." },
   { key: "wheel_front_left_kph", label: "Roue avant gauche", unit: "km/h", minimum: 0, maximum: 150, precision: 1, color: "#59a8ff", note: "Vitesse individuelle mesurée par l'ABS." },
@@ -620,6 +753,23 @@ type ReplayIndicatorState = {
   inferred?: boolean;
 };
 
+const laneAssistStatusLabels: Record<number, string> = {
+  0: "Indisponible",
+  1: "Non sélectionné",
+  2: "Sélectionné",
+  3: "Autorisé",
+  4: "Actif",
+  5: "Défaut",
+  6: "Collision détectée",
+  7: "Réservé",
+};
+
+function laneAssistStatusLabel(status?: number | null): string {
+  return typeof status === "number"
+    ? laneAssistStatusLabels[status] ?? `État inconnu ${status}`
+    : "État absent";
+}
+
 type ReplayGraphGeometry = {
   path: string;
   minimum: number;
@@ -642,7 +792,8 @@ const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "engine", label: "Voyant moteur", color: "amber", icon: "engine", fields: ["mil_on", "mil_blinking", "obd_error"], note: "États OBD/MIL candidats diffusés par le moteur." },
   { key: "door", label: "Porte ouverte", color: "red", icon: "door", fields: ["driver_door", "passenger_door"], note: "Ouverture des portes avant enregistrée." },
   { key: "seatbelt", label: "Ceintures", color: "red", icon: "seatbelt", fields: ["driver_seatbelt_state", "passenger_seatbelt_state"], note: "États bruts présents; leur codage exact reste à valider." },
-  { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure"], note: "Activation ou alerte de franchissement de ligne." },
+  { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure", "lane_assist_status"], note: "Activation ou alerte de franchissement de ligne." },
+  { key: "lane_fault", label: "Défaut aide à la conduite", color: "amber", icon: "lane", fields: ["lane_assist_status"], note: "STATUS 5 = DEFECT dans la définition CAN observée sur cette 308." },
   { key: "reverse", label: "Marche arrière", color: "green", icon: "reverse", fields: ["reverse"], note: "État de marche arrière candidat BSI." },
   { key: "headlamp_fault", label: "Défaut d'éclairage", color: "amber", icon: "bulb", fields: ["headlamp_fault"], note: "Défaut déclaré sur un feu de croisement ou de route." },
   { key: "gearbox", label: "Défaut boîte", color: "amber", icon: "gearbox", fields: ["gearbox_fault"], note: "État de défaut système de boîte candidat." },
@@ -661,7 +812,7 @@ const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
 const defaultReplayGraphKeys = ["speed_kph", "engine_rpm", "steering_angle_deg", "oil_temperature_c"];
 const defaultReplayIndicatorKeys = [
   "turn_left", "turn_right", "low_beam", "high_beam", "parking_brake", "brake_fault",
-  "abs", "esp", "oil_pressure", "coolant", "battery", "fuel", "engine", "door", "seatbelt", "lane",
+  "abs", "esp", "oil_pressure", "coolant", "battery", "fuel", "engine", "door", "seatbelt", "lane", "lane_fault",
 ];
 
 const PEUGEOT_308_HANDBOOK_URL = "https://public.servicebox.peugeot.com/APddb/modeles/308n/eGuide_308n_308_ed01-18_dag/pdfs/9999_9999_226_en-GB.pdf";
@@ -691,6 +842,7 @@ const defaultStudioWidgets: StudioWidget[] = [
   { id: "studio-speed-graph", kind: "graph", key: "speed_kph", x: 0, y: 4, w: 4, h: 3, windowSeconds: 60 },
   { id: "studio-oil", kind: "gauge", key: "oil_temperature_c", x: 4, y: 4, w: 2, h: 3 },
   { id: "studio-engine-light", kind: "indicator", key: "engine", x: 6, y: 4, w: 2, h: 2 },
+  { id: "studio-lane-fault", kind: "indicator", key: "lane_fault", x: 6, y: 6, w: 2, h: 2 },
   { id: "studio-capture", kind: "capture", x: 0, y: 7, w: 6, h: 2 },
 ];
 
@@ -800,6 +952,16 @@ function formatDate(timestampUs?: number | null) {
   }).format(new Date(timestampUs / 1000));
 }
 
+function formatIsoDate(value?: string | null) {
+  if (!value) return "Date inconnue";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(new Date(timestamp));
+}
+
 function formatDuration(milliseconds: number) {
   if (milliseconds < 1000) return `${milliseconds.toFixed(0)} ms`;
   if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)} s`;
@@ -826,10 +988,75 @@ function replayPointIndex(points: ReplaySample[], timeMs: number) {
 }
 
 function routeGeometry(replay: ReplayData | null): RouteGeometry {
-  if (!replay?.points.length) return { path: "", coordinates: [] };
+  if (!replay?.points.length) return { path: "", coordinates: [], gpsCoordinates: [], mapTiles: [], mapZoom: null };
   const width = 760;
   const height = 470;
   const padding = 52;
+  const geographicPoints = replay.points.filter((point) =>
+    typeof point.latitude === "number"
+    && Number.isFinite(point.latitude)
+    && typeof point.longitude === "number"
+    && Number.isFinite(point.longitude),
+  );
+  if (geographicPoints.length === replay.points.length) {
+    const tileSize = 256;
+    const project = (latitude: number, longitude: number, zoom: number) => {
+      const scale = tileSize * 2 ** zoom;
+      const safeLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
+      const sinLatitude = Math.sin(safeLatitude * Math.PI / 180);
+      return {
+        x: (longitude + 180) / 360 * scale,
+        y: (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) * scale,
+      };
+    };
+    let zoom = 18;
+    let projected = geographicPoints.map((point) => project(point.latitude as number, point.longitude as number, zoom));
+    for (; zoom > 2; zoom -= 1) {
+      projected = geographicPoints.map((point) => project(point.latitude as number, point.longitude as number, zoom));
+      const xs = projected.map((point) => point.x);
+      const ys = projected.map((point) => point.y);
+      if (Math.max(...xs) - Math.min(...xs) <= width - padding * 2
+        && Math.max(...ys) - Math.min(...ys) <= height - padding * 2) break;
+    }
+    const xs = projected.map((point) => point.x);
+    const ys = projected.map((point) => point.y);
+    const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const viewportLeft = centerX - width / 2;
+    const viewportTop = centerY - height / 2;
+    const coordinates = projected.map((point) => ({ x: point.x - viewportLeft, y: point.y - viewportTop }));
+    const pathStep = Math.max(1, Math.ceil(coordinates.length / 2400));
+    const pathCoordinates = coordinates.filter((_, index) => index % pathStep === 0 || index === coordinates.length - 1);
+    const path = pathCoordinates.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    const tileCount = 2 ** zoom;
+    const mapTiles: RouteGeometry["mapTiles"] = [];
+    const firstTileX = Math.floor(viewportLeft / tileSize);
+    const lastTileX = Math.floor((viewportLeft + width) / tileSize);
+    const firstTileY = Math.max(0, Math.floor(viewportTop / tileSize));
+    const lastTileY = Math.min(tileCount - 1, Math.floor((viewportTop + height) / tileSize));
+    for (let tileY = firstTileY; tileY <= lastTileY; tileY += 1) {
+      for (let rawTileX = firstTileX; rawTileX <= lastTileX; rawTileX += 1) {
+        const tileX = ((rawTileX % tileCount) + tileCount) % tileCount;
+        mapTiles.push({
+          key: `${zoom}-${rawTileX}-${tileY}`,
+          href: `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`,
+          x: rawTileX * tileSize - viewportLeft,
+          y: tileY * tileSize - viewportTop,
+        });
+      }
+    }
+    const referenceLatitude = geographicPoints[Math.floor(geographicPoints.length / 2)].latitude as number;
+    const metersPerPixel = Math.cos(referenceLatitude * Math.PI / 180) * 2 * Math.PI * 6378137 / (tileSize * 2 ** zoom);
+    const gpsCoordinates = replay.gps_points.map((point) => {
+      const projectedGps = project(point.latitude, point.longitude, zoom);
+      return {
+        x: projectedGps.x - viewportLeft,
+        y: projectedGps.y - viewportTop,
+        accuracyPx: Math.max(3, Math.min(80, point.accuracy_m / Math.max(0.01, metersPerPixel))),
+      };
+    });
+    return { path, coordinates, gpsCoordinates, mapTiles, mapZoom: zoom };
+  }
   const minX = replay.route_bounds.min_x ?? 0;
   const maxX = replay.route_bounds.max_x ?? 1;
   const minY = replay.route_bounds.min_y ?? 0;
@@ -844,7 +1071,7 @@ function routeGeometry(replay: ReplayData | null): RouteGeometry {
     y: height / 2 - (point.y_m - centerY) * scale,
   }));
   const path = coordinates.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
-  return { path, coordinates };
+  return { path, coordinates, gpsCoordinates: [], mapTiles: [], mapZoom: null };
 }
 
 function replayGraphGeometry(replay: ReplayData, definition: ReplayGaugeDefinition): ReplayGraphGeometry {
@@ -894,6 +1121,10 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     const value = numeric(key);
     return value === null ? null : Math.round(value);
   };
+  const bounded = (key: string, minimum: number, maximum: number): number | null => {
+    const value = numeric(key);
+    return value !== null && value >= minimum && value <= maximum ? value : null;
+  };
   const turnSignalValue = integer("HS2_DAT_MDD_CMD_452.TURN_SIGNAL_STATUS");
   const headlampFaults = [
     logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_G"),
@@ -911,12 +1142,18 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     steering_rate_deg_s: snapshot.steering.detected ? snapshot.steering.rate_degrees_s ?? null : null,
     driver_torque: snapshot.steering.detected ? snapshot.steering.driver_torque ?? null : null,
     accelerator_pct: numeric("Dyn_CMM.P002_Com_rAPP") ?? numeric("Dyn5_CMM.P334_ACCPed_Position") ?? numeric("DRIVER.GAS_PEDAL"),
+    accelerator_secondary_pct: numeric("Dyn5_CMM.P334_ACCPed_Position"),
     engine_torque_nm: numeric("Dyn_CMM.P003_Com_trqActOut"),
+    idle_setpoint_rpm: numeric("Dat_CMM.P022_Com_nSetPLo"),
+    fuel_consumption_candidate_mm3: numeric("Dat_CMM.P021_Com_volFlCons"),
+    virtual_fuel_consumption_candidate_mm3: numeric("Dat2_CMM.P316_FlSys_volFlConsVirt"),
     current_gear: integer("Dyn2_CMM.P152_Gearbx_stGear"),
     target_gear: integer("Dyn_V2_BVMP.P283_Com_stGearTrgtPos"),
     gear_shift_active: logical("Dyn_V2_BVMP.P009_Com_bGearShftActv"),
     drivetrain_engaged_state: integer("Dyn_V2_BVMP.P030_Gbx_stDrvTrnEgd"),
     longitudinal_accel_ms2: numeric("HS2_DYN_ABR_38D.ACCEL_LONGI_ROUES"),
+    lateral_accel_ms2: numeric("Dyn2_FRE.LATERAL_ACCELERATION"),
+    yaw_rate_deg_s: numeric("Dyn2_FRE.YAW_RATE"),
     brake_active: logical("Dat_BSI.P013_MainBrake"),
     brake_system_state: integer("Dyn2_FRE.P226_Com_stBrkActv"),
     brake_pressure_raw: numeric("Dyn2_FRE.BRAKE_PRESSURE"),
@@ -928,14 +1165,14 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     driver_door: logical("Dat_BSI.DRIVER_DOOR"),
     passenger_door: logical("Dat_BSI.PASSENGER_DOOR"),
     front_wiper_status: integer("HS2_DAT_MDD_CMD_452.FRONT_WIPER_STATUS"),
-    fuel_liters: numeric("HS2_DAT7_BSI_612.INFO_NIV_CARB"),
+    fuel_liters_raw: numeric("HS2_DAT7_BSI_612.INFO_NIV_CARB"),
     oil_temperature_c: numeric("Dat_CMM.P011_Oil_tSwmp"),
     coolant_temperature_c: numeric("Dat_CMM.P005_CEngDst_tSens"),
     intake_air_temperature_c: numeric("Dat_CMM.P158_Air_tAFS"),
     oil_pressure_switch: logical("Dat2_CMM.P278_Oil_stPSwmp"),
-    battery_voltage_v: numeric("Dat6_BSI.P418_Com_uBattRaw"),
-    battery_temperature_c: numeric("Dat6_BSI.P273_Com_tBatt"),
-    battery_charge_pct: numeric("Dat6_BSI.P272_Com_rBattCh"),
+    battery_voltage_v: bounded("Dat6_BSI.P418_Com_uBattRaw", 8, 16.5),
+    battery_temperature_c: bounded("Dat6_BSI.P273_Com_tBatt", -40, 90),
+    battery_charge_pct: bounded("Dat6_BSI.P272_Com_rBattCh", 0, 100),
     ambient_temperature_c: numeric("Contexte1_5B2.P146_Com_tEnvT"),
     atmospheric_pressure_hpa: numeric("Dat2_CMM.P338_EnvP_p"),
     obd_error: logical("Dyn2_CMM.P343_Com_bOBDErr"),
@@ -1043,9 +1280,13 @@ function replayIndicatorState(
     case "seatbelt":
       return { available, active: null, detail: `États bruts C ${point.driver_seatbelt_state ?? "—"} · P ${point.passenger_seatbelt_state ?? "—"}` };
     case "lane":
-      return { available, active: Boolean(point.lka_active || point.lane_departure), detail: point.lane_departure ? `Alerte ligne brute ${point.lane_departure}` : point.lka_active ? "Aide demandée" : "Veille" };
+      return { available, active: Boolean(point.lka_active || point.lane_departure || point.lane_assist_status === 4), detail: point.lane_departure ? `Alerte ligne brute ${point.lane_departure}` : laneAssistStatusLabel(point.lane_assist_status) };
+    case "lane_fault": {
+      const active = point.lane_assist_status === 5 || point.lane_assist_status === 6;
+      return { available, active, detail: laneAssistStatusLabel(point.lane_assist_status) };
+    }
     case "reverse":
-      return { available, active: Boolean(point.reverse), detail: point.reverse ? "Rapport arrière" : "Inactive" };
+      return { available, active: Boolean(point.reverse || point.current_gear === 9), detail: point.reverse || point.current_gear === 9 ? "Rapport arrière" : "Inactive" };
     case "headlamp_fault":
       return { available, active: Boolean(point.headlamp_fault), detail: point.headlamp_fault ? "Défaut de lampe déclaré" : "Aucun défaut déclaré" };
     case "gearbox":
@@ -1160,6 +1401,12 @@ function App() {
   const [transportMessage, setTransportMessage] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [observedDtcs, setObservedDtcs] = useState<ObservedDtc[]>([]);
+  const [diagnosticVehicles, setDiagnosticVehicles] = useState<DiagnosticVehicle[]>([]);
+  const [selectedDiagnosticVin, setSelectedDiagnosticVin] = useState(
+    () => window.localStorage.getItem("opendiag.diagnostic-vin") ?? "",
+  );
+  const [diagnosticReportHistory, setDiagnosticReportHistory] = useState<DiagnosticReportSummary[]>([]);
+  const [dtcFilter, setDtcFilter] = useState<DtcValue["state"] | "all">("active");
   const [diagnosticSensorCatalog, setDiagnosticSensorCatalog] = useState<DiagnosticSensorCatalogEntry[]>([]);
   const [injectionSnapshot, setInjectionSnapshot] = useState<DiagnosticSensorSnapshot | null>(null);
   const [injectionBusy, setInjectionBusy] = useState(false);
@@ -1224,6 +1471,16 @@ function App() {
   const [capture, setCapture] = useState<CaptureStatus | null>(null);
   const [captureName, setCaptureName] = useState("Découverte 308 T9");
   const [captureNote, setCaptureNote] = useState("");
+  const [captureGpsEnabled, setCaptureGpsEnabled] = useState(
+    () => window.localStorage.getItem("opendiag.capture-gps") !== "false",
+  );
+  const [gpsTracking, setGpsTracking] = useState<{
+    state: "idle" | "requesting" | "active" | "unavailable" | "denied" | "error";
+    accuracyM?: number;
+    message?: string;
+  }>({ state: "idle" });
+  const gpsWatchRef = useRef<number | null>(null);
+  const gpsLastSentAtRef = useRef(0);
   const [markerName, setMarkerName] = useState("frein_appuye");
   const [markerNote, setMarkerNote] = useState("");
   const [sessions, setSessions] = useState<DiscoverySession[]>([]);
@@ -1231,6 +1488,7 @@ function App() {
   const [analysisBusy, setAnalysisBusy] = useState("");
   const [opendbcCatalog, setOpendbcCatalog] = useState<OpendbcCatalog | null>(null);
   const [replay, setReplay] = useState<ReplayData | null>(null);
+  const [replayValidation, setReplayValidation] = useState<ReplayValidation | null>(null);
   const [replaySessionId, setReplaySessionId] = useState("");
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayTimeMs, setReplayTimeMs] = useState(0);
@@ -1278,6 +1536,11 @@ function App() {
   const [studioLiveHistory, setStudioLiveHistory] = useState<ReplaySample[]>([]);
   const studioLiveSessionRef = useRef("");
   const studioLiveStartUs = useRef(0);
+  const studioFuelFilterRef = useRef<{ sessionId: string; generatedAtUs: number; value: number | null }>({
+    sessionId: "",
+    generatedAtUs: 0,
+    value: null,
+  });
 
   useEffect(() => {
     api<Status>("/api/system/status")
@@ -1290,9 +1553,7 @@ function App() {
     refreshTransportCatalog();
     refreshPassiveSensors();
     refreshSessions();
-    api<ObservedDtc[]>("/api/diagnostic/dtcs/observed")
-      .then(setObservedDtcs)
-      .catch(() => setObservedDtcs([]));
+    void refreshDiagnosticHistory();
     api<DiagnosticSensorCatalogEntry[]>("/api/sensors/catalog")
       .then(setDiagnosticSensorCatalog)
       .catch(() => setDiagnosticSensorCatalog([]));
@@ -1317,6 +1578,12 @@ function App() {
     const timer = window.setInterval(refreshCapture, 800);
     return () => window.clearInterval(timer);
   }, [capture?.active]);
+
+  useEffect(() => {
+    if (capture?.active && captureGpsEnabled) startGpsTracking(capture.session_id);
+    else stopGpsTracking();
+    return stopGpsTracking;
+  }, [capture?.active, capture?.session_id, captureGpsEnabled]);
 
   useEffect(() => {
     if (!["sensors", "ecus", "studio"].includes(view) || !capture?.active) return;
@@ -1398,8 +1665,17 @@ function App() {
   }, [powertrainProfile]);
 
   useEffect(() => {
+    window.localStorage.setItem("opendiag.capture-gps", String(captureGpsEnabled));
+  }, [captureGpsEnabled]);
+
+  useEffect(() => {
     window.localStorage.setItem("opendiag.identity-profile", identityProfileKey);
   }, [identityProfileKey]);
+
+  useEffect(() => {
+    if (selectedDiagnosticVin) window.localStorage.setItem("opendiag.diagnostic-vin", selectedDiagnosticVin);
+    else window.localStorage.removeItem("opendiag.diagnostic-vin");
+  }, [selectedDiagnosticVin]);
 
   useEffect(() => () => studioInteractionCleanup.current?.(), []);
 
@@ -1408,13 +1684,25 @@ function App() {
     () => report?.ecus.flatMap((ecu) => ecu.dtcs.map((dtc) => ({ ecu, dtc }))) ?? [],
     [report],
   );
-  const dtcCount = new Set([
-    ...dtcs.map(({ dtc }) => dtc.code),
-    ...observedDtcs.map((dtc) => dtc.code),
-  ]).size;
+  const visibleDtcs = useMemo(
+    () => dtcFilter === "all" ? dtcs : dtcs.filter(({ dtc }) => dtc.state === dtcFilter),
+    [dtcs, dtcFilter],
+  );
+  const dtcCount = report?.dtc_summary.active ?? 0;
+  const selectedDiagnosticVehicle = diagnosticVehicles.find((vehicle) => vehicle.vin === selectedDiagnosticVin) ?? null;
   const activeTitle = viewTitles[view];
-  const diagnosticGatewayVerified = status?.transport === "virtual" || Boolean(status?.gateway_verified);
-  const diagnosticReady = Boolean(status?.can_tx_enabled && diagnosticGatewayVerified && !capture?.active);
+  const dualCanOperational = Boolean(
+    capture?.active
+    && capture.dual_can
+    && capture.live_can_ready
+    && capture.diagnostic_can_ready,
+  );
+  const diagnosticGatewayVerified = status?.transport === "virtual" || Boolean(status?.gateway_verified) || dualCanOperational;
+  const diagnosticReady = Boolean(
+    status?.can_tx_enabled
+    && diagnosticGatewayVerified
+    && (!capture?.active || dualCanOperational),
+  );
   const selectedIdentityProfile = vehicleProfiles.find((profile) => profile.key === identityProfileKey) ?? null;
   const selectedPsaEcu = psaCatalog?.ecus.find((ecu) => ecu.key === psaEcuKey) ?? null;
   const selectedPsaAction = psaCatalog?.actions.find((action) => action.key === psaSelectedActionKey) ?? null;
@@ -1469,10 +1757,27 @@ function App() {
     [replay, replayTimeMs],
   );
   const currentReplayPoint = replay?.points[currentReplayIndex] ?? null;
-  const studioLiveSample = useMemo(
-    () => passiveSensors ? passiveSnapshotToReplaySample(passiveSensors) : null,
-    [passiveSensors],
-  );
+  const studioLiveSample = useMemo(() => {
+    if (!passiveSensors) return null;
+    const sample = passiveSnapshotToReplaySample(passiveSensors);
+    const rawFuel = sample.point.fuel_liters_raw;
+    if (typeof rawFuel === "number" && Number.isFinite(rawFuel)) {
+      const filter = studioFuelFilterRef.current;
+      if (filter.sessionId !== passiveSensors.session_id || filter.value === null) {
+        filter.sessionId = passiveSensors.session_id;
+        filter.generatedAtUs = passiveSensors.generated_at_us;
+        filter.value = rawFuel;
+      } else if (passiveSensors.generated_at_us > filter.generatedAtUs) {
+        const elapsedS = Math.max(0, Math.min(5, (passiveSensors.generated_at_us - filter.generatedAtUs) / 1_000_000));
+        const alpha = 1 - Math.exp(-elapsedS / 120);
+        filter.value += alpha * (rawFuel - filter.value);
+        filter.generatedAtUs = passiveSensors.generated_at_us;
+      }
+      sample.point.fuel_liters = Number(filter.value.toFixed(2));
+      if (!sample.availableFields.includes("fuel_liters")) sample.availableFields.push("fuel_liters");
+    }
+    return sample;
+  }, [passiveSensors]);
   const sensorInventoryRows = useMemo<SensorInventoryRow[]>(() => {
     const statusLabels: Record<SensorInventoryStatus, string> = {
       measured: "Mesuré",
@@ -1664,16 +1969,94 @@ function App() {
     setReplayPlaying(false);
     setReplaySessionId(sessionId);
     setReplayTimeMs(0);
+    setReplayValidation(null);
     setError("");
     try {
       const payload = await api<ReplayData>(`/api/learn/replay/${encodeURIComponent(sessionId)}${force ? "?force=true" : ""}`);
       setReplay(payload);
+      const validation = await api<ReplayValidation>(`/api/learn/replay/${encodeURIComponent(sessionId)}/validation${force ? "?force=true" : ""}`);
+      setReplayValidation(validation);
     } catch (err) {
       setReplay(null);
+      setReplayValidation(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setReplayBusy(false);
     }
+  }
+
+  function stopGpsTracking() {
+    if (gpsWatchRef.current !== null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+    }
+    gpsWatchRef.current = null;
+    gpsLastSentAtRef.current = 0;
+    setGpsTracking((current) => current.state === "idle" ? current : { state: "idle" });
+  }
+
+  function startGpsTracking(sessionId: string) {
+    if (gpsWatchRef.current !== null) return;
+    if (!("geolocation" in navigator)) {
+      setGpsTracking({ state: "unavailable", message: "Géolocalisation absente de ce navigateur." });
+      return;
+    }
+    if (!window.isSecureContext) {
+      setGpsTracking({
+        state: "unavailable",
+        message: "Le GPS navigateur exige HTTPS ou une ouverture sur localhost.",
+      });
+      return;
+    }
+
+    setGpsTracking({ state: "requesting", message: "Autorisation GPS en attente…" });
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const now = Date.now();
+        if (now - gpsLastSentAtRef.current < 250) return;
+        gpsLastSentAtRef.current = now;
+        const finiteOrNull = (value: number | null) => value !== null && Number.isFinite(value) ? value : null;
+        setGpsTracking({
+          state: "active",
+          accuracyM: position.coords.accuracy,
+          message: `Position reçue à ±${Math.round(position.coords.accuracy)} m`,
+        });
+        void api<CaptureStatus>("/api/learn/capture/gps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy_m: position.coords.accuracy,
+            altitude_m: finiteOrNull(position.coords.altitude),
+            altitude_accuracy_m: finiteOrNull(position.coords.altitudeAccuracy),
+            heading_deg: finiteOrNull(position.coords.heading),
+            speed_m_s: finiteOrNull(position.coords.speed),
+            source_timestamp_us: Math.round(position.timestamp * 1000),
+          }),
+        }).then((payload) => {
+          if (payload.session_id === sessionId) setCapture(payload);
+        }).catch((err) => {
+          setGpsTracking({
+            state: "error",
+            accuracyM: position.coords.accuracy,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        });
+      },
+      (positionError) => {
+        const denied = positionError.code === positionError.PERMISSION_DENIED;
+        setGpsTracking({
+          state: denied ? "denied" : "error",
+          message: denied
+            ? "Autorisation GPS refusée; la capture CAN continue sans coordonnées."
+            : positionError.code === positionError.POSITION_UNAVAILABLE
+              ? "Position GPS indisponible."
+              : "Délai GPS dépassé; nouvelle tentative en cours.",
+        });
+      },
+      { enableHighAccuracy: true, maximumAge: 1_000, timeout: 15_000 },
+    );
   }
 
   function seekReplay(timeMs: number) {
@@ -1971,8 +2354,60 @@ function App() {
     }
   }
 
+  async function refreshDiagnosticHistory(preferredVin?: string, preferredProfile?: string) {
+    try {
+      const vehicles = await api<DiagnosticVehicle[]>("/api/diagnostic/vehicles");
+      setDiagnosticVehicles(vehicles);
+      const rememberedVin = preferredVin ?? selectedDiagnosticVin;
+      const selected = vehicles.some((vehicle) => vehicle.vin === rememberedVin)
+        ? rememberedVin
+        : vehicles[0]?.vin ?? "";
+      const profile = preferredProfile
+        ?? vehicles.find((vehicle) => vehicle.vin === selected)?.vehicle_profile
+        ?? status?.vehicle_profile
+        ?? identityProfileKey;
+      setSelectedDiagnosticVin(selected);
+
+      const query = new URLSearchParams();
+      if (selected) query.set("vin", selected);
+      else if (profile) query.set("vehicle_profile", profile);
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const [latest, history, observations] = await Promise.all([
+        api<Report>(`/api/diagnostic/reports/latest${suffix}`).catch(() => null),
+        api<DiagnosticReportSummary[]>(`/api/diagnostic/reports${suffix}`).catch(() => []),
+        api<ObservedDtc[]>(`/api/diagnostic/dtcs/observed${suffix}`).catch(() => []),
+      ]);
+      setReport(latest);
+      setDiagnosticReportHistory(history);
+      setObservedDtcs(observations);
+    } catch {
+      setDiagnosticVehicles([]);
+      setDiagnosticReportHistory([]);
+      setObservedDtcs([]);
+    }
+  }
+
+  async function selectDiagnosticVehicle(vin: string) {
+    setSelectedDiagnosticVin(vin);
+    setReport(null);
+    setDiagnosticReportHistory([]);
+    const profile = diagnosticVehicles.find((vehicle) => vehicle.vin === vin)?.vehicle_profile;
+    await refreshDiagnosticHistory(vin, profile);
+  }
+
+  async function selectDiagnosticReport(scanId: string) {
+    if (!scanId) return;
+    setError("");
+    try {
+      const selected = await api<Report>(`/api/diagnostic/reports/${encodeURIComponent(scanId)}`);
+      setReport(selected);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function scan() {
-    if (capture?.active) {
+    if (capture?.active && !dualCanOperational) {
       setError("Arrête et sauvegarde la capture CAN avant de lancer l’inventaire UDS.");
       return;
     }
@@ -1988,8 +2423,18 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const payload = await api<Report>("/api/diagnostic/scan", { method: "POST" });
+      const vehicle = diagnosticVehicles.find((candidate) => candidate.vin === selectedDiagnosticVin);
+      const payload = await api<Report>("/api/diagnostic/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicle_profile: vehicle?.vehicle_profile ?? status?.vehicle_profile ?? identityProfileKey,
+          vin: selectedDiagnosticVin || null,
+        }),
+      });
       setReport(payload);
+      if (payload.vin) setSelectedDiagnosticVin(payload.vin);
+      await refreshDiagnosticHistory(payload.vin ?? undefined, payload.vehicle_profile);
       setView("ecus");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1999,7 +2444,7 @@ function App() {
   }
 
   async function readInjectionParameters(destination: View = "injection") {
-    if (capture?.active) {
+    if (capture?.active && !dualCanOperational) {
       setError("Arrête et sauvegarde la capture CAN avant de lire les paramètres d’injection.");
       return;
     }
@@ -2026,7 +2471,7 @@ function App() {
   }
 
   async function readVehicleIdentity() {
-    if (capture?.active) {
+    if (capture?.active && !dualCanOperational) {
       setError("Arrête et sauvegarde la capture CAN avant de lire l’identité du véhicule.");
       return;
     }
@@ -2046,6 +2491,10 @@ function App() {
         body: JSON.stringify({ vehicle_profile: identityProfileKey }),
       });
       setVehicleIdentity(result);
+      if (result.vin) {
+        setSelectedDiagnosticVin(result.vin);
+        await refreshDiagnosticHistory(result.vin, result.vehicle_profile);
+      }
       setView("identity");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -2056,7 +2505,7 @@ function App() {
 
   async function readPsaDid() {
     if (!diagnosticReady) {
-      setError(capture?.active
+      setError(capture?.active && !dualCanOperational
         ? "Arrête et sauvegarde la capture avant une lecture UDS PSA."
         : "Connecte un firmware diagnostic compatible et active les requêtes CAN en lecture.");
       return;
@@ -2263,8 +2712,8 @@ function App() {
     const progress = replay.duration_ms ? replayTimeMs / replay.duration_ms : 0;
     const speed = Math.max(0, point.speed_kph ?? 0);
     const rpm = Math.max(0, point.engine_rpm ?? 0);
-    const currentGearLabel = point.reverse ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
-    const targetGearLabel = point.reverse ? "R" : (point.target_gear ?? 0) > 0 ? String(point.target_gear) : "—";
+    const currentGearLabel = point.reverse || point.current_gear === 9 ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
+    const targetGearLabel = point.reverse || point.target_gear === 9 ? "R" : (point.target_gear ?? 0) > 0 ? String(point.target_gear) : "—";
     const steering = point.steering_angle_deg ?? 0;
     const accelerator = Math.max(0, Math.min(100, point.accelerator_pct ?? 0));
     const blinkOn = Math.floor(replayTimeMs / 430) % 2 === 0;
@@ -2278,8 +2727,20 @@ function App() {
     const laneDeparture = point.lane_departure === 1 ? "right" : point.lane_departure === 2 ? "left" : "none";
     const speedGaugeAngle = Math.min(270, speed / Math.max(140, replay.max_speed_kph) * 270);
     const replayDate = new Date(replay.start_timestamp_us / 1000);
+    const roadConfirmed = replay.route_method === "driver_confirmed_osrm";
+    const yawReconstructed = replay.route_method === "dead_reckoning_speed_yaw";
+    const gpsFused = replay.route_method === "gps_can_fusion";
+    const gpsMeasured = replay.route_method === "browser_gps" || gpsFused || roadConfirmed;
+    const gpsAnchored = replay.route_method === "dead_reckoning_gps_anchor";
+    const openStreetMapUrl = point.latitude !== null && point.latitude !== undefined && point.longitude !== null && point.longitude !== undefined
+      ? `https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=16/${point.latitude}/${point.longitude}`
+      : "";
     const steeringDirection = Math.abs(steering) < 1 ? "centré" : steering < 0 ? "droite" : "gauche";
-    const availableGaugeDefinitions = replayGaugeCatalog.filter((definition) => replay.available_fields.includes(definition.key));
+    const availableGaugeDefinitions = replayGaugeCatalog.filter((definition) =>
+      replay.available_fields.includes(definition.key)
+      && !definition.rejected
+      && replay.field_quality[String(definition.key)] !== "rejected_on_vehicle"
+    );
     const selectedGaugeDefinitions = selectedReplayGaugeKeys
       .map((key) => availableGaugeDefinitions.find((definition) => definition.key === key))
       .filter((definition): definition is ReplayGaugeDefinition => definition !== undefined);
@@ -2293,30 +2754,76 @@ function App() {
       .map((key) => replayIndicatorCatalog.find((definition) => definition.key === key))
       .filter((definition): definition is ReplayIndicatorDefinition => definition !== undefined);
     const addableIndicatorDefinitions = replayIndicatorCatalog.filter((definition) => !selectedReplayIndicatorKeys.includes(definition.key));
+    const validationByKey = new Map((replayValidation?.signals ?? []).map((item) => [item.key, item]));
+    const unavailableValidationCount = (replayValidation?.signals ?? []).filter((item) => item.status === "unavailable").length;
+    const candidateValidationCount = replayValidation
+      ? replayValidation.signal_count - replayValidation.validated_count - replayValidation.plausible_count - replayValidation.suspicious_count - unavailableValidationCount
+      : 0;
 
     return (
       <div className="replay-page">
         {selector}
 
         <section className="replay-summary-grid">
-          <article><span>Distance reconstruite</span><strong>{replay.distance_km.toFixed(2)} <small>km</small></strong></article>
+          <article><span>{roadConfirmed ? "Distance routière" : gpsMeasured ? "Distance GPS" : "Distance reconstruite"}</span><strong>{replay.distance_km.toFixed(2)} <small>km</small></strong></article>
           <article><span>Vitesse maximale</span><strong>{replay.max_speed_kph.toFixed(1)} <small>km/h</small></strong></article>
           <article><span>Vitesse moyenne roulante</span><strong>{replay.average_moving_speed_kph.toFixed(1)} <small>km/h</small></strong></article>
           <article><span>Début des données</span><strong>{replayDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong></article>
         </section>
+
+        {replayValidation && (
+          <section className="panel replay-validation-panel">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Contrôle de cohérence de la capture</span>
+                <h2>Validation des capteurs, jauges et rapports</h2>
+                <p>Preuves croisées moteur, injection, freinage, roues, direction et détection des mesures absentes ou invalides.</p>
+              </div>
+              <span className={`source-badge ${replayValidation.suspicious_count ? "suspicious" : "measured"}`}>{replayValidation.suspicious_count ? `${replayValidation.suspicious_count} à vérifier` : "Aucune incohérence forte"}</span>
+            </div>
+            <div className="validation-summary-grid">
+              <article><span>Validés</span><strong>{replayValidation.validated_count}</strong><small>Preuve croisée ou test véhicule</small></article>
+              <article><span>Plausibles</span><strong>{replayValidation.plausible_count}</strong><small>Plage cohérente, étalon absent</small></article>
+              <article><span>À confirmer</span><strong>{candidateValidationCount}</strong><small>Candidat sans preuve suffisante</small></article>
+              <article><span>Suspects</span><strong>{replayValidation.suspicious_count}</strong><small>Incohérence ou hors plage</small></article>
+              <article><span>Indisponibles</span><strong>{unavailableValidationCount}</strong><small>Non mesuré sur le CAN passif</small></article>
+            </div>
+            <details className="validation-details">
+              <summary>Voir le détail des {replayValidation.signal_count} signaux</summary>
+              <div className="validation-signal-list">
+                {replayValidation.signals.map((signal) => (
+                  <article className={signal.status} key={signal.key}>
+                    <span className={`validation-badge ${signal.status}`}>{signal.status === "validated" ? "Validé" : signal.status === "plausible" ? "Plausible" : signal.status === "suspicious" ? "Suspect" : signal.status === "unavailable" ? "Indisponible" : "À confirmer"}</span>
+                    <div><strong>{signal.label}</strong><code>{signal.key}</code>{signal.evidence.map((line) => <p key={line}>{line}</p>)}</div>
+                    <small>{signal.sample_count.toLocaleString("fr-FR")} valeurs · {signal.transitions} transitions{signal.minimum !== null && signal.minimum !== undefined ? ` · ${signal.minimum}…${signal.maximum}` : ""}</small>
+                  </article>
+                ))}
+              </div>
+            </details>
+          </section>
+        )}
 
         <section className="replay-hero-grid">
           <article className="panel replay-map-panel">
             <div className="section-heading replay-map-heading">
               <div>
                 <span className="eyebrow">Carte de mouvement</span>
-                <h2>Trajectoire locale reconstruite</h2>
-                <p>Vitesse ABS + angle du volant · origine et orientation arbitraires</p>
+                <h2>{roadConfirmed ? "Parcours routier confirmé" : gpsFused ? "Parcours réel avec virages CAN" : gpsMeasured ? "Trajet GPS enregistré" : gpsAnchored ? "Trajectoire ancrée par GPS" : yawReconstructed ? "Trajectoire CAN par lacet ESP" : "Trajectoire locale reconstruite"}</h2>
+                <p>{roadConfirmed
+                  ? "Francazal → Portet → A64 → périphérique extérieur A620 → Rangueil · progression synchronisée par la vitesse CAN"
+                  : gpsFused
+                  ? `${replay.gps_point_count.toLocaleString("fr-FR")} positions GPS · virages reconstruits par vitesse et volant puis recalés sur le GPS`
+                  : gpsMeasured ? `${replay.gps_point_count.toLocaleString("fr-FR")} positions synchronisées avec les trames CAN`
+                  : gpsAnchored ? "Une position absolue + déplacement estimé par vitesse et volant" : "Vitesse ABS + angle du volant · origine et orientation arbitraires"}</p>
               </div>
-              <span className="source-badge estimated">GPS absent</span>
+              <div className="replay-map-actions">
+                <span className={`source-badge ${gpsMeasured ? "measured" : "estimated"}`}>{roadConfirmed ? "Route confirmée" : gpsFused ? "GPS + CAN" : gpsMeasured ? "GPS réel" : gpsAnchored ? "GPS ancré" : yawReconstructed ? "Lacet ESP" : "GPS absent"}</span>
+                {replay.gps_available && <a className="ghost-button" href={`${API_BASE}/api/learn/replay/${encodeURIComponent(replay.session_id)}/route.geojson`} download={`${replay.session_id}.geojson`}>Exporter GeoJSON</a>}
+                {openStreetMapUrl && <a className="ghost-button" href={openStreetMapUrl} target="_blank" rel="noreferrer">Voir sur OSM</a>}
+              </div>
             </div>
             <div className="route-map">
-              <svg viewBox="0 0 760 470" role="img" aria-label="Trajectoire reconstruite sans position GPS">
+              <svg viewBox="0 0 760 470" role="img" aria-label={roadConfirmed ? "Trajet routier confirmé par le conducteur" : gpsMeasured ? "Trajet mesuré par GPS" : "Trajectoire reconstruite sans trace GPS complète"}>
                 <defs>
                   <pattern id="map-grid" width="30" height="30" patternUnits="userSpaceOnUse">
                     <path d="M 30 0 L 0 0 0 30" className="map-grid-line" fill="none" />
@@ -2326,10 +2833,16 @@ function App() {
                     <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
                   </filter>
                 </defs>
-                <rect width="760" height="470" fill="url(#map-grid)" />
-                <path className="france-silhouette" d="M333 36 L409 54 466 91 489 139 527 174 506 221 521 262 478 295 456 352 404 405 357 438 314 405 264 386 231 342 196 319 207 266 184 218 215 174 221 121 273 96 292 55 Z" />
-                <path className="france-corsica" d="M529 350 C544 358 548 382 536 401 C525 388 520 367 529 350 Z" />
-                <text x="380" y="240" className="map-watermark">FRANCE · POSITION ABSOLUE INDISPONIBLE</text>
+                {currentRouteGeometry.mapTiles.length
+                  ? currentRouteGeometry.mapTiles.map((tile) => (
+                    <image key={tile.key} href={tile.href} x={tile.x} y={tile.y} width="256" height="256" className="osm-tile" />
+                  ))
+                  : <rect width="760" height="470" fill="url(#map-grid)" />}
+                {!currentRouteGeometry.mapTiles.length && !replay.gps_available && <>
+                  <path className="france-silhouette" d="M333 36 L409 54 466 91 489 139 527 174 506 221 521 262 478 295 456 352 404 405 357 438 314 405 264 386 231 342 196 319 207 266 184 218 215 174 221 121 273 96 292 55 Z" />
+                  <path className="france-corsica" d="M529 350 C544 358 548 382 536 401 C525 388 520 367 529 350 Z" />
+                  <text x="380" y="240" className="map-watermark">FRANCE · POSITION ABSOLUE INDISPONIBLE</text>
+                </>}
                 <path d={currentRouteGeometry.path} className="route-shadow" />
                 <path d={currentRouteGeometry.path} className="route-trace" pathLength={100} />
                 <path
@@ -2340,6 +2853,10 @@ function App() {
                   strokeDashoffset={100 - progress * 100}
                   filter="url(#route-glow)"
                 />
+                {currentRouteGeometry.gpsCoordinates.map((gpsPoint, index) => <g key={`gps-${index}`} className="gps-fix">
+                  <circle cx={gpsPoint.x} cy={gpsPoint.y} r={gpsPoint.accuracyPx} className="gps-accuracy" />
+                  <circle cx={gpsPoint.x} cy={gpsPoint.y} r="3.5" className="gps-fix-center" />
+                </g>)}
                 <circle cx={currentRouteGeometry.coordinates[0]?.x} cy={currentRouteGeometry.coordinates[0]?.y} r="5" className="route-start" />
                 <image
                   href="/peugeot-308-top.png"
@@ -2352,10 +2869,15 @@ function App() {
                 />
                 <circle cx={coordinate.x} cy={coordinate.y} r="3" className="map-car-center" />
               </svg>
+              {currentRouteGeometry.mapTiles.length > 0 && <div className="osm-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors</div>}
               <div className="map-readout">
                 <span><i className="measured-dot" />Vitesse mesurée <strong>{speed.toFixed(1)} km/h</strong></span>
-                <span><i className="estimated-dot" />Cap estimé <strong>{point.heading_deg.toFixed(0)}°</strong></span>
+                <span><i className={gpsMeasured ? "measured-dot" : "estimated-dot"} />Cap {roadConfirmed ? "routier" : gpsFused ? "CAN recalé" : gpsMeasured ? "GPS" : "estimé"} <strong>{point.heading_deg.toFixed(0)}°</strong></span>
                 <span>Distance <strong>{(point.distance_m / 1000).toFixed(2)} km</strong></span>
+                {point.latitude !== null && point.latitude !== undefined && point.longitude !== null && point.longitude !== undefined && (
+                  <span>Coordonnées <strong>{point.latitude.toFixed(6)}, {point.longitude.toFixed(6)}</strong></span>
+                )}
+                {point.gps_accuracy_m !== null && point.gps_accuracy_m !== undefined && <span>Précision <strong>±{Math.round(point.gps_accuracy_m)} m</strong></span>}
               </div>
             </div>
           </article>
@@ -2407,6 +2929,8 @@ function App() {
                 <div><span>Régime moteur</span><strong>{Math.round(rpm).toLocaleString("fr-FR")} <small>tr/min</small></strong><i><b style={{ width: `${Math.min(100, rpm / 6000 * 100)}%` }} /></i></div>
                 <div><span>Couple moteur</span><strong>{(point.engine_torque_nm ?? 0).toFixed(0)} <small>Nm</small></strong></div>
                 <div><span>Accélération long.</span><strong>{(point.longitudinal_accel_ms2 ?? 0).toFixed(2)} <small>m/s²</small></strong></div>
+                <div><span>Accélération lat.</span><strong>{(point.lateral_accel_ms2 ?? 0).toFixed(2)} <small>m/s²</small></strong></div>
+                <div><span>Vitesse de lacet</span><strong>{(point.yaw_rate_deg_s ?? 0).toFixed(1)} <small>°/s</small></strong></div>
                 <div className={`gear-readout ${point.gear_shift_active ? "shifting" : ""}`}>
                   <span>Rapport engagé</span>
                   <strong>{currentGearLabel}</strong>
@@ -2437,7 +2961,7 @@ function App() {
               <b>{point.lane_departure ? "Alerte de ligne" : "Voie stable"}</b>
             </div>
             <div className="adas-state-grid">
-              <div><span>Maintien dans la voie</span><strong>État brut {point.lane_assist_status ?? "—"}</strong><small>{point.lka_active ? "Activation demandée" : "Aucune activation LXA"}</small></div>
+              <div><span>Maintien dans la voie</span><strong className={point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>{laneAssistStatusLabel(point.lane_assist_status)}</strong><small>État brut {point.lane_assist_status ?? "—"} · {point.lka_active ? "activation demandée" : "aucune activation LXA"}</small></div>
               <div><span>Régulation longitudinale</span><strong>{point.acc_requested ? "Demandée" : "Inactive"}</strong><small>Mode brut {point.acc_mode ?? "—"} · consigne {point.speed_setpoint_kph ?? 0} km/h</small></div>
               <div><span>Frein conducteur</span><strong className={point.brake_active ? "danger-text" : ""}>{point.brake_active ? "Appuyé" : "Relâché"}</strong><small>État système {point.brake_system_state ?? "—"} · pression brute {point.brake_pressure_raw?.toFixed(0) ?? "—"}</small></div>
               <div><span>Effort au volant</span><strong>{point.driver_torque?.toFixed(0) ?? "—"}</strong><small>Valeur colonne non calibrée en N·m</small></div>
@@ -2503,6 +3027,7 @@ function App() {
               <select value={replayGaugeToAdd} onChange={(event) => setReplayGaugeToAdd(event.target.value)} aria-label="Capteur à ajouter">
                 <option value="">Ajouter un capteur…</option>
                 {addableGaugeDefinitions.map((definition) => <option key={definition.key} value={definition.key}>{definition.label}</option>)}
+                <option value="__fuel_consumption_unavailable" disabled>Consommation — diagnostic OBD requis</option>
               </select>
               <button className="secondary-button" disabled={!replayGaugeToAdd} onClick={addReplayGauge}>Ajouter</button>
             </div>
@@ -2520,8 +3045,9 @@ function App() {
                   : numericValue === null ? 0 : Math.max(0, Math.min(1, (numericValue - definition.minimum) / (definition.maximum - definition.minimum)));
                 const displayValue = definition.status
                   ? statusValue === null ? "—" : statusValue ? "Actif" : "Inactif"
-                  : numericValue === null ? "—" : numericValue.toFixed(definition.precision ?? 0);
+                  : numericValue === null ? "—" : ["current_gear", "target_gear"].includes(String(definition.key)) && numericValue === 9 ? "R" : numericValue.toFixed(definition.precision ?? 0);
                 const quality = replay.field_quality[definition.key] ?? "opendbc_candidate";
+                const validation = validationByKey.get(String(definition.key));
                 return (
                   <article className="custom-gauge-card" key={definition.key}>
                     <button className="gauge-remove" onClick={() => removeReplayGauge(definition.key)} aria-label={`Retirer ${definition.label}`}>×</button>
@@ -2534,7 +3060,7 @@ function App() {
                     <h3>{definition.label}</h3>
                     <p>{definition.note}</p>
                     <footer>
-                      <span style={{ color: definition.color }}>{quality.includes("state_only") ? "Contacteur logique" : "Candidat OpenDBC"}</span>
+                      <span className={`validation-badge ${validation?.status ?? "candidate"}`}>{validation?.status === "validated" ? "Validé" : validation?.status === "plausible" ? "Plausible" : validation?.status === "suspicious" ? "Suspect" : quality.includes("state_only") ? "Contacteur logique" : "À confirmer"}</span>
                       <code>{definition.key}</code>
                     </footer>
                   </article>
@@ -2637,9 +3163,10 @@ function App() {
         </section>
 
         <section className="replay-method-note">
-          <span className="source-badge measured">Validé véhicule</span><p>Angle, vitesse de rotation et effort du volant.</p>
-          <span className="source-badge candidate">Candidat DBC</span><p>Vitesse, commandes, moteur, freinage et ADAS.</p>
-          <span className="source-badge estimated">Estimé</span><p>Position, cap et distance sans GPS.</p>
+          <span className="source-badge measured">Validé véhicule</span><p>Vitesse, roues, volant, lacet, pédales, régime, couple, rapports, freinage, tension et contacteur d’huile.</p>
+          <span className="source-badge candidate">Plausible</span><p>Températures, états non provoqués et niveau carburant filtré : cohérents, mais sans mesure étalon indépendante.</p>
+          <span className="source-badge suspicious">Indisponible</span><p>La consommation passive est invalide ou nulle sur cette capture; elle nécessite une lecture OBD moteur.</p>
+          <span className={`source-badge ${gpsMeasured ? "measured" : "estimated"}`}>{gpsMeasured ? "GPS navigateur" : "Estimé"}</span><p>{gpsMeasured ? "Position, précision, cap et trace synchronisés avec le CAN." : gpsAnchored ? "Position initiale GPS; trajet ensuite estimé." : "Position, cap et distance sans GPS."}</p>
         </section>
       </div>
     );
@@ -2648,7 +3175,7 @@ function App() {
   function renderStudio() {
     const point = studioLiveSample?.point ?? null;
     const liveAvailableFields = studioLiveSample?.availableFields ?? [];
-    const gaugeDefinitions = replayGaugeCatalog;
+    const gaugeDefinitions = replayGaugeCatalog.filter((definition) => !definition.rejected);
     const graphDefinitions = gaugeDefinitions.filter((definition) => !definition.status);
     const widgetTitle = (widget: StudioWidget) => {
       if (widget.kind === "gauge" || widget.kind === "graph" || widget.kind === "numeric" || widget.kind === "lamp") {
@@ -2667,7 +3194,7 @@ function App() {
             <div className="studio-record-state"><i /><div><strong>{capture?.active ? "Direct + enregistrement en cours" : "Direct en attente"}</strong><small>{capture?.active ? capture.session_id : "Démarre la capture pour recevoir les trames en direct"}</small></div></div>
             <label>Nom de la session<input value={captureName} disabled={capture?.active} onChange={(event) => setCaptureName(event.target.value)} /></label>
             <button className={capture?.active ? "danger-button" : "primary-button"} disabled={transportConnectBusy} onClick={() => void (capture?.active ? stopCapture() : startCapture())}>{capture?.active ? "Arrêter et sauvegarder" : "Démarrer le direct"}</button>
-            <div className="studio-capture-stats"><span>Trames <strong>{(capture?.frame_count ?? 0).toLocaleString("fr-FR")}</strong></span><span>Marqueurs <strong>{capture?.marker_count ?? 0}</strong></span><span>Source <strong>{capture?.source ?? "—"}</strong></span></div>
+            <div className="studio-capture-stats"><span>Direct 6/14 <strong>{(capture?.live_frame_count ?? capture?.frame_count ?? 0).toLocaleString("fr-FR")}</strong></span><span>Diag 3/8 <strong>{(capture?.diagnostic_frame_count ?? 0).toLocaleString("fr-FR")}</strong></span><span>Source <strong>{capture?.dual_can ? "Double CAN" : capture?.source ?? "—"}</strong></span></div>
           </div>
         );
       }
@@ -2694,12 +3221,13 @@ function App() {
         );
       }
       if (widget.kind === "gear") {
-        const label = point.reverse ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
+        const label = point.reverse || point.current_gear === 9 ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
+        const targetLabel = point.reverse || point.target_gear === 9 ? "R" : point.target_gear ?? "—";
         return (
           <div className={`studio-gear-widget ${point.gear_shift_active ? "shifting" : ""}`}>
             <strong>{label}</strong>
             <div>{[1, 2, 3, 4, 5, 6].map((gear) => <b key={gear} className={point.current_gear === gear ? "active" : point.target_gear === gear ? "target" : ""}>{gear}</b>)}</div>
-            <span>Cible {point.target_gear ?? "—"}</span><small>{point.gear_shift_active ? "Changement en cours" : "Rapport stabilisé"}</small>
+            <span>Cible {targetLabel}</span><small>{point.gear_shift_active ? "Changement en cours" : "Rapport stabilisé"}</small>
           </div>
         );
       }
@@ -2720,11 +3248,12 @@ function App() {
       if (widget.kind === "gauge") {
         const definition = replayGaugeCatalog.find((candidate) => candidate.key === widget.key);
         if (!definition) return <div className="studio-widget-empty">Capteur inconnu.</div>;
+        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté sur cette Peugeot. Consulte le rapport de validation.</div>;
         const raw = point[definition.key];
         const numeric = typeof raw === "number" ? raw : null;
         const logical = typeof raw === "boolean" ? raw : null;
         const ratio = definition.status ? logical ? 1 : 0 : numeric === null ? 0 : Math.max(0, Math.min(1, (numeric - definition.minimum) / (definition.maximum - definition.minimum)));
-        const value = definition.status ? logical === null ? "—" : logical ? "Actif" : "Inactif" : numeric?.toFixed(definition.precision ?? 0) ?? "—";
+        const value = definition.status ? logical === null ? "—" : logical ? "Actif" : "Inactif" : numeric === 9 && ["current_gear", "target_gear"].includes(String(definition.key)) ? "R" : numeric?.toFixed(definition.precision ?? 0) ?? "—";
         return (
           <div className="studio-gauge-widget">
             <div style={{ background: `conic-gradient(${definition.color} 0deg ${ratio * 300}deg, #263039 ${ratio * 300}deg 300deg, transparent 300deg)` }}><div><strong>{value}</strong><span>{definition.unit}</span></div></div>
@@ -2735,12 +3264,13 @@ function App() {
       if (widget.kind === "numeric") {
         const definition = replayGaugeCatalog.find((candidate) => candidate.key === widget.key);
         if (!definition) return <div className="studio-widget-empty">Capteur inconnu.</div>;
+        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté sur cette Peugeot. Consulte le rapport de validation.</div>;
         const raw = point[definition.key];
         const numeric = typeof raw === "number" ? raw : null;
         const logical = typeof raw === "boolean" ? raw : null;
         const value = definition.status
           ? logical === null ? "—" : logical ? "ACTIF" : "INACTIF"
-          : numeric?.toFixed(definition.precision ?? 0) ?? "—";
+          : numeric === 9 && ["current_gear", "target_gear"].includes(String(definition.key)) ? "R" : numeric?.toFixed(definition.precision ?? 0) ?? "—";
         return (
           <div className="studio-numeric-widget" style={{ "--sensor-color": definition.color } as React.CSSProperties}>
             <i /><div><strong>{value}</strong><span>{definition.unit}</span></div><small>{definition.note}</small>
@@ -2764,6 +3294,7 @@ function App() {
         const definition = replayGaugeCatalog.find((candidate) => candidate.key === widget.key);
         const geometry = studioGraphGeometries.get(widget.id);
         if (!definition || !geometry) return <div className="studio-widget-empty">Courbe indisponible.</div>;
+        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté sur cette Peugeot. Consulte le rapport de validation.</div>;
         const raw = point[definition.key];
         const numeric = typeof raw === "number" ? raw : null;
         const span = Math.max(.001, geometry.maximum - geometry.minimum);
@@ -2802,7 +3333,7 @@ function App() {
           <button className="studio-exit" onClick={() => setView("dashboard")}>← Menu</button>
           <div className="studio-brand"><span>OD</span><div><strong>Dashboard direct</strong><small>Disposition sauvegardée automatiquement</small></div></div>
           <div className={`studio-live-source ${capture?.active ? "active" : ""}`}>
-            <i /><div><strong>{capture?.active ? "CAN DIRECT" : "DIRECT EN ATTENTE"}</strong><small>{capture?.active ? `${(capture.frame_count ?? 0).toLocaleString("fr-FR")} trames · mise à jour 5 Hz` : "Clique sur Enregistrer pour démarrer"}</small></div>
+            <i /><div><strong>{capture?.active ? (capture.dual_can ? "DOUBLE CAN DIRECT" : "CAN DIRECT") : "DIRECT EN ATTENTE"}</strong><small>{capture?.active ? `${(capture.live_frame_count ?? capture.frame_count ?? 0).toLocaleString("fr-FR")} live · ${(capture.diagnostic_frame_count ?? 0).toLocaleString("fr-FR")} diag · mise à jour 5 Hz` : "Clique sur Enregistrer pour démarrer"}</small></div>
           </div>
           <div className={`studio-esp-selector ${status?.gateway_verified || capture?.active ? "connected" : ""}`} title={capture?.active ? "Arrête la capture avant de changer d’ESP32" : undefined}>
             <i />
@@ -2817,7 +3348,7 @@ function App() {
           <div className="studio-add-control">
             <select value={studioWidgetToAdd} onChange={(event) => setStudioWidgetToAdd(event.target.value)} aria-label="Widget à ajouter">
               <optgroup label="Instruments"><option value="speed">Vitesse</option><option value="steering">Volant</option><option value="gear">Rapport engagé</option><option value="vehicle">Véhicule</option><option value="capture">Enregistrement CAN</option></optgroup>
-              <optgroup label="Jauges">{gaugeDefinitions.map((definition) => <option key={`g-${definition.key}`} value={`gauge:${definition.key}`}>{definition.label}</option>)}</optgroup>
+              <optgroup label="Jauges">{gaugeDefinitions.map((definition) => <option key={`g-${definition.key}`} value={`gauge:${definition.key}`}>{definition.label}</option>)}<option disabled>Consommation — diagnostic OBD requis</option></optgroup>
               <optgroup label="Graphes">{graphDefinitions.map((definition) => <option key={`c-${definition.key}`} value={`graph:${definition.key}`}>{definition.label}</option>)}</optgroup>
               <optgroup label="Valeurs numériques">{gaugeDefinitions.map((definition) => <option key={`n-${definition.key}`} value={`numeric:${definition.key}`}>{definition.label}</option>)}</optgroup>
               <optgroup label="Voyants capteur">{gaugeDefinitions.filter((definition) => definition.status).map((definition) => <option key={`l-${definition.key}`} value={`lamp:${definition.key}`}>{definition.label}</option>)}</optgroup>
@@ -2894,9 +3425,9 @@ function App() {
             <small>{report ? "détectés au dernier scan" : "aucun scan effectué"}</small>
           </article>
           <article className="metric-card">
-            <span className="metric-label">Défauts mémorisés</span>
-            <strong>{dtcCount || (report ? 0 : "—")}</strong>
-            <small>{observedDtcs.length ? `${observedDtcs.length} relevés sauvegardés · effacement verrouillé` : status?.dtc_clear_enabled ? "effacement armé" : "effacement verrouillé"}</small>
+            <span className="metric-label">Défauts actifs</span>
+            <strong>{report ? dtcCount : "—"}</strong>
+            <small>{report ? `${report.dtc_summary.historical} historique(s) · ${observedDtcs.length} relevé(s) à confirmer` : "aucun scan enregistré"}</small>
           </article>
         </section>
 
@@ -2911,8 +3442,8 @@ function App() {
             <button className="operation-card" onClick={diagnosticReady ? scan : () => setView(status?.can_tx_enabled && !diagnosticGatewayVerified ? "studio" : "ecus")} disabled={busy}>
               <span className="operation-icon">SCAN</span>
               <span>
-                <strong>{busy ? "Scan en cours…" : diagnosticReady ? "Scanner le véhicule" : capture?.active ? "Arrêter la capture avant le scan" : status?.can_tx_enabled ? "Connecter l’ESP32 diagnostic" : "Découvrir les systèmes"}</strong>
-                <small>{diagnosticReady ? "Inventaire ECU, identification et lecture DTC" : status?.can_tx_enabled ? "La poignée de main lecture seule doit être validée" : "Observation passive maintenant · diagnostic actif séparé"}</small>
+                <strong>{busy ? "Scan en cours…" : diagnosticReady ? (dualCanOperational ? "Scanner pendant l’enregistrement" : "Scanner le véhicule") : capture?.active ? "CAN diagnostic 3/8 indisponible" : status?.can_tx_enabled ? "Connecter l’ESP32 diagnostic" : "Découvrir les systèmes"}</strong>
+                <small>{diagnosticReady ? "Inventaire ECU sur 3/8 · dashboard 6/14 conservé" : status?.can_tx_enabled ? "La poignée de main double CAN doit être validée" : "Observation passive maintenant · diagnostic actif séparé"}</small>
               </span>
               <b>→</b>
             </button>
@@ -3045,6 +3576,9 @@ function App() {
           </div>
           <p className="inline-alert">
             Cette détection trouve tous les signaux diffusés sur le réseau CAN actuellement branché. Un capteur silencieux, sur un autre réseau ou accessible uniquement par requête UDS ne peut pas apparaître en mode passif.
+          </p>
+          <p className="inline-alert">
+            <strong>Consommation :</strong> aucun débit fiable n'est diffusé passivement sur la capture actuelle. Utilise « Injection » pour tenter la lecture OBD moteur du débit carburant (PID 01-5E).
           </p>
         </section>
 
@@ -3308,7 +3842,7 @@ function App() {
             </button>
           </div>
 
-          {!diagnosticReady && <p className="inline-alert">{capture?.active
+          {!diagnosticReady && <p className="inline-alert">{capture?.active && !dualCanOperational
             ? "Arrête et sauvegarde la capture avant cette lecture active."
             : status?.can_tx_enabled
               ? "Connecte l’ESP32 et vérifie la poignée de main du firmware diagnostic en lecture seule."
@@ -3409,13 +3943,13 @@ function App() {
             <div><span>Liaison ESP32</span><strong>{diagnosticGatewayVerified ? "Validée" : "Connexion requise"}</strong></div>
             <div><span>Calculateur interrogé</span><strong>{hexadecimal(injectionSnapshot?.request_id ?? 0x7E0)} → {hexadecimal(injectionSnapshot?.response_id ?? 0x7E8)}</strong></div>
             <div><span>Mode diagnostic</span><strong>OBD-II 01 · lecture seule</strong></div>
-            <div><span>Capture CAN</span><strong>{capture?.active ? "À arrêter d'abord" : "Port disponible"}</strong></div>
+            <div><span>Capture CAN</span><strong>{dualCanOperational ? "Simultanée · live 6/14" : capture?.active ? "Diagnostic 3/8 indisponible" : "Port disponible"}</strong></div>
           </div>
           {diagnosticReady ? (
             <button className="primary-button full-scan-button" onClick={() => void readInjectionParameters()} disabled={injectionBusy}>{injectionBusy ? "Lecture en cours…" : injectionSnapshot ? "Actualiser les paramètres d'injection" : "Lire les paramètres d'injection"}</button>
           ) : (
-            <p className="inline-alert">{capture?.active
-              ? "Arrête et sauvegarde d’abord la capture : les requêtes OBD et l’enregistrement passif ne partagent pas le port série."
+            <p className="inline-alert">{capture?.active && !dualCanOperational
+              ? "Cette passerelle ne confirme pas deux contrôleurs CAN disponibles simultanément."
               : status?.can_tx_enabled
                 ? "Connecte l’ESP32 dans le Dashboard direct et valide la poignée de main lecture seule."
                 : "Le backend est actuellement en écoute passive stricte; les requêtes OBD-II restent bloquées."}</p>
@@ -3517,7 +4051,7 @@ function App() {
             <article><span>Lecture UDS</span><strong>{diagnosticReady ? "Prête" : "Verrouillée"}</strong><small>Services 0x19 / 0x22 / 0x3E</small></article>
             <article><span>Actionneurs</span><strong>{labRuntimeReady ? "Armables" : "Verrouillés"}</strong><small>0x2F exact · temporisation ≤ 3 s</small></article>
           </div>
-          {psaCatalog && <div className="psa-wiring-note"><strong>Réseaux OBD à vérifier avant branchement</strong><span>{psaCatalog.wiring.vehicle_can} · référence NAC : {psaCatalog.wiring.nac_reference}</span><p>{psaCatalog.wiring.warning}</p></div>}
+          {psaCatalog && <div className="psa-wiring-note"><strong>Réseaux OBD à vérifier avant branchement</strong><span>{psaCatalog.wiring.vehicle_can} · {psaCatalog.wiring.standard_obd}</span><p>{psaCatalog.wiring.warning}</p></div>}
         </section>
 
         <section className="panel psa-zone-reader">
@@ -3565,6 +4099,7 @@ function App() {
                 <header><span>{action.ecu_key.toUpperCase()}</span><i /></header>
                 <h3>{action.name}</h3><p>{action.description}</p>
                 <code>{action.start_payload_hex ?? "COMMANDE À IDENTIFIER"}</code>
+                <span className={`validation-badge ${action.vehicle_confirmed ? "validated" : action.available ? "plausible" : "candidate"}`}>{action.vehicle_confirmed ? "Confirmé sur ce VIN" : action.available ? "Documenté · essai véhicule requis" : "Non documenté"}</span>
                 {action.unavailable_reason && <small>{action.unavailable_reason}</small>}
                 <button className="ghost-button" disabled={!action.available} onClick={() => { setPsaSelectedActionKey(action.key); setPsaConfirmation(""); setPsaFeedback(""); }}>{action.available ? "Préparer le test" : "Non disponible"}</button>
               </article>
@@ -3634,10 +4169,11 @@ function App() {
               <h2>Identifier tous les ECU et lire leurs défauts</h2>
               <p>Cette étape envoie des requêtes UDS 0x10/0x19/0x22, sans effacement ni télécodage.</p>
             </div>
-            <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? "Prêt" : capture?.active ? "Capture active" : status?.can_tx_enabled ? "ESP32 à valider" : "Verrouillé"}</span>
+            <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? (dualCanOperational ? "Double CAN prêt" : "Prêt") : capture?.active ? "Capture active" : status?.can_tx_enabled ? "ESP32 à valider" : "Verrouillé"}</span>
           </div>
           <div className="diagnostic-preflight">
             <div><span>Liaison ESP32</span><strong>{diagnosticGatewayVerified ? "Poignée de main validée" : "Connexion requise"}</strong></div>
+            <div><span>Réseaux CAN</span><strong>{dualCanOperational ? "6/14 live + 3/8 diagnostic" : status?.gateway_hello?.dual_can === true ? "Double CAN détecté" : "Interface unique"}</strong></div>
             <div><span>Firmware ESP32</span><strong>{status?.gateway_hello?.diagnostic_read_only === true || status?.transport === "virtual" ? "Lecture seule validée" : status?.can_tx_enabled ? "À confirmer" : "Listen-only"}</strong></div>
             <div><span>Requêtes CAN</span><strong>{status?.can_tx_enabled ? "UDS lecture uniquement" : "Bloquées"}</strong></div>
             <div><span>Effacement / télécodage</span><strong>{status?.dtc_clear_enabled ? "Maintenance armée" : "Toujours interdit"}</strong></div>
@@ -3645,8 +4181,8 @@ function App() {
           {diagnosticReady ? (
             <button className="primary-button full-scan-button" onClick={scan} disabled={busy}>{busy ? "Inventaire en cours…" : "Lancer l'inventaire ECU + DTC"}</button>
           ) : (
-            <p className="inline-alert">{capture?.active
-              ? "Arrête et sauvegarde d’abord la capture CAN : le port ESP32 doit être libéré pour le scan UDS."
+            <p className="inline-alert">{capture?.active && !dualCanOperational
+              ? "La capture est active mais le MCP2515 diagnostic 3/8 n’est pas confirmé disponible."
               : status?.can_tx_enabled
                 ? "Retourne au Dashboard direct, sélectionne l’ESP32 puis clique sur Connecter. La poignée de main doit confirmer le firmware diagnostic en lecture seule."
                 : "Le backend est verrouillé en écoute passive. Un firmware diagnostic séparé et CAN_TX_ENABLED=true sont nécessaires pour les lectures UDS."}</p>
@@ -3677,7 +4213,10 @@ function App() {
                     <div className="tag-row">
                       <span>{ecu.optional ? "Optionnel" : "Attendu"}</span>
                       <span>{ecu.confidence}</span>
-                      {ecu.dtcs.length > 0 && <span className="warn-tag">{ecu.dtcs.length} DTC</span>}
+                      {ecu.dtcs.filter((dtc) => dtc.state === "active").length > 0 && <span className="warn-tag">{ecu.dtcs.filter((dtc) => dtc.state === "active").length} actif(s)</span>}
+                      {ecu.dtcs.filter((dtc) => dtc.state === "historical").length > 0 && <span>{ecu.dtcs.filter((dtc) => dtc.state === "historical").length} historique(s)</span>}
+                      {ecu.dtcs.filter((dtc) => dtc.state === "not_tested").length > 0 && <span>{ecu.dtcs.filter((dtc) => dtc.state === "not_tested").length} non testé(s)</span>}
+                      {ecu.probe_method && <span>Réponse via {ecu.probe_method}</span>}
                     </div>
                     {ecu.identification.length > 0 && (
                       <div className="did-grid">
@@ -3702,8 +4241,64 @@ function App() {
   }
 
   function renderDtcs() {
+    const filterLabels: Array<{ key: DtcValue["state"] | "all"; label: string; count: number }> = [
+      { key: "active", label: "Actifs", count: report?.dtc_summary.active ?? 0 },
+      { key: "historical", label: "Historiques", count: report?.dtc_summary.historical ?? 0 },
+      { key: "not_tested", label: "Non testés", count: report?.dtc_summary.not_tested ?? 0 },
+      { key: "all", label: "Tous", count: report?.dtc_summary.total ?? 0 },
+    ];
+    const renderChanges = (changes: DtcChange[], kind: "appeared" | "resolved" | "changed") => changes.map((change) => (
+      <article className={`comparison-change ${kind}`} key={`${kind}-${change.ecu_key}-${change.raw_hex}`}>
+        <code>{change.code}</code>
+        <div>
+          <strong>{change.title ?? "Description spécifique inconnue"}</strong>
+          <span>{change.ecu_name}</span>
+        </div>
+        <small>{kind === "appeared"
+          ? `Apparu · ${change.after_state ?? "—"}`
+          : kind === "resolved"
+            ? `Disparu · ${change.before_state ?? "—"}`
+            : `${change.before_state ?? "—"} → ${change.after_state ?? "—"}`}</small>
+      </article>
+    ));
     return (
       <div className="dtc-page">
+        <section className="panel diagnostic-history-toolbar">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Historique par véhicule</span>
+              <h2>Rapports enregistrés automatiquement</h2>
+              <p>Chaque diagnostic est conservé localement sous son VIN, sans mélanger Peugeot et Fiat.</p>
+            </div>
+            <button className="ghost-button" onClick={() => void refreshDiagnosticHistory(selectedDiagnosticVin || undefined)}>Actualiser</button>
+          </div>
+          <div className="diagnostic-history-controls">
+            <label>Véhicule
+              <select value={selectedDiagnosticVin} onChange={(event) => void selectDiagnosticVehicle(event.target.value)}>
+                {!diagnosticVehicles.length && <option value="">Aucun VIN enregistré</option>}
+                {diagnosticVehicles.map((vehicle) => <option value={vehicle.vin} key={vehicle.vin}>{vehicle.manufacturer} {vehicle.model} · {vehicle.vin}</option>)}
+              </select>
+            </label>
+            <label>Diagnostic
+              <select value={report?.scan_id ?? ""} onChange={(event) => void selectDiagnosticReport(event.target.value)} disabled={!diagnosticReportHistory.length}>
+                {!diagnosticReportHistory.length && <option value="">Aucun diagnostic</option>}
+                {diagnosticReportHistory.map((item) => <option value={item.scan_id} key={item.scan_id}>{formatIsoDate(item.scanned_at)} · {item.dtc_summary.active} actif(s)</option>)}
+              </select>
+            </label>
+            <div className="diagnostic-history-identity">
+              <span>VIN sélectionné</span>
+              <strong>{selectedDiagnosticVehicle?.vin ?? report?.vin ?? "Non identifié"}</strong>
+              <small>{selectedDiagnosticVehicle ? `${selectedDiagnosticVehicle.manufacturer} ${selectedDiagnosticVehicle.model} · ${selectedDiagnosticVehicle.scan_count} scan(s)` : "Lis d’abord l’identité du véhicule"}</small>
+            </div>
+            <div className="diagnostic-export-actions">
+              {report?.scan_id ? <>
+                <a className="secondary-button" href={`${API_BASE}/api/diagnostic/reports/${encodeURIComponent(report.scan_id)}/export?format=html`} target="_blank" rel="noreferrer">Rapport HTML</a>
+                <a className="ghost-button" href={`${API_BASE}/api/diagnostic/reports/${encodeURIComponent(report.scan_id)}/export?format=json`} target="_blank" rel="noreferrer">JSON brut</a>
+              </> : <span>Aucun rapport à exporter</span>}
+            </div>
+          </div>
+        </section>
+
         {observedDtcs.length > 0 && (
           <section className="panel observed-dtc-panel">
             <div className="section-heading">
@@ -3722,7 +4317,7 @@ function App() {
                     <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
                     <p>{dtc.note ?? "Code relevé manuellement; état UDS non fourni."}</p>
                     <div className="tag-row">
-                      <span className="warn-tag">Relevé utilisateur</span>
+                      <span className="warn-tag">À confirmer par lecture UDS</span>
                       <span>Statut UDS inconnu</span>
                       {dtc.catalogs.slice(0, 3).map((catalog) => <span key={catalog}>{catalog}</span>)}
                       {dtc.catalogs.length > 3 && <span>+{dtc.catalogs.length - 3} catalogues</span>}
@@ -3744,8 +4339,9 @@ function App() {
             <div>
               <span className="eyebrow">Lecture UDS 0x19</span>
               <h2>Dernier scan des calculateurs</h2>
+              {report && <p>{report.manufacturer} {report.model} · {report.vin ?? "VIN non rattaché"} · {formatIsoDate(report.scanned_at)}</p>}
             </div>
-            <span className="locked-label">Effacement verrouillé</span>
+            <div className="section-actions"><span className="locked-label">Effacement verrouillé</span><button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>{busy ? "Scan…" : "Nouveau scan"}</button></div>
           </div>
           {!report ? (
             <EmptyState
@@ -3759,26 +4355,63 @@ function App() {
                     : "La lecture DTC nécessite un firmware diagnostic et des requêtes UDS en lecture seule."}
               action={<button className="primary-button" disabled={!diagnosticReady} onClick={scan}>{diagnosticReady ? "Scanner le véhicule" : "Connexion diagnostic requise"}</button>}
             />
-          ) : dtcs.length === 0 ? (
-            <EmptyState title="Aucun DTC retourné par ce scan" text="Les calculateurs interrogés n'ont remonté aucun défaut dans ce rapport; les constats antérieurs restent séparés au-dessus." />
           ) : (
-            <div className="dtc-list">
-              {dtcs.map(({ ecu, dtc }) => (
-                <article className="dtc-card" key={`${ecu.key}-${dtc.raw_hex}-${dtc.status_hex}`}>
-                  <div className="dtc-code"><code>{dtc.code}</code><span>{ecu.name}</span></div>
-                  <div className="dtc-description">
-                    <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
-                    <p>{dtc.status_labels.length ? dtc.status_labels.join(" · ") : "Aucun indicateur actif"}</p>
-                  </div>
-                  <div className="dtc-meta">
-                    <span>État 0x{dtc.status_hex}</span>
-                    <small>{dtc.catalogs.join(", ") || "Catalogue inconnu"}</small>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <>
+              <div className="dtc-summary-grid">
+                <button className={dtcFilter === "active" ? "active" : ""} onClick={() => setDtcFilter("active")}><span>Défauts actifs</span><strong>{report.dtc_summary.active}</strong><small>À traiter maintenant</small></button>
+                <button className={dtcFilter === "historical" ? "active" : ""} onClick={() => setDtcFilter("historical")}><span>Historiques</span><strong>{report.dtc_summary.historical}</strong><small>Mémorisés, non actuels</small></button>
+                <button className={dtcFilter === "not_tested" ? "active" : ""} onClick={() => setDtcFilter("not_tested")}><span>Tests non exécutés</span><strong>{report.dtc_summary.not_tested}</strong><small>Pas des pannes confirmées</small></button>
+                <div><span>ECU affectés</span><strong>{report.dtc_summary.affected_ecus}</strong><small>{detectedEcus.length}/{report.ecus.length} ECU détectés</small></div>
+              </div>
+              <div className="dtc-filter-tabs">
+                {filterLabels.map((filter) => <button className={dtcFilter === filter.key ? "active" : ""} onClick={() => setDtcFilter(filter.key)} key={filter.key}>{filter.label}<span>{filter.count}</span></button>)}
+              </div>
+              {dtcFilter === "not_tested" && <p className="dtc-technical-note"><strong>Information technique, pas une panne :</strong> les bits UDS 0x40/0x50 indiquent que le moniteur n’a pas encore terminé ou exécuté son test depuis l’effacement ou le cycle courant.</p>}
+              {visibleDtcs.length === 0 ? (
+                <EmptyState
+                  title={dtcFilter === "active" ? "Aucun défaut actif" : `Aucun élément dans « ${filterLabels.find((item) => item.key === dtcFilter)?.label ?? dtcFilter} »`}
+                  text={dtcFilter === "active" ? "Ce scan ne contient aucune panne confirmée comme présente au moment de la lecture." : "Change de filtre pour consulter les autres états UDS."}
+                />
+              ) : <div className="dtc-list">
+                {visibleDtcs.map(({ ecu, dtc }) => (
+                  <article className={`dtc-card ${dtc.state}`} key={`${ecu.key}-${dtc.raw_hex}-${dtc.status_hex}`}>
+                    <div className="dtc-code"><code>{dtc.code}</code><span>{ecu.name}</span></div>
+                    <div className="dtc-description">
+                      <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
+                      <p>{dtc.state_detail}</p>
+                      <div className="tag-row"><span className={`dtc-state-tag ${dtc.state}`}>{dtc.state_label}</span>{dtc.status_labels.map((label) => <span key={label}>{label}</span>)}</div>
+                    </div>
+                    <div className="dtc-meta">
+                      <span>État UDS 0x{dtc.status_hex}</span>
+                      <small>{dtc.catalogs.join(", ") || "Catalogue inconnu"}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>}
+            </>
           )}
         </section>
+
+        {report?.comparison && (
+          <section className="panel diagnostic-comparison">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Comparaison automatique avant / après</span>
+                <h2>Évolution depuis le diagnostic précédent</h2>
+                <p>Comparaison limitée aux {report.comparison.comparable_ecus.length} ECU dont la lecture DTC a réussi dans les deux scans.</p>
+              </div>
+              <span className="candidate-count">{report.comparison.appeared.length + report.comparison.resolved.length + report.comparison.changed.length} changement(s)</span>
+            </div>
+            {report.comparison.appeared.length + report.comparison.resolved.length + report.comparison.changed.length === 0 ? (
+              <EmptyState title="Aucune évolution significative" text={`${report.comparison.unchanged} défaut(s) actif(s) ou historique(s) inchangé(s). Les états « non testé » ne sont pas interprétés comme des pannes.`} />
+            ) : <div className="comparison-list">
+              {renderChanges(report.comparison.appeared, "appeared")}
+              {renderChanges(report.comparison.changed, "changed")}
+              {renderChanges(report.comparison.resolved, "resolved")}
+            </div>}
+            {report.comparison.excluded_ecus.length > 0 && <p className="comparison-coverage">ECU exclus faute de lecture comparable : {report.comparison.excluded_ecus.join(", ")}.</p>}
+          </section>
+        )}
       </div>
     );
   }
@@ -3913,17 +4546,30 @@ function App() {
               <div className="capture-form">
                 <label>Nom de l'expérience<input value={captureName} onChange={(event) => setCaptureName(event.target.value)} /></label>
                 <label>Objectif / conditions<textarea value={captureNote} onChange={(event) => setCaptureNote(event.target.value)} placeholder="Contact mis, moteur arrêté, aucun autre actionneur…" /></label>
+                <label className="gps-capture-option">
+                  <input type="checkbox" checked={captureGpsEnabled} onChange={(event) => setCaptureGpsEnabled(event.target.checked)} />
+                  <span><strong>Enregistrer le trajet GPS</strong><small>Position du navigateur, synchronisée avec le CAN</small></span>
+                </label>
                 <button className="primary-button record-button" onClick={startCapture}>Démarrer la capture</button>
               </div>
             ) : (
               <>
                 <div className="live-capture">
                   <div><span>Session</span><strong>{capture.name || capture.session_id}</strong></div>
-                  <div><span>Trames</span><strong>{capture.frame_count.toLocaleString("fr-FR")}</strong></div>
+                  <div><span>Direct 6/14</span><strong>{(capture.live_frame_count ?? capture.frame_count).toLocaleString("fr-FR")}</strong></div>
+                  <div><span>Diagnostic 3/8</span><strong>{(capture.diagnostic_frame_count ?? 0).toLocaleString("fr-FR")}</strong></div>
                   <div><span>Marqueurs</span><strong>{capture.marker_count}</strong></div>
-                  <div><span>Mode</span><strong>{capture.strict_passive === true ? "Passif strict" : capture.strict_passive === false ? "Observation" : "Vérification…"}</strong></div>
+                  <div><span>GPS</span><strong>{captureGpsEnabled
+                    ? capture.gps_point_count
+                      ? `${capture.gps_point_count.toLocaleString("fr-FR")} pts · ±${Math.round(capture.gps_last_accuracy_m ?? gpsTracking.accuracyM ?? 0)} m`
+                      : gpsTracking.state === "requesting" ? "Autorisation…" : gpsTracking.state === "active" ? "Acquisition…" : "Indisponible"
+                    : "Désactivé"}</strong></div>
+                  <div><span>Mode</span><strong>{capture.dual_can ? "6/14 passif + 3/8 diag" : capture.strict_passive === true ? "Passif strict" : capture.strict_passive === false ? "Observation" : "Vérification…"}</strong></div>
                 </div>
                 {capture.error && <p className="inline-alert danger-alert">{capture.error}</p>}
+                {captureGpsEnabled && gpsTracking.message && gpsTracking.state !== "active" && (
+                  <p className="inline-alert">GPS : {gpsTracking.message}</p>
+                )}
                 <div className="marker-editor">
                   <label>Nom du marqueur<input value={markerName} onChange={(event) => setMarkerName(event.target.value)} /></label>
                   <label>Note facultative<input value={markerNote} onChange={(event) => setMarkerNote(event.target.value)} placeholder="Pédale maintenue 2 secondes" /></label>
@@ -3980,7 +4626,7 @@ function App() {
                       {session.markers.slice(0, 4).map((marker) => <span key={marker}>{marker}</span>)}
                     </div>
                   </div>
-                  <div className="session-stats"><span>{session.frame_count.toLocaleString("fr-FR")} trames</span><span>{session.marker_count} marqueurs</span></div>
+                <div className="session-stats"><span>{session.frame_count.toLocaleString("fr-FR")} trames</span>{Boolean(session.diagnostic_frame_count) && <span>{session.live_frame_count?.toLocaleString("fr-FR")} live / {session.diagnostic_frame_count?.toLocaleString("fr-FR")} diag</span>}<span>{session.marker_count} marqueurs</span></div>
                   <button
                     className={session.analyzed ? "secondary-button" : "primary-button"}
                     disabled={analysisBusy === session.session_id}

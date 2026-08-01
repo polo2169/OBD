@@ -4,16 +4,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
 from typing import Any
+from bisect import bisect_right
 import json
 import math
 import threading
 
 from app.config import settings
-from app.learn.models import ReplayData, ReplayEvent, ReplaySample
+from app.learn.models import ReplayData, ReplayEvent, ReplayGpsPoint, ReplaySample
 from app.learn.opendbc import get_opendbc_decoder
 
 
-CACHE_VERSION = 4
+CACHE_VERSION = 11
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -46,7 +47,19 @@ TARGET_IDS = {
 STATE_FIELDS = tuple(
     field
     for field in ReplaySample.model_fields
-    if field not in {"t_ms", "x_m", "y_m", "heading_deg", "distance_m"}
+    if field not in {
+        "t_ms",
+        "latitude",
+        "longitude",
+        "gps_accuracy_m",
+        "gps_altitude_m",
+        "gps_heading_deg",
+        "gps_speed_kph",
+        "x_m",
+        "y_m",
+        "heading_deg",
+        "distance_m",
+    }
 )
 
 FIELD_QUALITY = {
@@ -56,12 +69,18 @@ FIELD_QUALITY = {
     "speed_kph": "opendbc_candidate",
     "engine_rpm": "opendbc_candidate",
     "accelerator_pct": "opendbc_candidate",
+    "accelerator_secondary_pct": "cross_check_only",
     "engine_torque_nm": "opendbc_candidate",
+    "idle_setpoint_rpm": "opendbc_candidate",
+    "fuel_consumption_candidate_mm3": "rejected_on_vehicle",
+    "virtual_fuel_consumption_candidate_mm3": "rejected_on_vehicle",
     "current_gear": "opendbc_candidate",
     "target_gear": "opendbc_candidate",
     "gear_shift_active": "opendbc_candidate",
     "drivetrain_engaged_state": "opendbc_candidate_raw_state",
     "longitudinal_accel_ms2": "opendbc_candidate",
+    "lateral_accel_ms2": "validated_on_vehicle",
+    "yaw_rate_deg_s": "validated_on_vehicle",
     "brake_active": "opendbc_candidate",
     "brake_system_state": "opendbc_candidate",
     "brake_pressure_raw": "opendbc_candidate_unscaled",
@@ -73,11 +92,12 @@ FIELD_QUALITY = {
     "driver_door": "opendbc_candidate",
     "passenger_door": "opendbc_candidate",
     "front_wiper_status": "opendbc_candidate",
-    "fuel_liters": "opendbc_candidate",
+    "fuel_liters_raw": "vehicle_signal_slosh_affected",
+    "fuel_liters": "filtered_vehicle_signal",
     "oil_temperature_c": "opendbc_candidate",
     "coolant_temperature_c": "opendbc_candidate",
     "intake_air_temperature_c": "opendbc_candidate",
-    "oil_pressure_switch": "opendbc_candidate_state_only",
+    "oil_pressure_switch": "validated_on_vehicle_state_only",
     "battery_voltage_v": "opendbc_candidate",
     "battery_temperature_c": "opendbc_candidate",
     "battery_charge_pct": "opendbc_candidate",
@@ -107,6 +127,12 @@ FIELD_QUALITY = {
     "wheel_front_right_kph": "opendbc_candidate",
     "wheel_rear_left_kph": "opendbc_candidate",
     "wheel_rear_right_kph": "opendbc_candidate",
+    "latitude": "browser_gps",
+    "longitude": "browser_gps",
+    "gps_accuracy_m": "browser_gps_reported_accuracy",
+    "gps_altitude_m": "browser_gps",
+    "gps_heading_deg": "browser_gps",
+    "gps_speed_kph": "browser_gps",
     "x_m": "estimated_dead_reckoning",
     "y_m": "estimated_dead_reckoning",
     "heading_deg": "estimated_dead_reckoning",
@@ -123,6 +149,33 @@ def _session_path(session_id: str) -> Path:
     if not path.exists():
         raise FileNotFoundError(f"Session introuvable : {session_id}")
     return path
+
+
+def _route_override_path(session_path: Path) -> Path:
+    return session_path.with_suffix(".route.json")
+
+
+def _load_route_override(session_path: Path) -> tuple[list[tuple[float, float]], dict[str, Any]] | None:
+    path = _route_override_path(session_path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_coordinates = payload["geometry"]["coordinates"]
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    coordinates: list[tuple[float, float]] = []
+    for coordinate in raw_coordinates:
+        if not isinstance(coordinate, list) or len(coordinate) < 2:
+            return None
+        longitude = _optional_finite(coordinate[0])
+        latitude = _optional_finite(coordinate[1])
+        if longitude is None or latitude is None or not -180 <= longitude <= 180 or not -90 <= latitude <= 90:
+            return None
+        coordinates.append((longitude, latitude))
+    if len(coordinates) < 2:
+        return None
+    return coordinates, payload
 
 
 def _number(values: dict[str, dict[str, Any]], name: str) -> float | None:
@@ -175,8 +228,11 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["esp_intervention"] = _boolean(values, "P147_Com_bESPIntvActv")
     elif message == "Dyn_STT_BV":
         state["gearbox_fault"] = _boolean(values, "P444_Com_bGbxSysFaultRaw")
-    elif message == "Dyn5_CMM" and state.get("accelerator_pct") is None:
-        state["accelerator_pct"] = _number(values, "P334_ACCPed_Position")
+    elif message == "Dyn5_CMM":
+        secondary_accelerator = _number(values, "P334_ACCPed_Position")
+        state["accelerator_secondary_pct"] = secondary_accelerator
+        if state.get("accelerator_pct") is None:
+            state["accelerator_pct"] = secondary_accelerator
     elif message == "STEERING":
         state["driver_torque"] = _number(values, "DRIVER_TORQUE")
     elif message == "STEERING_ALT":
@@ -200,6 +256,8 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         brake_state = _number(values, "P226_Com_stBrkActv")
         state["brake_system_state"] = int(brake_state) if brake_state is not None else None
         state["brake_pressure_raw"] = _number(values, "BRAKE_PRESSURE")
+        state["lateral_accel_ms2"] = _number(values, "LATERAL_ACCELERATION")
+        state["yaw_rate_deg_s"] = _number(values, "YAW_RATE")
     elif message == "Dat_BSI":
         state["reverse"] = _boolean(values, "P103_Com_bRevGear")
         state["parking_brake"] = _boolean(values, "PARKING_BRAKE")
@@ -221,7 +279,7 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
     elif message == "HS2_DAT7_BSI_612":
         state["low_beam"] = _boolean(values, "ETAT_FEUX_CROIST")
         state["high_beam"] = _boolean(values, "ETAT_FEUX_ROUTE")
-        state["fuel_liters"] = _number(values, "INFO_NIV_CARB")
+        state["fuel_liters_raw"] = _number(values, "INFO_NIV_CARB")
         headlamp_faults = [
             _boolean(values, "DEF_FEU_CROISMNT_D"),
             _boolean(values, "DEF_FEU_CROISMNT_G"),
@@ -240,14 +298,22 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["coolant_temperature_c"] = _number(values, "P005_CEngDst_tSens")
         state["oil_temperature_c"] = _number(values, "P011_Oil_tSwmp")
         state["intake_air_temperature_c"] = _number(values, "P158_Air_tAFS")
+        state["idle_setpoint_rpm"] = _number(values, "P022_Com_nSetPLo")
+        state["fuel_consumption_candidate_mm3"] = _number(values, "P021_Com_volFlCons")
     elif message == "Dat2_CMM":
         pressure_switch = _number(values, "P278_Oil_stPSwmp")
         state["oil_pressure_switch"] = bool(pressure_switch) if pressure_switch is not None else None
         state["atmospheric_pressure_hpa"] = _number(values, "P338_EnvP_p")
+        state["virtual_fuel_consumption_candidate_mm3"] = _number(values, "P316_FlSys_volFlConsVirt")
     elif message == "Dat6_BSI":
-        state["battery_charge_pct"] = _number(values, "P272_Com_rBattCh")
-        state["battery_temperature_c"] = _number(values, "P273_Com_tBatt")
-        state["battery_voltage_v"] = _number(values, "P418_Com_uBattRaw")
+        battery_charge = _number(values, "P272_Com_rBattCh")
+        battery_temperature = _number(values, "P273_Com_tBatt")
+        battery_voltage = _number(values, "P418_Com_uBattRaw")
+        # 0xFE/0xFF et leurs valeurs composées sont diffusés pendant
+        # l'initialisation du BSI : ce sont des sentinelles, pas des mesures.
+        state["battery_charge_pct"] = battery_charge if battery_charge is not None and 0 <= battery_charge <= 100 else None
+        state["battery_temperature_c"] = battery_temperature if battery_temperature is not None and -40 <= battery_temperature <= 90 else None
+        state["battery_voltage_v"] = battery_voltage if battery_voltage is not None and 8 <= battery_voltage <= 16.5 else None
     elif message == "Contexte1_5B2":
         state["ambient_temperature_c"] = _number(values, "P146_Com_tEnvT")
     elif message == "LANE_KEEP_ASSIST":
@@ -287,7 +353,12 @@ def _reconstruct_route(points: list[ReplaySample]) -> tuple[float, float, dict[s
         # Sur cette 308, le signe DBC observé est opposé au sens visuel du volant.
         road_angle = max(-35.0, min(35.0, -(steering_angle - steering_zero) / STEERING_RATIO))
         filtered_road_angle += 0.24 * (road_angle - filtered_road_angle)
-        yaw_rate = speed_ms / WHEELBASE_M * math.tan(math.radians(filtered_road_angle))
+        if point.yaw_rate_deg_s is not None and abs(speed_ms) >= 0.3:
+            # Le lacet positif de l'ESP correspond à un virage à gauche, alors
+            # que notre cap cartographique croît dans le sens horaire.
+            yaw_rate = -math.radians(point.yaw_rate_deg_s)
+        else:
+            yaw_rate = speed_ms / WHEELBASE_M * math.tan(math.radians(filtered_road_angle))
         heading_rad += yaw_rate * dt
         x_m += speed_ms * math.sin(heading_rad) * dt
         y_m += speed_ms * math.cos(heading_rad) * dt
@@ -307,6 +378,359 @@ def _reconstruct_route(points: list[ReplaySample]) -> tuple[float, float, dict[s
         "max_y": round(max(ys), 2),
     }
     return steering_zero, distance_m, bounds
+
+
+def _optional_finite(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _parse_gps_points(
+    events: list[dict[str, Any]],
+    first_frame_us: int,
+    duration_ms: int,
+) -> list[ReplayGpsPoint]:
+    points: list[ReplayGpsPoint] = []
+    for event in events:
+        latitude = _optional_finite(event.get("latitude"))
+        longitude = _optional_finite(event.get("longitude"))
+        accuracy = _optional_finite(event.get("accuracy_m"))
+        try:
+            timestamp_us = int(event["timestamp_us"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (
+            latitude is None
+            or longitude is None
+            or accuracy is None
+            or not -90 <= latitude <= 90
+            or not -180 <= longitude <= 180
+            or accuracy < 0
+        ):
+            continue
+        heading = _optional_finite(event.get("heading_deg"))
+        if heading is not None:
+            heading %= 360
+        speed_m_s = _optional_finite(event.get("speed_m_s"))
+        points.append(ReplayGpsPoint(
+            t_ms=max(0, min(duration_ms, (timestamp_us - first_frame_us) // 1000)),
+            timestamp_us=timestamp_us,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_m=accuracy,
+            altitude_m=_optional_finite(event.get("altitude_m")),
+            altitude_accuracy_m=_optional_finite(event.get("altitude_accuracy_m")),
+            heading_deg=heading,
+            speed_kph=speed_m_s * 3.6 if speed_m_s is not None and speed_m_s >= 0 else None,
+        ))
+    points.sort(key=lambda point: point.timestamp_us)
+    deduplicated: list[ReplayGpsPoint] = []
+    for point in points:
+        if deduplicated and point.timestamp_us == deduplicated[-1].timestamp_us:
+            deduplicated[-1] = point
+        else:
+            deduplicated.append(point)
+    return deduplicated
+
+
+def _route_bounds(points: list[ReplaySample]) -> dict[str, float]:
+    xs = [point.x_m for point in points] or [0.0]
+    ys = [point.y_m for point in points] or [0.0]
+    return {
+        "min_x": round(min(xs), 2),
+        "max_x": round(max(xs), 2),
+        "min_y": round(min(ys), 2),
+        "max_y": round(max(ys), 2),
+    }
+
+
+def _interpolate_optional(first: float | None, second: float | None, ratio: float) -> float | None:
+    if first is None:
+        return second
+    if second is None:
+        return first
+    return first + (second - first) * ratio
+
+
+def _interpolate_heading(first: float | None, second: float | None, ratio: float) -> float | None:
+    if first is None or second is None:
+        return first if first is not None else second
+    delta = (second - first + 180) % 360 - 180
+    return (first + delta * ratio) % 360
+
+
+def _interpolate_route_position(points: list[ReplaySample], times: list[int], t_ms: int) -> tuple[float, float]:
+    """Return the dead-reckoned position at an arbitrary GPS timestamp."""
+    upper_index = bisect_right(times, t_ms)
+    if upper_index <= 0:
+        return points[0].x_m, points[0].y_m
+    if upper_index >= len(points):
+        return points[-1].x_m, points[-1].y_m
+    first = points[upper_index - 1]
+    second = points[upper_index]
+    elapsed = max(1, second.t_ms - first.t_ms)
+    ratio = max(0.0, min(1.0, (t_ms - first.t_ms) / elapsed))
+    return (
+        first.x_m + (second.x_m - first.x_m) * ratio,
+        first.y_m + (second.y_m - first.y_m) * ratio,
+    )
+
+
+def _segment_similarity_transform(
+    raw_start: tuple[float, float],
+    raw_end: tuple[float, float],
+    gps_start: tuple[float, float],
+    gps_end: tuple[float, float],
+) -> tuple[float, float, float, bool]:
+    """Build a similarity transform which makes a CAN segment hit both GPS fixes."""
+    raw_dx = raw_end[0] - raw_start[0]
+    raw_dy = raw_end[1] - raw_start[1]
+    gps_dx = gps_end[0] - gps_start[0]
+    gps_dy = gps_end[1] - gps_start[1]
+    raw_length = math.hypot(raw_dx, raw_dy)
+    gps_length = math.hypot(gps_dx, gps_dy)
+    if raw_length < 1.0 or gps_length < 1.0:
+        return 1.0, 1.0, 0.0, False
+    scale = gps_length / raw_length
+    cosine = (raw_dx * gps_dx + raw_dy * gps_dy) / (raw_length * gps_length)
+    sine = (raw_dx * gps_dy - raw_dy * gps_dx) / (raw_length * gps_length)
+    return scale, cosine, sine, True
+
+
+def _apply_similarity(
+    position: tuple[float, float],
+    raw_origin: tuple[float, float],
+    gps_origin: tuple[float, float],
+    transform: tuple[float, float, float, bool],
+) -> tuple[float, float]:
+    scale, cosine, sine, usable = transform
+    if not usable:
+        return gps_origin
+    raw_x = position[0] - raw_origin[0]
+    raw_y = position[1] - raw_origin[1]
+    return (
+        gps_origin[0] + scale * (cosine * raw_x - sine * raw_y),
+        gps_origin[1] + scale * (sine * raw_x + cosine * raw_y),
+    )
+
+
+def _apply_gps_route(
+    points: list[ReplaySample],
+    gps_points: list[ReplayGpsPoint],
+    dead_reckoning_method: str = "dead_reckoning_speed_steering",
+) -> tuple[str, float, dict[str, float], int]:
+    # Very coarse network fixes remain in the raw export but must not replace the
+    # speed/steering reconstruction shown in the replay.
+    fixes = [point for point in gps_points if point.accuracy_m <= 1_000]
+    if not fixes:
+        distance_m = points[-1].distance_m if points else 0.0
+        return dead_reckoning_method, distance_m, _route_bounds(points), 0
+
+    origin = fixes[0]
+    latitude_scale = 111_132.0
+    longitude_scale = max(1.0, 111_320.0 * math.cos(math.radians(origin.latitude)))
+
+    if len(fixes) == 1:
+        # One fix is still useful as an absolute anchor; motion remains estimated.
+        for point in points:
+            point.latitude = round(origin.latitude + point.y_m / latitude_scale, 7)
+            point.longitude = round(origin.longitude + point.x_m / longitude_scale, 7)
+            point.gps_accuracy_m = round(origin.accuracy_m, 1)
+            point.gps_altitude_m = origin.altitude_m
+            point.gps_heading_deg = origin.heading_deg
+            point.gps_speed_kph = origin.speed_kph
+        distance_m = points[-1].distance_m if points else 0.0
+        return "dead_reckoning_gps_anchor", distance_m, _route_bounds(points), 1
+
+    times = [point.t_ms for point in fixes]
+    replay_times = [point.t_ms for point in points]
+    raw_fix_positions = [
+        _interpolate_route_position(points, replay_times, fix.t_ms)
+        for fix in fixes
+    ]
+    gps_fix_positions = [
+        (
+            (fix.longitude - origin.longitude) * longitude_scale,
+            (fix.latitude - origin.latitude) * latitude_scale,
+        )
+        for fix in fixes
+    ]
+    transforms = [
+        _segment_similarity_transform(
+            raw_fix_positions[index],
+            raw_fix_positions[index + 1],
+            gps_fix_positions[index],
+            gps_fix_positions[index + 1],
+        )
+        for index in range(len(fixes) - 1)
+    ]
+    can_fusion_used = any(transform[3] for transform in transforms)
+    previous_x: float | None = None
+    previous_y: float | None = None
+    derived_heading = 0.0
+    distance_m = 0.0
+    for point in points:
+        upper_index = bisect_right(times, point.t_ms)
+        if upper_index <= 0:
+            first = second = fixes[0]
+            ratio = 0.0
+        elif upper_index >= len(fixes):
+            first = second = fixes[-1]
+            ratio = 0.0
+        else:
+            first = fixes[upper_index - 1]
+            second = fixes[upper_index]
+            elapsed = max(1, second.t_ms - first.t_ms)
+            ratio = max(0.0, min(1.0, (point.t_ms - first.t_ms) / elapsed))
+
+        if can_fusion_used:
+            if upper_index <= 0:
+                segment_index = 0
+                raw_origin = raw_fix_positions[0]
+                gps_origin = gps_fix_positions[0]
+            elif upper_index >= len(fixes):
+                segment_index = len(transforms) - 1
+                raw_origin = raw_fix_positions[-1]
+                gps_origin = gps_fix_positions[-1]
+            else:
+                segment_index = upper_index - 1
+                raw_origin = raw_fix_positions[segment_index]
+                gps_origin = gps_fix_positions[segment_index]
+            transformed = _apply_similarity(
+                (point.x_m, point.y_m),
+                raw_origin,
+                gps_origin,
+                transforms[segment_index],
+            )
+            if transforms[segment_index][3]:
+                x_m, y_m = transformed
+            else:
+                x_m = gps_fix_positions[max(0, upper_index - 1)][0] + (
+                    gps_fix_positions[min(len(fixes) - 1, upper_index)][0]
+                    - gps_fix_positions[max(0, upper_index - 1)][0]
+                ) * ratio
+                y_m = gps_fix_positions[max(0, upper_index - 1)][1] + (
+                    gps_fix_positions[min(len(fixes) - 1, upper_index)][1]
+                    - gps_fix_positions[max(0, upper_index - 1)][1]
+                ) * ratio
+        else:
+            x_m = gps_fix_positions[max(0, upper_index - 1)][0] + (
+                gps_fix_positions[min(len(fixes) - 1, upper_index)][0]
+                - gps_fix_positions[max(0, upper_index - 1)][0]
+            ) * ratio
+            y_m = gps_fix_positions[max(0, upper_index - 1)][1] + (
+                gps_fix_positions[min(len(fixes) - 1, upper_index)][1]
+                - gps_fix_positions[max(0, upper_index - 1)][1]
+            ) * ratio
+        latitude = origin.latitude + y_m / latitude_scale
+        longitude = origin.longitude + x_m / longitude_scale
+        if previous_x is not None and previous_y is not None:
+            dx = x_m - previous_x
+            dy = y_m - previous_y
+            segment = math.hypot(dx, dy)
+            distance_m += segment
+            if segment >= 0.05:
+                derived_heading = math.degrees(math.atan2(dx, dy)) % 360
+        previous_x, previous_y = x_m, y_m
+
+        gps_heading = _interpolate_heading(first.heading_deg, second.heading_deg, ratio)
+        point.latitude = round(latitude, 7)
+        point.longitude = round(longitude, 7)
+        point.gps_accuracy_m = round(
+            first.accuracy_m + (second.accuracy_m - first.accuracy_m) * ratio,
+            1,
+        )
+        point.gps_altitude_m = _rounded(
+            _interpolate_optional(first.altitude_m, second.altitude_m, ratio),
+            1,
+        )
+        point.gps_heading_deg = _rounded(gps_heading, 1)
+        point.gps_speed_kph = _rounded(
+            _interpolate_optional(first.speed_kph, second.speed_kph, ratio),
+            1,
+        )
+        point.x_m = round(x_m, 2)
+        point.y_m = round(y_m, 2)
+        point.heading_deg = round(gps_heading if gps_heading is not None else derived_heading, 2)
+        point.distance_m = round(distance_m, 1)
+
+    return (
+        "gps_can_fusion" if can_fusion_used else "browser_gps",
+        distance_m,
+        _route_bounds(points),
+        len(fixes),
+    )
+
+
+def _apply_confirmed_road_route(
+    points: list[ReplaySample],
+    coordinates: list[tuple[float, float]],
+    raw_distances: list[float],
+) -> tuple[float, dict[str, float]]:
+    """Place replay samples on a driver-confirmed road geometry.
+
+    CAN speed controls progress and timing; the external road geometry controls
+    only the displayed latitude/longitude and heading.
+    """
+    origin_longitude, origin_latitude = coordinates[0]
+    latitude_scale = 111_132.0
+    longitude_scale = max(1.0, 111_320.0 * math.cos(math.radians(origin_latitude)))
+    projected = [
+        (
+            (longitude - origin_longitude) * longitude_scale,
+            (latitude - origin_latitude) * latitude_scale,
+        )
+        for longitude, latitude in coordinates
+    ]
+    cumulative = [0.0]
+    for index in range(1, len(projected)):
+        cumulative.append(cumulative[-1] + math.hypot(
+            projected[index][0] - projected[index - 1][0],
+            projected[index][1] - projected[index - 1][1],
+        ))
+    route_distance = cumulative[-1]
+    if route_distance < 1:
+        return 0.0, _route_bounds(points)
+    raw_total = max(raw_distances, default=0.0)
+    duration_ms = max(1, points[-1].t_ms if points else 1)
+    for index, point in enumerate(points):
+        ratio = (
+            raw_distances[index] / raw_total
+            if raw_total > 1 and index < len(raw_distances)
+            else point.t_ms / duration_ms
+        )
+        target_distance = route_distance * max(0.0, min(1.0, ratio))
+        upper_index = bisect_right(cumulative, target_distance)
+        if upper_index <= 0:
+            first_index = second_index = 0
+            segment_ratio = 0.0
+        elif upper_index >= len(cumulative):
+            first_index = second_index = len(cumulative) - 1
+            segment_ratio = 0.0
+        else:
+            first_index = upper_index - 1
+            second_index = upper_index
+            segment_length = max(0.001, cumulative[second_index] - cumulative[first_index])
+            segment_ratio = (target_distance - cumulative[first_index]) / segment_length
+        first_x, first_y = projected[first_index]
+        second_x, second_y = projected[second_index]
+        x_m = first_x + (second_x - first_x) * segment_ratio
+        y_m = first_y + (second_y - first_y) * segment_ratio
+        first_longitude, first_latitude = coordinates[first_index]
+        second_longitude, second_latitude = coordinates[second_index]
+        point.longitude = round(first_longitude + (second_longitude - first_longitude) * segment_ratio, 7)
+        point.latitude = round(first_latitude + (second_latitude - first_latitude) * segment_ratio, 7)
+        point.x_m = round(x_m, 2)
+        point.y_m = round(y_m, 2)
+        if second_index != first_index:
+            point.heading_deg = round(math.degrees(math.atan2(
+                second_x - first_x,
+                second_y - first_y,
+            )) % 360, 2)
+        point.distance_m = round(target_distance, 1)
+    return route_distance, _route_bounds(points)
 
 
 def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
@@ -337,6 +761,27 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
     return events
 
 
+def _filter_fuel_level(points: list[ReplaySample], time_constant_s: float = 120.0) -> bool:
+    """Create a causal tank-level estimate while retaining the slosh-affected float."""
+    filtered: float | None = None
+    previous_t_ms: int | None = None
+    populated = False
+    for point in points:
+        raw = point.fuel_liters_raw
+        if raw is None or not math.isfinite(raw):
+            continue
+        if filtered is None or previous_t_ms is None:
+            filtered = raw
+        else:
+            elapsed_s = max(0.0, min(5.0, (point.t_ms - previous_t_ms) / 1000))
+            alpha = 1 - math.exp(-elapsed_s / time_constant_s)
+            filtered += alpha * (raw - filtered)
+        point.fuel_liters = round(filtered, 2)
+        previous_t_ms = point.t_ms
+        populated = True
+    return populated
+
+
 def _build_replay(path: Path, session_id: str) -> ReplayData:
     decoder = get_opendbc_decoder()
     state = {field: None for field in STATE_FIELDS}
@@ -347,6 +792,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     next_sample_us: int | None = None
     frame_count = 0
     decoded_frame_count = 0
+    gps_events: list[dict[str, Any]] = []
     source = ""
     name = session_id
 
@@ -358,11 +804,16 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
                 event = json.loads(line)
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
+            if event.get("type") == "gps_position":
+                gps_events.append(event)
+                continue
             if event.get("type") == "meta":
                 source = str(event.get("source") or source)
                 name = str(event.get("name") or name)
                 continue
             if event.get("type") != "can_frame":
+                continue
+            if event.get("bus") == "diagnostic":
                 continue
             try:
                 timestamp_us = int(event["timestamp_us"])
@@ -405,11 +856,118 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         points.insert(0, points[0].model_copy(update={"t_ms": 0}))
     if points[-1].t_ms < duration_ms:
         points.append(_snapshot(state, duration_ms))
+    if _filter_fuel_level(points):
+        available_fields.add("fuel_liters")
 
     steering_zero, distance_m, route_bounds = _reconstruct_route(points)
+    raw_distances = [point.distance_m for point in points]
+    gps_points = _parse_gps_points(gps_events, first_frame_us, duration_ms)
+    dead_reckoning_method = (
+        "dead_reckoning_speed_yaw"
+        if any(point.yaw_rate_deg_s is not None for point in points)
+        else "dead_reckoning_speed_steering"
+    )
+    route_method, distance_m, route_bounds, used_gps_point_count = _apply_gps_route(
+        points,
+        gps_points,
+        dead_reckoning_method,
+    )
+    route_override = _load_route_override(path)
+    route_override_metadata: dict[str, Any] | None = None
+    if route_override is not None:
+        route_coordinates, route_override_metadata = route_override
+        distance_m, route_bounds = _apply_confirmed_road_route(
+            points,
+            route_coordinates,
+            raw_distances,
+        )
+        route_method = "driver_confirmed_osrm"
+    if used_gps_point_count:
+        available_fields.update({"latitude", "longitude", "gps_accuracy_m"})
+        if any(point.altitude_m is not None for point in gps_points):
+            available_fields.add("gps_altitude_m")
+        if any(point.heading_deg is not None for point in gps_points):
+            available_fields.add("gps_heading_deg")
+        if any(point.speed_kph is not None for point in gps_points):
+            available_fields.add("gps_speed_kph")
     moving_speeds = [point.speed_kph for point in points if point.speed_kph is not None and point.speed_kph > 1]
     max_speed = max((point.speed_kph or 0 for point in points), default=0)
     stat = path.stat()
+    warnings = [
+        "À l'exception de la direction validée sur ce véhicule, les libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
+        "La pression d'huile disponible est un contacteur logique, pas une mesure en bar.",
+        f"Replay préparé le {datetime.now(timezone.utc).isoformat(timespec='seconds')}.",
+    ]
+    if route_method == "driver_confirmed_osrm":
+        roads = ", ".join(route_override_metadata.get("road_refs", [])) if route_override_metadata else ""
+        warnings[:0] = [
+            "Tracé routier OSRM confirmé par le conducteur; la vitesse CAN synchronise la progression de la voiture.",
+            f"Axes confirmés : {roads}." if roads else "Le tracé routier remplace la dérive de navigation à l'estime.",
+            "Les positions GPS brutes restent conservées séparément avec leur précision déclarée.",
+        ]
+    elif route_method == "gps_can_fusion":
+        warnings[:0] = [
+            "Trajectoire détaillée reconstruite par vitesse/lacet entre les positions GPS, puis recalée sur chaque point GPS.",
+            "Les virages entre deux positions sont estimés par le CAN; la précision absolue reste limitée par accuracy_m du navigateur.",
+        ]
+    elif route_method == "browser_gps":
+        warnings.insert(0, "Trajectoire issue de la géolocalisation du navigateur; sa précision dépend du récepteur utilisé et de la valeur accuracy_m enregistrée.")
+    elif route_method == "dead_reckoning_gps_anchor":
+        warnings[:0] = [
+            "Une seule position GPS exploitable a été reçue : elle sert d'ancrage, mais le déplacement reste reconstruit par les capteurs CAN.",
+            "La trajectoire dérive progressivement et ne doit pas être considérée comme une trace GPS mesurée.",
+        ]
+    elif route_method == "dead_reckoning_speed_yaw":
+        warnings[:0] = [
+            "Aucune coordonnée GPS exploitable n'est présente : la trajectoire utilise la vitesse et le lacet ESP validé sur cette Peugeot.",
+            "Le lacet réduit fortement la dérive du volant, mais une navigation à l'estime reste relative et doit être recalée périodiquement.",
+        ]
+        if gps_points:
+            warnings.insert(0, "Des positions GPS ont été enregistrées, mais leur précision déclarée dépasse 1 000 m; elles restent disponibles dans l'export brut.")
+    else:
+        warnings[:0] = [
+            "Aucune coordonnée GPS exploitable n'est présente : la position absolue en France ne peut pas être retrouvée avec cette capture seule.",
+            "La trajectoire est une reconstruction locale par vitesse et angle du volant; elle dérive progressivement et ne doit pas être superposée à une route réelle.",
+        ]
+        if gps_points:
+            warnings.insert(0, "Des positions GPS ont été enregistrées, mais leur précision déclarée dépasse 1 000 m; elles restent disponibles dans l'export brut.")
+
+    field_quality = {
+        key: value
+        for key, value in FIELD_QUALITY.items()
+        if key in available_fields or key in {"x_m", "y_m", "heading_deg", "distance_m"}
+    }
+    if route_method == "driver_confirmed_osrm":
+        field_quality.update({
+            "latitude": "driver_confirmed_osrm_route",
+            "longitude": "driver_confirmed_osrm_route",
+            "x_m": "driver_confirmed_osrm_route",
+            "y_m": "driver_confirmed_osrm_route",
+            "heading_deg": "driver_confirmed_osrm_route",
+            "distance_m": "driver_confirmed_osrm_route_can_timing",
+        })
+    elif route_method == "gps_can_fusion":
+        field_quality.update({
+            "latitude": "gps_can_fusion",
+            "longitude": "gps_can_fusion",
+            "x_m": "gps_can_fusion",
+            "y_m": "gps_can_fusion",
+            "heading_deg": "gps_can_fusion",
+            "distance_m": "gps_can_fusion",
+        })
+    elif route_method == "browser_gps":
+        field_quality.update({
+            "x_m": "browser_gps",
+            "y_m": "browser_gps",
+            "heading_deg": "browser_gps_or_track_bearing",
+            "distance_m": "browser_gps_track",
+        })
+    elif route_method == "dead_reckoning_gps_anchor":
+        field_quality.update({
+            "latitude": "gps_anchor_plus_dead_reckoning",
+            "longitude": "gps_anchor_plus_dead_reckoning",
+        })
+
     replay = ReplayData(
         version=CACHE_VERSION,
         session_id=session_id,
@@ -418,6 +976,11 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         source=source,
         source_size_bytes=stat.st_size,
         source_mtime_ns=stat.st_mtime_ns,
+        route_override_mtime_ns=(
+            _route_override_path(path).stat().st_mtime_ns
+            if _route_override_path(path).exists()
+            else None
+        ),
         start_timestamp_us=first_frame_us,
         duration_ms=duration_ms,
         sample_period_ms=SAMPLE_PERIOD_US // 1000,
@@ -426,19 +989,16 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         max_speed_kph=round(max_speed, 1),
         average_moving_speed_kph=round(sum(moving_speeds) / len(moving_speeds), 1) if moving_speeds else 0,
         distance_km=round(distance_m / 1000, 3),
-        route_method="dead_reckoning_speed_steering",
+        gps_available=bool(gps_points),
+        gps_point_count=len(gps_points),
+        route_method=route_method,
         steering_zero_offset_deg=round(steering_zero, 2),
         route_bounds=route_bounds,
         available_fields=sorted(available_fields),
-        field_quality={key: value for key, value in FIELD_QUALITY.items() if key in available_fields or key in {"x_m", "y_m", "heading_deg", "distance_m"}},
-        warnings=[
-            "Aucune coordonnée GPS n'est présente : la position absolue en France ne peut pas être retrouvée avec cette capture seule.",
-            "La trajectoire est une reconstruction locale par vitesse et angle du volant; elle dérive progressivement et ne doit pas être superposée à une route réelle.",
-            "À l'exception de la direction validée sur ce véhicule, les libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
-            "La pression d'huile disponible est un contacteur logique, pas une mesure en bar.",
-            f"Replay préparé le {datetime.now(timezone.utc).isoformat(timespec='seconds')}.",
-        ],
+        field_quality=field_quality,
+        warnings=warnings,
         events=_events(points),
+        gps_points=gps_points,
         points=points,
     )
     return replay
@@ -448,6 +1008,8 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
     path = _session_path(session_id)
     cache_path = path.with_suffix(".replay.json")
     stat = path.stat()
+    route_path = _route_override_path(path)
+    route_override_mtime_ns = route_path.stat().st_mtime_ns if route_path.exists() else None
     if not force and cache_path.exists():
         try:
             cached = ReplayData.model_validate_json(cache_path.read_text(encoding="utf-8"))
@@ -455,6 +1017,7 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
                 cached.version == CACHE_VERSION
                 and cached.source_size_bytes == stat.st_size
                 and cached.source_mtime_ns == stat.st_mtime_ns
+                and cached.route_override_mtime_ns == route_override_mtime_ns
             ):
                 return cached
         except (OSError, ValueError, json.JSONDecodeError):
@@ -468,6 +1031,7 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
                     cached.version == CACHE_VERSION
                     and cached.source_size_bytes == stat.st_size
                     and cached.source_mtime_ns == stat.st_mtime_ns
+                    and cached.route_override_mtime_ns == route_override_mtime_ns
                 ):
                     return cached
             except (OSError, ValueError, json.JSONDecodeError):
@@ -477,3 +1041,56 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
         temporary.write_text(replay.model_dump_json(), encoding="utf-8")
         temporary.replace(cache_path)
         return replay
+
+
+def replay_geojson(session_id: str) -> dict[str, Any]:
+    replay = prepare_replay(session_id)
+    if not replay.gps_points:
+        raise ValueError(f"La session {session_id} ne contient aucune coordonnée GPS.")
+
+    # The replay points contain the dense GPS/CAN fusion used by the vehicle
+    # animation. Sample it at 1 Hz for a compact but turn-preserving export.
+    dense_coordinates = [
+        [point.longitude, point.latitude]
+        for index, point in enumerate(replay.points)
+        if point.longitude is not None
+        and point.latitude is not None
+        and (index % 10 == 0 or index == len(replay.points) - 1)
+    ]
+    coordinates = dense_coordinates or [
+        [point.longitude, point.latitude]
+        for point in replay.gps_points
+    ]
+    geometry: dict[str, Any]
+    if len(coordinates) == 1:
+        geometry = {"type": "Point", "coordinates": coordinates[0]}
+    else:
+        geometry = {"type": "LineString", "coordinates": coordinates}
+    longitudes = [coordinate[0] for coordinate in coordinates]
+    latitudes = [coordinate[1] for coordinate in coordinates]
+    bbox = [min(longitudes), min(latitudes), max(longitudes), max(latitudes)]
+    return {
+        "type": "FeatureCollection",
+        "bbox": bbox,
+        "features": [{
+            "type": "Feature",
+            "id": replay.session_id,
+            "bbox": bbox,
+            "geometry": geometry,
+            "properties": {
+                "session_id": replay.session_id,
+                "name": replay.name,
+                "vehicle": replay.vehicle,
+                "start_timestamp_us": replay.start_timestamp_us,
+                "duration_ms": replay.duration_ms,
+                "point_count": replay.gps_point_count,
+                "route_point_count": len(coordinates),
+                "route_method": replay.route_method,
+                "timestamps_us": [point.timestamp_us for point in replay.gps_points],
+                "accuracy_m": [point.accuracy_m for point in replay.gps_points],
+                "altitude_m": [point.altitude_m for point in replay.gps_points],
+                "heading_deg": [point.heading_deg for point in replay.gps_points],
+                "speed_kph": [point.speed_kph for point in replay.gps_points],
+            },
+        }],
+    }

@@ -8,6 +8,7 @@ class CanFrame(BaseModel):
     extended: bool = False
     data: bytes
     direction: Literal["rx", "tx"] = "rx"
+    bus: Literal["default", "live", "diagnostic"] = "default"
 
     def as_json(self) -> dict:
         return {
@@ -16,6 +17,7 @@ class CanFrame(BaseModel):
             "extended": self.extended,
             "data_hex": self.data.hex().upper(),
             "direction": self.direction,
+            "bus": self.bus,
         }
 
 
@@ -34,6 +36,8 @@ class EcuDefinition(BaseModel):
     notes: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     dtc_catalogs: list[str] = Field(default_factory=list)
+    address_candidates: list[dict] = Field(default_factory=list)
+    dtc_status_masks: list[int] = Field(default_factory=list)
 
 
 class DidReadResult(BaseModel):
@@ -58,6 +62,10 @@ class DtcReadResult(BaseModel):
     catalogs: list[str] = Field(default_factory=list)
     source: str | None = None
     confidence: str = "raw_only"
+    state: Literal["active", "historical", "not_tested", "inactive"] = "inactive"
+    state_label: str = "Inactif"
+    state_detail: str = "Aucun indicateur d'échec actif."
+    actionable: bool = False
 
 
 class ObservedDtcInput(BaseModel):
@@ -66,6 +74,13 @@ class ObservedDtcInput(BaseModel):
     label: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=500)
     source: str = Field(default="user_reported", max_length=80)
+    vin: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
+    )
+    vehicle_profile: str | None = Field(default=None, max_length=100)
 
 
 class ObservedDtcResult(ObservedDtcInput):
@@ -123,18 +138,70 @@ class EcuScanResult(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     dtcs: list[DtcReadResult] = Field(default_factory=list)
     dtc_status_availability_mask: int | None = None
+    dtc_status_mask_used: int | None = None
     dtc_error: str | None = None
+    probe_method: str | None = None
+    probe_response_hex: str | None = None
     raw_responses: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
+class DtcSummary(BaseModel):
+    active: int = 0
+    historical: int = 0
+    not_tested: int = 0
+    inactive: int = 0
+    total: int = 0
+    affected_ecus: int = 0
+
+
+class DtcChange(BaseModel):
+    ecu_key: str
+    ecu_name: str
+    code: str
+    raw_hex: str
+    title: str | None = None
+    before_state: Literal["active", "historical", "not_tested", "inactive"] | None = None
+    after_state: Literal["active", "historical", "not_tested", "inactive"] | None = None
+    before_status_hex: str | None = None
+    after_status_hex: str | None = None
+
+
+class ScanComparison(BaseModel):
+    previous_scan_id: str | None = None
+    previous_scanned_at: str | None = None
+    comparable_ecus: list[str] = Field(default_factory=list)
+    excluded_ecus: list[str] = Field(default_factory=list)
+    appeared: list[DtcChange] = Field(default_factory=list)
+    resolved: list[DtcChange] = Field(default_factory=list)
+    changed: list[DtcChange] = Field(default_factory=list)
+    unchanged: int = 0
+
+
 class ScanReport(BaseModel):
+    scan_id: str | None = None
+    scanned_at: str | None = None
     vehicle_profile: str
+    vin: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
     transport: str
     readonly: bool
     ecus: list[EcuScanResult]
+    dtc_summary: DtcSummary = Field(default_factory=DtcSummary)
+    comparison: ScanComparison | None = None
     warnings: list[str] = Field(default_factory=list)
     debug: DebugSummary = Field(default_factory=DebugSummary)
+
+
+class ScanRequest(BaseModel):
+    vehicle_profile: str | None = Field(default=None, min_length=1, max_length=100)
+    vin: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
+    )
 
 
 class ClearDtcRequest(BaseModel):

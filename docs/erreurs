@@ -1,0 +1,373 @@
+Dernier scan des calculateurs
+Effacement verrouillé
+U1362
+ABS / ESP
+Emergency collision braking (in town) ECU
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESPMK100
+U1362
+ABS / ESP
+Emergency collision braking (in town) ECU
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESPMK100
+C006A
+ABS / ESP
+Yaw speed sensor signal
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS90_D, ESP90, ESP90_D, ESPMK100_UDS
+C1503
+ABS / ESP
+Longitudinal acceleration sensor signal fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100
+C1316
+ABS / ESP
+Lateral acceleration sensor fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100
+C1384
+ABS / ESP
+Stop lamps information fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100
+C13A1
+ABS / ESP
+Fault : Clutch pedal sensor signal
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABS81, ESP81
+C13A2
+ABS / ESP
+Fault : Clutch pedal sensor signal
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABS81, ESP81
+C139F
+ABS / ESP
+Fault : Clutch pedal sensor signal
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABS81, ESP81
+C139C
+ABS / ESP
+Fault Clutch pedal sensor calibration
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABS81, ESP81
+C1135
+ABS / ESP
+Steering wheel angle sensor signal from the
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESPMK100
+C1560
+ABS / ESP
+Fault in communication on the CAN
+test_not_completed_this_operation_cycle
+
+État 0x40
+EPS, EPS_M
+C1561
+ABS / ESP
+Loss of communication with the electric power steering motor
+test_not_completed_this_operation_cycle
+
+État 0x40
+EPS, EPS_M
+C156D
+ABS / ESP
+Electric parking brake (FSE) actuator sensors
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90, ESPMK100_UDS
+C154A
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C154A
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C154A
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1658
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C154A
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C154A
+ABS / ESP
+Left-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1549
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1549
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1549
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1657
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1549
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1549
+ABS / ESP
+Right-hand motorised brake caliper
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C1136
+ABS / ESP
+Steering wheel angle sensor signal from the
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100
+P0606
+ABS / ESP
+ECU fault
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESPMK100
+P1632
+ABS / ESP
+Engine management ECU
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+CMM_DCM71, CMM_DCM71_F, CMM_MD1CS003, CMM_MG1CS032, CMM_MG1CS042, CMM_MG1CS042_PHEV, CMM_V56, CMM_VD56, DCM62, DCM62_F, EDC17C60, E_VCU, MED17_4_2, MED17_4_4, MED17_4_4_EP8, MEV17_4_2, MEVD17_4_2, MEVD17_4_4, V46, V46_21, V46_32, V46_52, V46_6, VD46
+U1009
+ABS / ESP
+Suspension and wheels CAN or high speed 2
+test_failed_since_last_clear
+
+État 0x20
+ABSMK100_UDS
+C163D
+ABS / ESP
+Yaw speed sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS90_D, ESP90, ESP90_D
+C110D
+ABS / ESP
+Electric parking brake
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESP90
+C155C
+ABS / ESP
+Electric parking brake activation / deactivation control
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESP90, ESPMK100_UDS
+C0040
+ABS / ESP
+Brake pedal sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+C1301
+ABS / ESP
+"braking pressure sensor signal" fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100
+C1382
+ABS / ESP
+Recirculation pump supply relay
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS90_D, ESP90_D
+C1381
+ABS / ESP
+Recirculation pump supply fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS81, ABS8_BOSCH, ESP81, ESP8_BOSCH, ESP90
+C1638
+ABS / ESP
+Estimation of the steering wheel angle
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ESPMK100
+C0049
+ABS / ESP
+Brake fluid level
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABSMK100_UDS
+P0560
+ABS / ESP
+ABS ECU electrical supply
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+P0657
+ABS / ESP
+Sensors N° 1 5 volt electrical supply
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+CMM_DCM71, CMM_DCM71_F, CMM_MD1CS003, CMM_MG1CS032, CMM_MG1CS042, CMM_MG1CS042_PHEV, CMM_V56, CMM_VD56, DCM62, DCM62_F, EDC17C60, MED17_4_4, MEVD17_4_4, TBMU_PHEV
+P0657
+ABS / ESP
+Sensors N° 1 5 volt electrical supply
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+CMM_DCM71, CMM_DCM71_F, CMM_MD1CS003, CMM_MG1CS032, CMM_MG1CS042, CMM_MG1CS042_PHEV, CMM_V56, CMM_VD56, DCM62, DCM62_F, EDC17C60, MED17_4_4, MEVD17_4_4, TBMU_PHEV
+U3FFF
+ABS / ESP
+Power train
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+MED17_4_4, MED17_4_4_EP8, MEVD17_4_4, V46, V46_21, V46_32, V46_52, V46_6, VD46
+C1362
+ABS / ESP
+Switching electrovalve 1 fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS8_BOSCH, ESP8_BOSCH, ESP90
+C1367
+ABS / ESP
+Switching electrovalve 2 fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS8_BOSCH, ESP8_BOSCH, ESP90
+C1385
+ABS / ESP
+Electrovalves supply voltage fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS81, ABS8_BOSCH, ESP81, ESP8_BOSCH
+C0031
+ABS / ESP
+Front left wheel speed sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+C0034
+ABS / ESP
+Front right wheel speed sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+C1640
+ABS / ESP
+Direction of the travel of the wheel speed sensors
+test_not_completed_since_last_clear · test_not_completed_this_operation_cycle
+
+État 0x50
+ABS90_D, ESP90, ESP90_D
+C1387
+ABS / ESP
+Speed sensor signals
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABS90_D, ESP90, ESP90_D
+C0037
+ABS / ESP
+Rear left wheel speed sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+C003A
+ABS / ESP
+Rear right wheel speed sensor
+test_not_completed_this_operation_cycle
+
+État 0x40
+ABSMK100_UDS
+C1311
+ABS / ESP
+Yaw sensor signal fault
+test_not_completed_this_operation_cycle
+
+État 0x40
+ESPMK100

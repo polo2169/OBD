@@ -36,8 +36,63 @@
 #define USE_MCP2515 0
 #endif
 
+// Keep the native ESP32 TWAI controller on the vehicle CAN (OBD 6/14) and
+// add an external MCP2515 for the PSA diagnostic CAN (OBD 3/8).
+#ifndef DUAL_CAN
+#define DUAL_CAN 0
+#endif
+
+// A standalone ESP32 can be assigned to either physical vehicle network.
+// The role is announced in the hello packet and stamped on every received
+// frame so two USB gateways can be merged safely by the PC backend.
+#ifndef CAN_BUS_ROLE_DIAGNOSTIC
+#define CAN_BUS_ROLE_DIAGNOSTIC 0
+#endif
+
+// Two native ESP32/TWAI controllers can form one logical dual-CAN gateway.
+// The main board owns OBD 6/14 and the PC USB link; the satellite owns OBD 3/8.
+#ifndef UART_DUAL_CAN_MASTER
+#define UART_DUAL_CAN_MASTER 0
+#endif
+
+#ifndef UART_DUAL_CAN_SATELLITE
+#define UART_DUAL_CAN_SATELLITE 0
+#endif
+
+#if UART_DUAL_CAN_MASTER && UART_DUAL_CAN_SATELLITE
+#error "An ESP32 cannot be both UART dual-CAN master and satellite"
+#endif
+
+#if UART_DUAL_CAN_MASTER && (DUAL_CAN || USE_MCP2515)
+#error "UART dual-CAN master uses native TWAI only; disable MCP2515/DUAL_CAN"
+#endif
+
+#if UART_DUAL_CAN_SATELLITE && !CAN_BUS_ROLE_DIAGNOSTIC
+#error "UART dual-CAN satellite must use CAN_BUS_ROLE_DIAGNOSTIC=1"
+#endif
+
+#if DUAL_CAN && USE_MCP2515
+#error "DUAL_CAN already enables the MCP2515 next to TWAI; do not set USE_MCP2515"
+#endif
+
 #ifndef MCP2515_CLOCK_MHZ
 #define MCP2515_CLOCK_MHZ 8
+#endif
+
+#ifndef MCP2515_SPI_CS_GPIO
+#if DUAL_CAN
+#define MCP2515_SPI_CS_GPIO 27
+#else
+#define MCP2515_SPI_CS_GPIO 5
+#endif
+#endif
+
+#ifndef MCP2515_INT_GPIO
+#define MCP2515_INT_GPIO 26
+#endif
+
+#ifndef MCP2515_SPI_SPEED_HZ
+#define MCP2515_SPI_SPEED_HZ 1000000
 #endif
 
 #ifndef CAN_TX_GPIO
@@ -68,16 +123,35 @@
 #define SERIAL_FRAME_MIRROR 1
 #endif
 
+#ifndef INTERBOARD_UART_RX_GPIO
+#define INTERBOARD_UART_RX_GPIO 16
+#endif
+
+#ifndef INTERBOARD_UART_TX_GPIO
+#define INTERBOARD_UART_TX_GPIO 17
+#endif
+
+#ifndef INTERBOARD_UART_BAUD
+#define INTERBOARD_UART_BAUD 2000000
+#endif
+
 namespace cfg {
 constexpr gpio_num_t CAN_TX_PIN = static_cast<gpio_num_t>(CAN_TX_GPIO);
 constexpr gpio_num_t CAN_RX_PIN = static_cast<gpio_num_t>(CAN_RX_GPIO);
+constexpr bool NATIVE_CAN_IS_DIAGNOSTIC = CAN_BUS_ROLE_DIAGNOSTIC != 0;
+constexpr bool UART_MASTER = UART_DUAL_CAN_MASTER != 0;
+constexpr bool UART_SATELLITE = UART_DUAL_CAN_SATELLITE != 0;
+constexpr int8_t INTERBOARD_RX_PIN = INTERBOARD_UART_RX_GPIO;
+constexpr int8_t INTERBOARD_TX_PIN = INTERBOARD_UART_TX_GPIO;
+constexpr uint32_t INTERBOARD_BAUD = INTERBOARD_UART_BAUD;
 constexpr uint8_t MCP2515_SPI_SCK_PIN = 18;
 constexpr uint8_t MCP2515_SPI_MISO_PIN = 19;
 constexpr uint8_t MCP2515_SPI_MOSI_PIN = 23;
-constexpr uint8_t MCP2515_SPI_CS_PIN = 5;
-// Deliberately conservative for external voltage translators and jumper wires.
-constexpr uint32_t MCP2515_SPI_HZ = 1000000;
+constexpr uint8_t MCP2515_SPI_CS_PIN = MCP2515_SPI_CS_GPIO;
+constexpr uint8_t MCP2515_INTERRUPT_PIN = MCP2515_INT_GPIO;
+constexpr uint32_t MCP2515_SPI_HZ = MCP2515_SPI_SPEED_HZ;
 constexpr uint32_t SERIAL_BAUD = 921600;
+constexpr size_t SERIAL_TX_BUFFER_BYTES = 8192;
 constexpr uint32_t STATS_INTERVAL_MS = 1000;
 constexpr uint32_t CAN_BITRATE = 500000;
 constexpr size_t MAX_FILTER_IDS = 64;

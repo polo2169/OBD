@@ -63,6 +63,9 @@ class PsaActionDefinition:
     confidence: str = "documented_community"
     source: str = PSA_NAC_SOURCE
     unavailable_reason: str | None = None
+    validation_status: str = "source_confirmed_not_vehicle_tested"
+    requires_detected_ecu: bool = True
+    vehicle_confirmed: bool = False
 
     def as_catalog(self) -> dict:
         return {
@@ -78,6 +81,9 @@ class PsaActionDefinition:
             "confidence": self.confidence,
             "source": self.source,
             "unavailable_reason": self.unavailable_reason,
+            "validation_status": self.validation_status,
+            "requires_detected_ecu": self.requires_detected_ecu,
+            "vehicle_confirmed": self.vehicle_confirmed,
         }
 
 
@@ -144,6 +150,7 @@ PSA_ACTIONS: dict[str, PsaActionDefinition] = {
             start_payload=None,
             confidence="unknown_command",
             unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+            validation_status="not_documented",
         ),
         PsaActionDefinition(
             key="bsi_turn_right",
@@ -153,6 +160,7 @@ PSA_ACTIONS: dict[str, PsaActionDefinition] = {
             start_payload=None,
             confidence="unknown_command",
             unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+            validation_status="not_documented",
         ),
         PsaActionDefinition(
             key="bsi_hazard",
@@ -162,6 +170,7 @@ PSA_ACTIONS: dict[str, PsaActionDefinition] = {
             start_payload=None,
             confidence="unknown_command",
             unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+            validation_status="not_documented",
         ),
     )
 }
@@ -246,9 +255,10 @@ def advanced_catalog() -> dict:
         "can_tx_enabled": settings.can_tx_enabled,
         "required_firmware_policy": "psa_lab_named_actions",
         "wiring": {
-            "vehicle_can": "OBD 6/14 selon le profil T9 actuel",
-            "nac_reference": "OBD 3/8 dans le projet Arduino NAC/RCC",
-            "warning": "Identifier physiquement le réseau avant de modifier le câblage ; ne jamais ponter les deux paires.",
+            "vehicle_can": "AEE2004/AEE2010 : CAN diagnostic sur OBD 3/8",
+            "standard_obd": "OBD-II moteur normalisé généralement sur 6/14 selon l'interface et le câblage utilisé",
+            "source": "https://github.com/ludwig-v/arduino-psa-diag/blob/master/README.md#pinout",
+            "warning": "Ne jamais ponter 3/8 et 6/14. Utiliser un sélecteur ou un second transceiver isolé.",
         },
         "ecus": ecus,
         "actions": [action.as_catalog() for action in PSA_ACTIONS.values()],

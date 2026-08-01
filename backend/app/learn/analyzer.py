@@ -59,6 +59,9 @@ def list_sessions() -> list[DiscoverySessionSummary]:
         max_timestamp: int | None = None
         markers: list[str] = []
         frame_count = 0
+        live_frame_count = 0
+        diagnostic_frame_count = 0
+        gps_point_count = 0
         cached_duration_ms: float | None = None
         cached_marker_count: int | None = None
         error: str | None = None
@@ -97,10 +100,16 @@ def list_sessions() -> list[DiscoverySessionSummary]:
                         if use_analysis_cache:
                             break
                         frame_count += 1
+                        if event.get("bus") == "diagnostic":
+                            diagnostic_frame_count += 1
+                        else:
+                            live_frame_count += 1
                     elif event.get("type") == "marker":
                         marker = str(event.get("name") or "").strip()
                         if marker:
                             markers.append(marker)
+                    elif event.get("type") == "gps_position":
+                        gps_point_count += 1
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             error = f"Session illisible : {exc}"
 
@@ -114,7 +123,12 @@ def list_sessions() -> list[DiscoverySessionSummary]:
             started_at_us=started_at_us,
             duration_ms=round(duration_ms, 1),
             frame_count=frame_count,
+            live_frame_count=live_frame_count or (
+                frame_count if diagnostic_frame_count == 0 else 0
+            ),
+            diagnostic_frame_count=diagnostic_frame_count,
             marker_count=cached_marker_count if cached_marker_count is not None else len(markers),
+            gps_point_count=gps_point_count,
             markers=list(dict.fromkeys(markers)),
             size_bytes=path.stat().st_size,
             analyzed=analysis_path.exists(),
@@ -127,6 +141,8 @@ def _frame_events(events: list[dict]) -> list[dict]:
     frames: list[dict] = []
     for event in events:
         if event.get("type") != "can_frame":
+            continue
+        if event.get("bus") == "diagnostic":
             continue
         try:
             data = bytes.fromhex(str(event.get("data_hex", "")))
@@ -597,6 +613,9 @@ def analyze_behavior(
 def analyze_session(session_id: str) -> AnalysisReport:
     events = load_events(session_id)
     frames = [e for e in events if e.get("type") == "can_frame"]
+    diagnostic_frames = [e for e in frames if e.get("bus") == "diagnostic"]
+    if diagnostic_frames:
+        frames = diagnostic_frames
     markers = [e.get("name", "") for e in events if e.get("type") == "marker"]
 
     parsed = []

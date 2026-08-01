@@ -159,3 +159,131 @@ def test_gateway_records_stats_and_detects_sequence_gaps(monkeypatch):
     assert any(event["type"] == "gateway_sequence_gap" for event in events)
     assert any(event["type"] == "gateway_stats" for event in events)
     assert device.written[0] == b'{"type":"get_status"}\n'
+
+
+def test_dual_gateway_decodes_buses_and_routes_diagnostic_tx(monkeypatch):
+    from app.models import CanFrame
+
+    device = FakeSerial([
+        {
+            "type": "hello",
+            "protocol": 7,
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "live_can_ready": True,
+            "diagnostic_can_ready": True,
+            "diagnostic_read_only": True,
+        },
+        "F,64,A,208,8,1234",
+        "F,65,B,652,48,5678",
+    ])
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+    transport.open()
+
+    live = transport.receive(0.1)
+    diagnostic = transport.receive(0.1)
+    assert live and live.bus == "live" and live.arbitration_id == 0x208
+    assert diagnostic and diagnostic.bus == "diagnostic" and diagnostic.arbitration_id == 0x652
+
+    transport.send(CanFrame(
+        timestamp_us=1,
+        arbitration_id=0x752,
+        data=bytes.fromhex("0322F19000000000"),
+        bus="diagnostic",
+    ))
+    assert device.written[-1] == (
+        b'{"type":"can_tx","id":1874,"ext":false,'
+        b'"data":"0322F19000000000","bus":"diagnostic"}\n'
+    )
+
+
+def test_dual_gateway_rejects_missing_diagnostic_controller(monkeypatch):
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "diagnostic_can_ready": False,
+        "diagnostic_read_only": True,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+
+    with pytest.raises(RuntimeError, match="diagnostic 3/8"):
+        transport.open()
+
+
+def test_standalone_uart_satellite_announces_diagnostic_bus(monkeypatch):
+    device = FakeSerial([
+        {
+            "type": "hello",
+            "protocol": 6,
+            "readonly": False,
+            "can_ready": True,
+            "diagnostic_read_only": True,
+            "bus_role": "diagnostic",
+        },
+        "F,64,A,652,8,1234",
+    ])
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+    transport.open()
+
+    frame = transport.receive(0.1)
+
+    assert frame and frame.bus == "diagnostic"
+    assert frame.arbitration_id == 0x652
+
+
+def test_uart_dual_gateway_waits_for_stable_satellite_hello(monkeypatch):
+    device = FakeSerial([
+        {
+            "type": "hello",
+            "protocol": 7,
+            "driver": "twai+uart-twai",
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "diagnostic_read_only": True,
+            "diagnostic_can_ready": True,
+            "satellite_connected": True,
+        },
+        {
+            "type": "hello",
+            "protocol": 7,
+            "driver": "twai+uart-twai",
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "diagnostic_read_only": False,
+            "diagnostic_can_ready": False,
+            "satellite_connected": False,
+        },
+        {
+            "type": "hello",
+            "protocol": 7,
+            "driver": "twai+uart-twai",
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "diagnostic_read_only": True,
+            "diagnostic_can_ready": True,
+            "satellite_connected": True,
+        },
+    ])
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport(
+        "/dev/fake",
+        921600,
+        tx_enabled=True,
+        handshake_timeout=0.05,
+    )
+
+    transport.open()
+
+    assert transport.hello and transport.hello["satellite_connected"] is True
+    assert transport.hello["diagnostic_can_ready"] is True

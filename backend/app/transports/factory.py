@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from collections.abc import Iterable
 
 from app.config import settings
 from app.database import KnowledgeBase
@@ -7,12 +8,15 @@ from app.transports.serial_gateway import Esp32SerialTransport
 from app.transports.socketcan import SocketCanTransport
 from app.transports.virtual import VirtualVehicleTransport
 from app.transports.wifi_gateway import Esp32WifiTransport
+from app.transports.shared_gateway import shared_gateway_client
 from app.safety import TxSafetyProfile
 
 
 def build_transport(
     debug_sink: Callable[[dict], None] | None = None,
     safety_profile: TxSafetyProfile = "diagnostic_read_only",
+    receive_buses: Iterable[str] | None = ("default", "diagnostic"),
+    require_diagnostic_can: bool = True,
 ) -> Transport:
     if settings.transport == "virtual":
         response_ids = {
@@ -27,21 +31,52 @@ def build_transport(
             safety_profile=safety_profile,
         )
     elif settings.transport == "esp32_serial":
-        transport = Esp32SerialTransport(
+        key = (
+            "esp32_serial",
             settings.serial_port,
             settings.serial_baud,
-            tx_enabled=settings.can_tx_enabled,
-            handshake_timeout=settings.esp32_handshake_timeout,
-            safety_profile=safety_profile,
+            settings.can_tx_enabled,
+            settings.esp32_handshake_timeout,
+        )
+        transport = shared_gateway_client(
+            key,
+            lambda: Esp32SerialTransport(
+                settings.serial_port,
+                settings.serial_baud,
+                tx_enabled=settings.can_tx_enabled,
+                handshake_timeout=settings.esp32_handshake_timeout,
+                safety_profile="diagnostic_read_only",
+                require_diagnostic_can=False,
+            ),
+            f"esp32:{settings.serial_port}",
+            receive_buses,
+            safety_profile,
+            require_diagnostic_can=require_diagnostic_can,
         )
     elif settings.transport == "esp32_wifi":
-        transport = Esp32WifiTransport(
+        key = (
+            "esp32_wifi",
             settings.esp32_wifi_host,
             settings.esp32_wifi_port,
-            tx_enabled=settings.can_tx_enabled,
-            handshake_timeout=settings.esp32_handshake_timeout,
-            reconnect_interval=settings.esp32_wifi_reconnect_interval,
-            safety_profile=safety_profile,
+            settings.can_tx_enabled,
+            settings.esp32_handshake_timeout,
+            settings.esp32_wifi_reconnect_interval,
+        )
+        transport = shared_gateway_client(
+            key,
+            lambda: Esp32WifiTransport(
+                settings.esp32_wifi_host,
+                settings.esp32_wifi_port,
+                tx_enabled=settings.can_tx_enabled,
+                handshake_timeout=settings.esp32_handshake_timeout,
+                reconnect_interval=settings.esp32_wifi_reconnect_interval,
+                safety_profile="diagnostic_read_only",
+                require_diagnostic_can=False,
+            ),
+            f"esp32_wifi:{settings.esp32_wifi_host}:{settings.esp32_wifi_port}",
+            receive_buses,
+            safety_profile,
+            require_diagnostic_can=require_diagnostic_can,
         )
     elif settings.transport == "socketcan":
         transport = SocketCanTransport(

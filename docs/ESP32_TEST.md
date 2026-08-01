@@ -30,6 +30,58 @@ Avec un module MCP2515/TJA1050, ne pas continuer avant d'avoir :
 - vérifié que la terminaison 120 ohms du module est retirée ou désactivée ;
 - confirmé que VCC reçoit 5 V régulé, jamais le 12 V de la prise OBD.
 
+### Montage double CAN retenu — deux ESP32 reliées par UART
+
+Le MCP2515 est abandonné. Chaque ESP32 utilise son contrôleur TWAI natif et son
+propre transceiver CAN. Une seule ESP32 reste reliée au PC :
+
+| Rôle | CAN | Firmware |
+|---|---|---|
+| ESP32 principale | OBD 6/14, écoute seule | `esp32-dual-uart-main-diagnostic` |
+| ESP32 satellite | OBD 3/8, diagnostic filtré | `esp32-dual-uart-satellite-diagnostic` |
+
+Relier les deux ESP32 en logique 3,3 V, sans convertisseur :
+
+| ESP32 principale | ESP32 satellite |
+|---|---|
+| GPIO 17 TX | GPIO 16 RX |
+| GPIO 16 RX | GPIO 17 TX |
+| GND | GND |
+
+Les deux cartes peuvent rester alimentées chacune par leur USB pendant les essais,
+mais ne pas relier leurs broches `5V/VIN` entre elles. La liaison UART fonctionne à
+2 Mbit/s. Le transceiver de chaque carte utilise `TXD=GPIO5` et `RXD=GPIO4` ; un
+TJA1050 5 V exige toujours une adaptation sur RXD vers GPIO4. Un TJA1051 avec VIO
+3,3 V ou un transceiver CAN entièrement 3,3 V est préférable. Retirer toute
+terminaison 120 ohms ajoutée par les modules.
+
+Ne jamais relier OBD `3/8` à OBD `6/14`. Le firmware de la carte principale place
+matériellement son TWAI en écoute seule et ne relaie vers le satellite que les
+requêtes diagnostic autorisées.
+
+### Ancien montage double CAN — MCP2515 quartz 16.000
+
+Le transceiver déjà relié au contrôleur TWAI reste sur le CAN véhicule OBD
+`6/14`. Il fonctionne en écoute seule et conserve le débit du dashboard. Le
+MCP2515 est un second contrôleur indépendant exclusivement relié au CAN
+diagnostic PSA OBD `3/8` :
+
+| Signal MCP2515 | Connexion |
+|---|---|
+| SCK | ESP32 GPIO 18 |
+| MISO | ESP32 GPIO 19 via adaptation 5 V → 3,3 V |
+| MOSI | ESP32 GPIO 23 via adaptation 3,3 V → 5 V |
+| CS | ESP32 GPIO 27 via adaptation 3,3 V → 5 V |
+| INT | ESP32 GPIO 26 via adaptation 5 V → 3,3 V |
+| CAN-H | OBD 3 |
+| CAN-L | OBD 8 |
+| GND | masse ESP32 et OBD 5 |
+| VCC | 5 V USB régulé |
+
+Le GPIO 5 reste réservé au TX du transceiver TWAI actuel : il ne doit plus être
+utilisé comme CS du MCP2515 dans ce montage. Retirer la terminaison 120 ohms du
+module et ne jamais ponter OBD `3/8` avec `6/14`.
+
 Avec un transceiver TJA1050 seul, utiliser le firmware TWAI `esp32-readonly` déjà
 prévu : GPIO 5 vers TXD, et RXD vers GPIO 4 uniquement au travers d'une adaptation
 5 V vers 3,3 V. Alimenter le TJA1050 en 5 V USB régulé, relier les masses, CAN-H à
@@ -63,6 +115,45 @@ Avec un MCP2515, choisir selon le quartz :
 # Exemple pour un quartz marqué 8.000
 /Users/paul/.platformio/penv/bin/pio run -e esp32-mcp2515-8mhz-readonly -t upload
 ```
+
+Pour le montage recommandé à deux ESP32, flasher chaque carte séparément :
+
+```bash
+cd firmware/esp32-gateway
+# Carte principale, reliée ensuite au PC
+/Users/paul/.platformio/penv/bin/pio run \
+  -e esp32-dual-uart-main-diagnostic -t upload
+
+# Seconde carte, satellite OBD 3/8
+/Users/paul/.platformio/penv/bin/pio run \
+  -e esp32-dual-uart-satellite-diagnostic -t upload
+```
+
+Le `hello` de la carte principale doit annoncer `protocol=7`,
+`driver=twai+uart-twai`, `dual_can=true`, `live_listen_only=true`,
+`live_can_ready=true`, `diagnostic_can_ready=true` et
+`satellite_connected=true`. Le PC ne sélectionne que le port USB de la carte
+principale.
+
+Pour l'ancien montage double CAN MCP2515 avec le quartz `16.000`, le profil reste
+disponible :
+
+```bash
+cd firmware/esp32-gateway
+/Users/paul/.platformio/penv/bin/pio run \
+  -e esp32-dual-can-16mhz-serial-diagnostic -t upload
+```
+
+Le `hello` attendu annonce `protocol=7`, `driver=twai+mcp2515`,
+`dual_can=true`, `live_can_ready=true`, `diagnostic_can_ready=true`,
+`live_listen_only=true`, `oscillator_mhz=16`, `spi_cs_pin=27` et
+`spi_hz=8000000`. Ne pas flasher le profil `psa-lab` pour une lecture normale :
+il reste réservé aux actions nommées déjà validées et explicitement armées.
+
+Chaque ligne compacte conserve le format `F,...`; le bit `0x40` du champ flags
+identifie désormais une trame `diagnostic`. Le backend enregistre `bus: live` ou
+`bus: diagnostic`, utilise uniquement `live` pour le dashboard/replay et route
+les requêtes UDS uniquement vers le MCP2515.
 
 Les boutons **Capteurs uniquement** et **Scanner le véhicule** doivent envoyer des
 requêtes de lecture. Il faut donc flasher `esp32-s3-active`, tout en gardant le backend

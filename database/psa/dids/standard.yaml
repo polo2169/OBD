@@ -12,6 +12,34 @@
   confidence: confirmed
   access: read_only
 
+"0xF182":
+  name: Application data identification
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF183":
+  name: Boot software fingerprint
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF184":
+  name: Application software fingerprint
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF185":
+  name: Application data fingerprint
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
 "0xF186":
   name: Active diagnostic session
   codec: uint8
@@ -27,10 +55,31 @@
   access: read_only
 
 "0xF189":
-  name: Vehicle manufacturer ECU software number
+  name: Vehicle manufacturer ECU software version number
   codec: ascii
   source: ISO-14229
   confidence: confirmed
+  access: read_only
+
+"0xF188":
+  name: Vehicle manufacturer ECU software number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF18A":
+  name: System supplier identifier
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF18B":
+  name: ECU manufacturing date
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
   access: read_only
 
 "0xF18C":
@@ -40,9 +89,86 @@
   confidence: confirmed
   access: read_only
 
+"0xF18D":
+  name: Supported functional units
+  codec: bytes
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF18E":
+  name: Vehicle manufacturer kit assembly part number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
 "0xF190":
   name: Vehicle Identification Number
   codec: ascii
   source: ISO-14229
   confidence: confirmed
+  access: read_only
+
+"0xF191":
+  name: Vehicle manufacturer ECU hardware number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF192":
+  name: System supplier ECU hardware number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF193":
+  name: System supplier ECU hardware version number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF194":
+  name: System supplier ECU software number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF195":
+  name: System supplier ECU software version number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF197":
+  name: System name or engine type
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0xF198":
+  name: Repair shop code or tester serial number
+  codec: ascii
+  source: ISO-14229
+  confidence: standardized_identifier
+  access: read_only
+
+"0x2901":
+  name: PSA secured traceability zone
+  codec: bytes
+  source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#secured-traceability
+  confidence: community_documented_read_candidate
+  access: read_only
+
+"0xC000":
+  name: PSA secured and non-secured writing counters
+  codec: bytes
+  source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#writing-counter
+  confidence: community_documented
   access: read_only

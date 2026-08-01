@@ -45,6 +45,11 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
         "Estimation du couple actuellement fourni par le moteur.",
         True,
     ),
+    "Dat_CMM.P022_Com_nSetPLo": (
+        "Consigne de ralenti",
+        "Régime de ralenti demandé par le calculateur moteur; concordance validée avec le régime réel sur cette 308.",
+        True,
+    ),
     "Dyn2_FRE.P226_Com_stBrkActv": (
         "Frein actif",
         "État logique indiquant une demande ou une action de freinage.",
@@ -53,6 +58,16 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
     "Dyn2_FRE.BRAKE_PRESSURE": (
         "Pression de freinage brute",
         "Mesure de pression du circuit de freinage. L'échelle exacte reste à valider sur cette 308.",
+        True,
+    ),
+    "Dyn2_FRE.LATERAL_ACCELERATION": (
+        "Accélération latérale",
+        "Accélération transversale du véhicule, validée sur cette 308 par comparaison avec les quatre roues et le volant.",
+        True,
+    ),
+    "Dyn2_FRE.YAW_RATE": (
+        "Vitesse de lacet",
+        "Rotation du véhicule autour de l’axe vertical, validée sur cette 308 par deux références CAN indépendantes.",
         True,
     ),
     "HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES": (
@@ -73,8 +88,27 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
     "HS2_DAT_MDD_CMD_452.FRONT_WIPER_STATUS": ("Essuie-glace avant", "État courant de l'essuie-glace avant.", True),
     "HS2_DAT7_BSI_612.ETAT_FEUX_ROUTE": ("Feux de route", "État des feux de route.", True),
     "HS2_DAT7_BSI_612.ETAT_FEUX_CROIST": ("Feux de croisement", "État des feux de croisement.", True),
-    "HS2_DAT7_BSI_612.INFO_NIV_CARB": ("Niveau de carburant", "Quantité de carburant estimée par le BSI.", True),
-    "LANE_KEEP_ASSIST.STATUS": ("État maintien dans la voie", "État diffusé par la fonction d'aide au maintien dans la voie.", True),
+    "HS2_DAT7_BSI_612.INFO_NIV_CARB": (
+        "Niveau carburant brut",
+        "Mesure du flotteur sensible au ballottement : sa forte corrélation avec l’accélération longitudinale impose un filtrage avant affichage.",
+        True,
+    ),
+    "Dat_CMM.P021_Com_volFlCons": (
+        "Consommation passive — décodage rejeté",
+        "Ne suit ni le régime, ni la pédale, ni le couple sur cette 308; ce champ ne doit pas être interprété comme une consommation.",
+        False,
+    ),
+    "Dat2_CMM.P316_FlSys_volFlConsVirt": (
+        "Consommation virtuelle — indisponible",
+        "Champ constamment nul pendant l’essai routier; aucune information de consommation n’est fournie.",
+        False,
+    ),
+    "Dat2_CMM.P278_Oil_stPSwmp": (
+        "Alerte de pression d’huile",
+        "Contacteur logique validé; actif moteur arrêté, inactif moteur tournant. Il ne fournit aucune pression en bar.",
+        True,
+    ),
+    "LANE_KEEP_ASSIST.STATUS": ("État maintien dans la voie", "État diffusé par la fonction : 0 indisponible, 1 non sélectionné, 2 sélectionné, 3 autorisé, 4 actif, 5 défaut, 6 collision.", True),
     "LANE_KEEP_ASSIST.LANE_DEPARTURE": ("Alerte franchissement de ligne", "Indique une détection de sortie de voie.", True),
     "LANE_KEEP_ASSIST.LXA_ACTIVATION": ("Activation aide de voie", "État d'activation de l'assistance de voie.", True),
     "RESTRAINTS.DRIVER_SEATBELT": ("Ceinture conducteur", "État de boucle de la ceinture conducteur.", True),

@@ -289,10 +289,15 @@ BO_ 969 Dyn2_V2_BV: 6 BVA___Automatikgetriebe
 
 BO_ 973 Dyn2_FRE: 8 ABS___Antiblockiersystem
  SG_ P226_Com_stBrkActv : 0|2@1+ (1,0) [0|4] "" Vector__XXX
+ SG_ LATERAL_ACCELERATION : 15|8@0- (0.05,0) [-6.4|6.35] "m/s2" Vector__XXX
+ SG_ YAW_RATE : 23|16@0- (0.1,0) [-3276.8|3276.7] "degrees/s" Vector__XXX
  SG_ P225_Com_stBrkRaw_0 : 37|1@1+ (1,0) [0|0] "" Vector__XXX
  SG_ P224_Com_stBrkRaw_1 : 38|1@1+ (1,0) [0|0] "" Vector__XXX
  SG_ BRAKE_PRESSURE : 47|12@0+ (1,0) [0|0] "" Vector__XXX
  SG_ P319_FrmMng_rClthPos : 56|8@1+ (0.5,0) [0|255] "%" Vector__XXX
+
+CM_ SG_ 973 LATERAL_ACCELERATION "Peugeot 308 T9 2018: scale and sign confirmed by correlation against wheel-speed differential and steering during a road capture.";
+CM_ SG_ 973 YAW_RATE "Peugeot 308 T9 2018: scale and sign confirmed by correlation against wheel-speed differential and steering during a road capture.";
 
 BO_ 1010 LANE_KEEP_ASSIST: 8 XXX
  SG_ DRIVE : 6|1@0+ (1,0) [0|1] "" XXX

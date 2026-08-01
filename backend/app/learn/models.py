@@ -12,27 +12,47 @@ class CaptureMarker(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class CaptureGpsPosition(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy_m: float = Field(ge=0, le=100_000)
+    altitude_m: float | None = None
+    altitude_accuracy_m: float | None = Field(default=None, ge=0, le=100_000)
+    heading_deg: float | None = Field(default=None, ge=0, le=360)
+    speed_m_s: float | None = Field(default=None, ge=0, le=200)
+    source_timestamp_us: int | None = Field(default=None, ge=0)
+
+
 class CaptureStatus(BaseModel):
     session_id: str
     active: bool
     source: str
     frame_count: int
+    live_frame_count: int = 0
+    diagnostic_frame_count: int = 0
     marker_count: int
+    gps_point_count: int = 0
+    gps_last_accuracy_m: float | None = None
     path: str
     name: str = ""
     started_at_us: int | None = None
     strict_passive: bool | None = None
+    dual_can: bool = False
+    live_can_ready: bool | None = None
+    diagnostic_can_ready: bool | None = None
     error: str | None = None
 
 
 class CapturedEvent(BaseModel):
-    type: Literal["can_frame", "marker", "meta"]
+    type: Literal["can_frame", "marker", "meta", "gps_position", "transport_event"]
     timestamp_us: int
     source_timestamp_us: int | None = None
     arbitration_id: int | None = None
     extended: bool = False
     data_hex: str | None = None
     direction: Literal["rx", "tx", "unknown"] = "unknown"
+    bus: Literal["default", "live", "diagnostic"] = "default"
     name: str | None = None
     note: str | None = None
 
@@ -67,7 +87,10 @@ class DiscoverySessionSummary(BaseModel):
     started_at_us: int | None = None
     duration_ms: float = 0
     frame_count: int = 0
+    live_frame_count: int = 0
+    diagnostic_frame_count: int = 0
     marker_count: int = 0
+    gps_point_count: int = 0
     markers: list[str] = Field(default_factory=list)
     size_bytes: int = 0
     analyzed: bool = False
@@ -255,12 +278,18 @@ class ReplaySample(BaseModel):
     steering_rate_deg_s: float | None = None
     driver_torque: float | None = None
     accelerator_pct: float | None = None
+    accelerator_secondary_pct: float | None = None
     engine_torque_nm: float | None = None
+    idle_setpoint_rpm: float | None = None
+    fuel_consumption_candidate_mm3: float | None = None
+    virtual_fuel_consumption_candidate_mm3: float | None = None
     current_gear: int | None = None
     target_gear: int | None = None
     gear_shift_active: bool | None = None
     drivetrain_engaged_state: int | None = None
     longitudinal_accel_ms2: float | None = None
+    lateral_accel_ms2: float | None = None
+    yaw_rate_deg_s: float | None = None
     brake_active: bool | None = None
     brake_system_state: int | None = None
     brake_pressure_raw: float | None = None
@@ -272,6 +301,7 @@ class ReplaySample(BaseModel):
     driver_door: bool | None = None
     passenger_door: bool | None = None
     front_wiper_status: int | None = None
+    fuel_liters_raw: float | None = None
     fuel_liters: float | None = None
     oil_temperature_c: float | None = None
     coolant_temperature_c: float | None = None
@@ -306,6 +336,12 @@ class ReplaySample(BaseModel):
     wheel_front_right_kph: float | None = None
     wheel_rear_left_kph: float | None = None
     wheel_rear_right_kph: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    gps_accuracy_m: float | None = None
+    gps_altitude_m: float | None = None
+    gps_heading_deg: float | None = None
+    gps_speed_kph: float | None = None
     x_m: float = 0
     y_m: float = 0
     heading_deg: float = 0
@@ -319,6 +355,18 @@ class ReplayEvent(BaseModel):
     value: str | int | float | bool | None = None
 
 
+class ReplayGpsPoint(BaseModel):
+    t_ms: int
+    timestamp_us: int
+    latitude: float
+    longitude: float
+    accuracy_m: float
+    altitude_m: float | None = None
+    altitude_accuracy_m: float | None = None
+    heading_deg: float | None = None
+    speed_kph: float | None = None
+
+
 class ReplayData(BaseModel):
     version: int
     session_id: str
@@ -327,6 +375,7 @@ class ReplayData(BaseModel):
     source: str
     source_size_bytes: int
     source_mtime_ns: int
+    route_override_mtime_ns: int | None = None
     start_timestamp_us: int
     duration_ms: int
     sample_period_ms: int
@@ -336,6 +385,7 @@ class ReplayData(BaseModel):
     average_moving_speed_kph: float
     distance_km: float
     gps_available: bool = False
+    gps_point_count: int = 0
     route_method: str
     steering_zero_offset_deg: float
     route_bounds: dict[str, float]
@@ -343,4 +393,28 @@ class ReplayData(BaseModel):
     field_quality: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     events: list[ReplayEvent] = Field(default_factory=list)
+    gps_points: list[ReplayGpsPoint] = Field(default_factory=list)
     points: list[ReplaySample] = Field(default_factory=list)
+
+
+class SignalValidation(BaseModel):
+    key: str
+    label: str
+    status: Literal["validated", "plausible", "candidate", "suspicious", "unavailable"]
+    sample_count: int = 0
+    minimum: float | None = None
+    maximum: float | None = None
+    transitions: int = 0
+    evidence: list[str] = Field(default_factory=list)
+
+
+class ReplayValidation(BaseModel):
+    version: int = 1
+    session_id: str
+    generated_at: str
+    signal_count: int
+    validated_count: int
+    plausible_count: int
+    suspicious_count: int
+    signals: list[SignalValidation] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

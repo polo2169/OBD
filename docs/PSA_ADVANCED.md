@@ -66,16 +66,38 @@ l'échange seed/key réel. Le firmware bloque toujours `0x2E`, `0x31`, `0x34`,
 
 ## Câblage
 
-Le profil T9 actuel utilise l'OBD `6/14` pour le réseau CAN observé. La
-documentation NAC/RCC citée indique le CAN diagnostic PSA sur `3/8`. Il faut
-identifier le réseau réellement accessible sur la voiture avant de déplacer un
-fil ou d'ajouter un second transceiver.
+La documentation d'`arduino-psa-diag` place le CAN diagnostic des architectures
+AEE2004/AEE2010 sur l'OBD `3/8`. Le CAN OBD-II normalisé peut être présenté sur
+`6/14` selon l'interface et le câblage. Le profil T9 conserve donc les deux
+notions séparées : diagnostic constructeur sur `3/8`, OBD-II moteur sur `6/14`.
 
 - ne jamais relier `6/14` et `3/8` entre eux ;
 - ne pas ajouter de résistance 120 Ω sur un véhicule déjà terminé ;
 - utiliser un transceiver CAN automobile et une masse commune ;
 - véhicule immobilisé, moteur arrêté, batterie stabilisée ;
 - arrêter et sauvegarder toute capture avant une session diagnostic active.
+
+Deux montages sont possibles :
+
+1. Un seul contrôleur CAN : un commutateur bipolaire sélectionne ensemble
+   `CAN-H 6 ↔ 3` et `CAN-L 14 ↔ 8`. Il ne doit exister aucune position qui
+   ponte les deux réseaux. C'est le montage le plus simple pour alterner entre
+   capture roulante/OBD-II et diagnostic constructeur.
+2. Deux réseaux simultanés : le contrôleur TWAI interne de l'ESP32 pilote un
+   transceiver et un second contrôleur CAN externe (par exemple SPI) pilote le
+   second transceiver. Deux TJA branchés en parallèle sur les mêmes lignes
+   TX/RX de l'ESP32 ne constituent pas deux interfaces CAN indépendantes.
+
+Le montage implémenté utilise précisément la seconde solution : TWAI/TJA sur
+OBD `6/14` en écoute seule, et MCP2515 quartz 16 MHz sur OBD `3/8` pour les
+requêtes diagnostic. SPI utilise `18/19/23`, CS `27`; INT `26` est optionnel. Le firmware
+`esp32-dual-can-16mhz-serial-diagnostic` donne toujours la priorité de vidage à
+TWAI, puis traite le MCP2515. Le backend mutualise la connexion USB : le direct
+et l'enregistrement continuent pendant un inventaire ECU ou une lecture DTC.
+
+Dans les deux cas, `3` est le CAN-H diagnostic PSA et `8` son CAN-L. Les
+broches `5/4` mentionnées par le firmware sont les GPIO TX/RX entre l'ESP32 et
+le transceiver ; elles ne correspondent pas aux numéros de la prise OBD.
 
 ## Clignotants BSI
 
