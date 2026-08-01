@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.main import app
+from app.transports import selection
 
 
 client = TestClient(app)
@@ -16,6 +17,42 @@ def test_system_status_exposes_wifi_gateway(monkeypatch):
     response = client.get("/api/system/status")
     assert response.status_code == 200
     assert response.json()["gateway_endpoint"] == "192.168.4.1:35000"
+
+
+def test_system_transports_lists_esp32_choices():
+    response = client.get("/api/system/transports")
+    assert response.status_code == 200
+    payload = response.json()
+    assert any(option["transport"] == "esp32_wifi" for option in payload["options"])
+    assert any(option["transport"] == "esp32_serial" for option in payload["options"])
+
+
+def test_system_transport_connect_probes_and_persists(tmp_path, monkeypatch):
+    class FakeEsp32Transport:
+        hello = {"type": "hello", "protocol": 3, "readonly": True, "can_ready": True}
+
+        def open(self):
+            return None
+
+        def close(self):
+            return None
+
+    preference_path = tmp_path / "transport_selection.json"
+    monkeypatch.setattr(settings, "transport", "esp32_serial")
+    monkeypatch.setattr(settings, "serial_port", "/dev/cu.test-esp32")
+    monkeypatch.setattr(settings, "transport_selection_file", preference_path)
+    monkeypatch.setattr(selection, "build_transport", lambda: FakeEsp32Transport())
+
+    response = client.post("/api/system/transport/connect", json={
+        "transport": "esp32_serial",
+        "endpoint": "/dev/cu.test-esp32",
+        "baud": 921600,
+    })
+
+    assert response.status_code == 200
+    assert response.json()["verified"] is True
+    assert response.json()["hello"]["protocol"] == 3
+    assert json.loads(preference_path.read_text())["endpoint"] == "/dev/cu.test-esp32"
 
 
 def test_targeted_did_endpoint(tmp_path, monkeypatch):

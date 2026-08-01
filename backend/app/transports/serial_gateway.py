@@ -4,7 +4,7 @@ import time
 import serial
 
 from app.models import CanFrame
-from app.safety import authorize_diagnostic_can_frame
+from app.safety import TxSafetyProfile, authorize_transport_can_frame
 from app.transports.base import Transport
 
 
@@ -15,11 +15,13 @@ class Esp32SerialTransport(Transport):
         baud: int,
         tx_enabled: bool = False,
         handshake_timeout: float = 3.0,
+        safety_profile: TxSafetyProfile = "diagnostic_read_only",
     ) -> None:
         self.port = port
         self.baud = baud
         self.tx_enabled = tx_enabled
         self.handshake_timeout = handshake_timeout
+        self.safety_profile = safety_profile
         self.serial: serial.Serial | None = None
         self.hello: dict | None = None
         self.last_stats: dict | None = None
@@ -69,12 +71,25 @@ class Esp32SerialTransport(Transport):
                 "CAN_TX_ENABLED=true mais le firmware ESP32 est compilé en écoute seule. "
                 "Flashez esp32-tja1050-serial-diagnostic pour un scan UDS en lecture."
             )
-        if self.tx_enabled and self.hello.get("diagnostic_read_only") is not True:
-            self.close()
-            raise RuntimeError(
-                "Le firmware ESP32 n'annonce pas le verrou diagnostic lecture seule. "
-                "Le profil actif générique est refusé."
-            )
+        if self.tx_enabled:
+            psa_lab = self.hello.get("psa_lab") is True
+            if self.safety_profile == "psa_lab" and not psa_lab:
+                self.close()
+                raise RuntimeError(
+                    "Le firmware ESP32 n'annonce pas la capacité PSA lab. "
+                    "Flashez le profil esp32-tja1050-serial-psa-lab."
+                )
+            if (
+                self.safety_profile == "diagnostic_read_only"
+                and self.hello.get("diagnostic_read_only") is not True
+                and not psa_lab
+            ):
+                self.close()
+                raise RuntimeError(
+                    "Le firmware ESP32 n'annonce pas le verrou diagnostic lecture seule "
+                    "ni le profil PSA lab compatible. "
+                    "Le profil actif générique est refusé."
+                )
         self.debug("gateway_ready", hello=self.hello)
         self._write_command({"type": "get_status"})
 
@@ -114,7 +129,8 @@ class Esp32SerialTransport(Transport):
             raise PermissionError("Émission ESP32 désactivée par CAN_TX_ENABLED.")
         if not self.serial:
             raise RuntimeError("Transport fermé.")
-        decision = authorize_diagnostic_can_frame(
+        decision = authorize_transport_can_frame(
+            self.safety_profile,
             frame.arbitration_id,
             frame.extended,
             frame.data,

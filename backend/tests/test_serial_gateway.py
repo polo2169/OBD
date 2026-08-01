@@ -94,6 +94,42 @@ def test_gateway_accepts_locked_firmware_and_blocks_raw_write(monkeypatch):
     assert device.written[-1] == b'{"type":"can_tx","id":1866,"ext":false,"data":"0322F19000000000"}\n'
 
 
+def test_gateway_psa_lab_requires_capability_and_keeps_exact_allowlist(monkeypatch):
+    from app.models import CanFrame
+
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 6,
+        "readonly": False,
+        "can_ready": True,
+        "diagnostic_read_only": False,
+        "psa_lab": True,
+        "tx_policy": "psa_lab_named_actions",
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport(
+        "/dev/fake",
+        921600,
+        tx_enabled=True,
+        safety_profile="psa_lab",
+    )
+    transport.open()
+
+    transport.send(CanFrame(
+        timestamp_us=1,
+        arbitration_id=0x764,
+        data=bytes.fromhex("052FD60003000000"),
+    ))
+    with pytest.raises(PermissionError, match="allowlist"):
+        transport.send(CanFrame(
+            timestamp_us=2,
+            arbitration_id=0x764,
+            data=bytes.fromhex("042F123403000000"),
+        ))
+
+    assert device.written[-1] == b'{"type":"can_tx","id":1892,"ext":false,"data":"052FD60003000000"}\n'
+
+
 def test_gateway_records_stats_and_detects_sequence_gaps(monkeypatch):
     device = FakeSerial([
         {

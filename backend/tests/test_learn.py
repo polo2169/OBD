@@ -53,7 +53,10 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
     def payload(arbitration_id: int, **updates: float) -> str:
         message = decoder.message_for_frame(arbitration_id, False)
         assert message is not None
-        values = {signal.name: 0 for signal in message.signals}
+        values = {
+            signal.name: signal.minimum if signal.minimum is not None and signal.minimum > 0 else 0
+            for signal in message.signals
+        }
         values.update(updates)
         return message.encode(values, strict=False).hex().upper()
 
@@ -69,13 +72,19 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
         turn_signal = 1 if index >= 2 else 0
         brake = 1 if index == 3 else 0
         messages = [
-            (0x38D, payload(0x38D, VITESSE_VEHICULE_ROUES=36, ACCEL_LONGI_ROUES=0)),
+            (0x38D, payload(0x38D, VITESSE_VEHICULE_ROUES=36, ACCEL_LONGI_ROUES=0, REQ_LAMPE_WARNING=1 if index >= 3 else 0)),
             (0x305, payload(0x305, ANGLE=45 if index >= 2 else 0, RATE=5)),
+            (0x329, payload(0x329, P444_Com_bGbxSysFaultRaw=0)),
+            (0x348, payload(0x348, P152_Gearbx_stGear=index + 1, P025_Com_stESPErr=0, P343_Com_bOBDErr=0, P344_Com_bMILOn=-1 if index >= 3 else 0, P345_Com_bMILBln=0)),
+            (0x349, payload(0x349, P030_Gbx_stDrvTrnEgd=2, P009_Com_bGearShftActv=1 if index >= 3 else 0, P283_Com_stGearTrgtPos=min(6, index + 2))),
+            (0x34D, payload(0x34D, P147_Com_bESPIntvActv=1 if index >= 3 else 0)),
             (0x452, payload(0x452, TURN_SIGNAL_STATUS=turn_signal)),
-            (0x612, payload(0x612, ETAT_FEUX_CROIST=1)),
-            (0x412, payload(0x412, P013_MainBrake=brake)),
+            (0x612, payload(0x612, ETAT_FEUX_CROIST=1, DEF_FEU_CROISMNT_D=0, DEF_FEU_CROISMNT_G=0, DEF_FEU_ROUTE_D=0, DEF_FEU_ROUTE_G=0)),
+            (0x412, payload(0x412, P013_MainBrake=brake, P040_MainBrakeFault=0, P012_Com_bFlMin=1 if index >= 3 else 0, P086_Com_stFlLvlDia=0)),
             (0x3F2, payload(0x3F2, STATUS=2)),
             (0x488, payload(0x488, P005_CEngDst_tSens=88, P011_Oil_tSwmp=90, P158_Air_tAFS=32)),
+            (0x50D, payload(0x50D, P351_Com_bABSIntvActv=1 if index == 3 else 0)),
+            (0x572, payload(0x572, DRIVER_SEATBELT=2, PASSENGER_SEATBELT=1)),
             (0x588, payload(0x588, P278_Oil_stPSwmp=-1, P338_EnvP_p=1000)),
             (0x592, payload(0x592, P272_Com_rBattCh=86, P273_Com_tBatt=51, P418_Com_uBattRaw=13.8)),
             (0x5B2, payload(0x5B2, P146_Com_tEnvT=21.5)),
@@ -97,7 +106,7 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
 
     assert replay.name == "Replay de test"
     assert replay.duration_ms == 400
-    assert replay.frame_count == 50
+    assert replay.frame_count == 80
     assert replay.max_speed_kph == 36
     assert replay.distance_km > 0
     assert not replay.gps_available
@@ -112,8 +121,17 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
     assert replay.points[-1].oil_pressure_switch is True
     assert replay.points[-1].battery_voltage_v == 13.8
     assert replay.points[-1].ambient_temperature_c == 21.5
+    assert replay.points[-1].mil_on is True
+    assert replay.points[-1].esp_intervention is True
+    assert replay.points[-1].generic_warning_requested is True
+    assert replay.points[-1].low_fuel_warning is True
+    assert replay.points[-1].driver_seatbelt_state == 2
+    assert replay.points[-1].current_gear == 4
+    assert replay.points[-1].target_gear == 5
+    assert replay.points[-1].gear_shift_active is True
     assert any(event.kind == "turn_signal" for event in replay.events)
     assert any(event.kind == "brake" for event in replay.events)
+    assert any(event.kind == "gear" for event in replay.events)
     assert (tmp_path / f"{session_id}.replay.json").exists()
     assert prepare_replay(session_id).points == replay.points
 

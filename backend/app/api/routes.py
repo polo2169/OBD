@@ -4,16 +4,39 @@ from udsoncan.exceptions import NegativeResponseException, TimeoutException
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.obd import sensor_catalog, snapshot_sensors
+from app.diagnostic.identity import read_vehicle_identity
 from app.diagnostic.observed_dtcs import list_observed_dtcs, save_observed_dtc
+from app.diagnostic.psa_advanced import (
+    advanced_catalog,
+    calculate_seed_key,
+    execute_named_action,
+    read_raw_did,
+    unlock_configuration,
+)
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
+from app.learn.capture import capture_manager
 from app.models import (
     ClearDtcRequest,
     ClearDtcResult,
     DidReadResult,
     ObservedDtcInput,
     ObservedDtcResult,
+    PsaActionRequest,
+    PsaActionResult,
+    PsaSeedKeyRequest,
+    PsaSeedKeyResult,
+    PsaUnlockRequest,
+    PsaUnlockResult,
     ScanReport,
     SensorSnapshot,
+    TransportConnectRequest,
+    VehicleIdentityRequest,
+    VehicleIdentityResult,
+)
+from app.transports.selection import (
+    available_transport_options,
+    connection_probe_status,
+    probe_and_select_transport,
 )
 
 router = APIRouter(prefix="/api")
@@ -26,6 +49,7 @@ def status() -> dict:
         gateway_endpoint = f"{settings.esp32_wifi_host}:{settings.esp32_wifi_port}"
     elif settings.transport == "esp32_serial":
         gateway_endpoint = settings.serial_port
+    connection = connection_probe_status()
     return {
         "application": settings.app_name,
         "transport": settings.transport,
@@ -36,14 +60,63 @@ def status() -> dict:
         "trace_can_frames": settings.trace_can_frames,
         "dtc_clear_enabled": settings.dtc_clear_enabled,
         "safety_ecu_clear_enabled": settings.safety_ecu_clear_enabled,
+        "psa_advanced_enabled": settings.psa_advanced_enabled,
+        "psa_security_access_enabled": settings.psa_security_access_enabled,
+        "psa_actuator_enabled": settings.psa_actuator_enabled,
         "vehicle_profile": settings.vehicle_profile,
         "gateway_endpoint": gateway_endpoint,
+        "gateway_verified": connection["verified"],
+        "gateway_hello": connection["hello"],
+        "gateway_error": connection["error"],
     }
+
+
+@router.get("/system/transports")
+def system_transports() -> dict:
+    endpoint = (
+        f"{settings.esp32_wifi_host}:{settings.esp32_wifi_port}"
+        if settings.transport == "esp32_wifi"
+        else settings.serial_port if settings.transport == "esp32_serial" else None
+    )
+    current_id = (
+        f"serial:{endpoint}" if settings.transport == "esp32_serial" and endpoint
+        else f"wifi:{endpoint}" if settings.transport == "esp32_wifi" and endpoint
+        else None
+    )
+    return {
+        "options": available_transport_options(),
+        "current_id": current_id,
+        "capture_active": capture_manager.status().active,
+        "connection": connection_probe_status(),
+    }
+
+
+@router.post("/system/transport/connect")
+def system_transport_connect(request: TransportConnectRequest) -> dict:
+    if capture_manager.status().active:
+        raise HTTPException(
+            status_code=409,
+            detail="Arrête et sauvegarde la capture avant de changer de connexion ESP32.",
+        )
+    try:
+        return probe_and_select_transport(request.transport, request.endpoint, request.baud)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Connexion ESP32 impossible : {exc}",
+        ) from exc
 
 
 @router.get("/database/vehicle")
 def vehicle_profile() -> dict:
     return KnowledgeBase().vehicle()
+
+
+@router.get("/database/vehicles")
+def vehicle_profiles() -> list[dict]:
+    return KnowledgeBase().vehicle_profiles()
 
 
 @router.get("/database/dids")
@@ -107,6 +180,18 @@ def diagnostic_scan() -> ScanReport:
     return scan_vehicle()
 
 
+@router.post("/diagnostic/identity", response_model=VehicleIdentityResult)
+def diagnostic_vehicle_identity(request: VehicleIdentityRequest) -> VehicleIdentityResult:
+    try:
+        return read_vehicle_identity(request.vehicle_profile)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/diagnostic/ecus/{ecu_key}/dids/{did}", response_model=DidReadResult)
 def diagnostic_read_did(ecu_key: str, did: str) -> DidReadResult:
     try:
@@ -124,6 +209,78 @@ def diagnostic_read_did(ecu_key: str, did: str) -> DidReadResult:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
 
     return result
+
+
+@router.get("/diagnostic/psa/catalog")
+def diagnostic_psa_catalog() -> dict:
+    return advanced_catalog()
+
+
+@router.post("/diagnostic/psa/seed-key", response_model=PsaSeedKeyResult)
+def diagnostic_psa_seed_key(request: PsaSeedKeyRequest) -> PsaSeedKeyResult:
+    try:
+        return calculate_seed_key(request.seed_hex, request.application_key_hex)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/diagnostic/psa/ecus/{ecu_key}/dids/{did}", response_model=DidReadResult)
+def diagnostic_psa_read_raw_did(ecu_key: str, did: str) -> DidReadResult:
+    try:
+        normalized = did.strip().lower()
+        base = 16 if normalized.startswith("0x") or any(c in "abcdef" for c in normalized) else 10
+        return read_raw_did(ecu_key, int(normalized, base))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Lecture refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
+
+
+@router.post("/diagnostic/psa/ecus/{ecu_key}/unlock", response_model=PsaUnlockResult)
+def diagnostic_psa_unlock(ecu_key: str, request: PsaUnlockRequest) -> PsaUnlockResult:
+    try:
+        return unlock_configuration(ecu_key, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Accès sécurité refusé par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
+
+
+@router.post("/diagnostic/psa/actions/{action_key}", response_model=PsaActionResult)
+def diagnostic_psa_action(action_key: str, request: PsaActionRequest) -> PsaActionResult:
+    try:
+        return execute_named_action(action_key, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Action refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
 
 
 @router.post("/diagnostic/ecus/{ecu_key}/dtcs/clear", response_model=ClearDtcResult)

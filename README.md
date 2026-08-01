@@ -1,4 +1,4 @@
-# Diagbox++ / OpenDiag PSA
+# Diagbox++ / OpenDiag PSA + Fiat
 
 Socle open source pour construire un outil de diagnostic PSA/Stellantis avancé sans
 réimplémenter les couches standard déjà disponibles.
@@ -45,6 +45,14 @@ Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compacte
 - reconstruction locale du mouvement par vitesse et angle du volant, avec cache de post-traitement sur le PC ;
 - base PSA extensible avec niveaux de confiance ;
 - séparation entre autorisation matérielle TX et filtrage applicatif lecture seule.
+- mode « Diagnostic PSA avancé » : lecture de zones brutes, calcul seed/key hors
+  ligne, clés candidates par ECU et actionneurs NAC strictement nommés ;
+- profil firmware `esp32-tja1050-serial-psa-lab` à allowlist doublement vérifiée
+  par le PC et l'ESP32, distinct du firmware de lecture seule.
+- page « VIN & véhicule » : lecture UDS `22 F1 90` sur Peugeot, lecture OBD-II
+  Mode 09 PID 02 sur Fiat, validation WMI et journalisation JSONL locale ;
+- profil initial Fiat 500 en identification seule, avec les candidats Body Computer
+  `7B0→7C0` et combiné `7B0→7C3` clairement marqués expérimentaux.
 
 
 ## Architecture
@@ -132,6 +140,10 @@ curl http://127.0.0.1:8000/api/system/status
 curl -X POST http://127.0.0.1:8000/api/diagnostic/scan
 curl -X POST http://127.0.0.1:8000/api/sensors/snapshot
 curl -X POST http://127.0.0.1:8000/api/diagnostic/ecus/engine/dids/0xF190
+curl http://127.0.0.1:8000/api/database/vehicles
+curl -X POST http://127.0.0.1:8000/api/diagnostic/identity \
+  -H 'Content-Type: application/json' \
+  -d '{"vehicle_profile":"fiat_500_generic"}'
 curl http://127.0.0.1:8000/api/database/dids
 curl http://127.0.0.1:8000/api/diagnostic/live
 ```
@@ -187,6 +199,42 @@ Pour un diagnostic actif réel, il faut à la fois le firmware `active` et
 bloquer les services UDS d'écriture, programmation, effacement et sécurité.
 
 Voir [docs/ESP32_TEST.md](docs/ESP32_TEST.md) pour le premier essai sur véhicule.
+
+### VIN et profil Fiat 500
+
+La page **VIN & véhicule** propose la Peugeot 308 T9 et un premier profil Fiat
+500. Pour la Peugeot, elle tente le DID UDS standard `F190` sur le BSI puis le
+calculateur moteur avant le repli OBD-II. Pour la Fiat, elle commence par la
+commande normalisée `09 02` sur `7E0→7E8`, puis seulement en cas d'échec tente
+les paires communautaires Fiat en lecture `22 F1 90`.
+
+Le résultat contient le VIN, le WMI, le constructeur détecté, la méthode qui a
+répondu et les champs d'identité disponibles. Toute l'opération est enregistrée
+dans `data/sessions/*.jsonl`. Le profil Fiat est limité à l'identification tant
+que l'année, la motorisation et la génération exacte ne sont pas confirmées.
+Voir [docs/VEHICLE_IDENTITY.md](docs/VEHICLE_IDENTITY.md).
+
+### Diagnostic PSA avancé
+
+La page **Diagnostic PSA avancé** permet de lire n'importe quel DID `0x22` sur
+une paire ECU documentée et de calculer une réponse seed/key hors ligne. Ces
+fonctions n'exposent aucun champ d'émission CAN arbitraire.
+
+Les tests NAC documentés (écran et caméra) utilisent un profil dédié :
+
+```bash
+cd firmware/esp32-gateway
+pio run -e esp32-tja1050-serial-psa-lab
+pio run -e esp32-tja1050-serial-psa-lab -t upload
+```
+
+Ils restent verrouillés tant que `READ_ONLY=false`, `CAN_TX_ENABLED=true` et
+`PSA_ACTUATOR_ENABLED=true` ne sont pas explicitement réunis. Le déverrouillage
+de configuration possède son propre verrou `PSA_SECURITY_ACCESS_ENABLED=true`.
+Chaque opération exige en plus les confirmations atelier dans l'interface.
+
+Les commandes BSI de clignotants ne sont pas connues : elles apparaissent dans
+le catalogue mais restent non exécutables. Voir [docs/PSA_ADVANCED.md](docs/PSA_ADVANCED.md).
 
 ### Câblage prototype
 
@@ -518,3 +566,10 @@ GET  /api/learn/correlations/{session_id}
 L'analyse est heuristique. Une trame détectée comme UDS n'est pas nécessairement une
 commande de diagnostic. Toute proposition reste marquée `experimental` jusqu'à
 validation sur plusieurs véhicules ou sources fiables.
+
+
+peux tu : séparer les historiques Peugeot/Fiat par VIN ;
+générer et exporter un rapport diagnostic complet ;
+ajouter les tests actionneurs confirmés ;
+enrichir le catalogue de DIDs et DTC constructeur ;
+éventuellement implémenter une passerelle compatible Diagbox — notre ESP32 n’est pas encore un émulateur de VCI Diagbox.

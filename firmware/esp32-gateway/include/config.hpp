@@ -17,8 +17,19 @@
 #define DIAGNOSTIC_READ_ONLY 0
 #endif
 
-#if READ_ONLY && DIAGNOSTIC_READ_ONLY
-#error "READ_ONLY and DIAGNOSTIC_READ_ONLY are mutually exclusive firmware modes"
+// Experimental PSA profile: read-only diagnostics plus an exact allowlist of
+// named NAC actions and PSA configuration security access. It never permits a
+// raw 0x2F/0x27 payload chosen by the host.
+#ifndef PSA_LAB
+#define PSA_LAB 0
+#endif
+
+#if READ_ONLY && (DIAGNOSTIC_READ_ONLY || PSA_LAB)
+#error "READ_ONLY is mutually exclusive with diagnostic transmit modes"
+#endif
+
+#if DIAGNOSTIC_READ_ONLY && PSA_LAB
+#error "DIAGNOSTIC_READ_ONLY and PSA_LAB are mutually exclusive firmware modes"
 #endif
 
 #ifndef USE_MCP2515

@@ -26,6 +26,7 @@ networks:
     confidence: community_confirmed
 
 diagnostic:
+  identity_scope: full_profile
   # Un NRC UDS valide suffit à confirmer qu'un calculateur répond. En l'absence
   # totale de réponse au probe, les autres DIDs ne sont pas envoyés.
   probe_did: 0xF190
@@ -43,6 +44,72 @@ diagnostic:
     - 0xF189
     - 0xF18C
     - 0xF190
+  vin_strategies:
+    - key: psa_bsi_f190
+      label: BSI Peugeot · DID F190
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF190
+      confidence: community_confirmed
+      source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L347
+    - key: psa_engine_f190
+      label: Injection Peugeot · DID F190
+      protocol: uds
+      request_id: 0x6A8
+      response_id: 0x688
+      did: 0xF190
+      confidence: community_confirmed
+      source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L243
+    - key: obd_mode09_vin
+      label: OBD-II moteur · Mode 09 PID 02
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      command: 0x0902
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+  identity_fields:
+    - key: boot_software_id
+      name: Référence logiciel boot
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF180
+      codec: ascii
+      confidence: standardized_did
+    - key: application_software_id
+      name: Référence logiciel application
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF181
+      codec: ascii
+      confidence: standardized_did
+    - key: spare_part_number
+      name: Référence pièce
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF187
+      codec: ascii
+      confidence: standardized_did
+    - key: software_version
+      name: Version logiciel
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF189
+      codec: ascii
+      confidence: standardized_did
+    - key: ecu_serial_number
+      name: Numéro de série ECU
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF18C
+      codec: ascii
+      confidence: standardized_did
 
 ecus:
   - key: engine

@@ -13,7 +13,7 @@ from app.learn.models import ReplayData, ReplayEvent, ReplaySample
 from app.learn.opendbc import get_opendbc_decoder
 
 
-CACHE_VERSION = 2
+CACHE_VERSION = 4
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -24,12 +24,17 @@ TARGET_IDS = {
     0x2F5,  # couple volant
     0x305,  # angle volant
     0x30D,  # vitesses de roues
+    0x329,  # défaut boîte de vitesses
+    0x348,  # états ESP / voyant moteur
+    0x349,  # rapport cible / changement de vitesse
+    0x34D,  # intervention ESP
     0x38D,  # vitesse véhicule
     0x3CD,  # freinage
     0x3F2,  # maintien dans la voie
     0x412,  # BSI
     0x452,  # commandes conducteur
     0x488,  # températures moteur / huile / admission
+    0x50D,  # intervention ABS
     0x56E,  # pédale accélérateur
     0x572,  # retenue
     0x588,  # état pression d'huile / pression atmosphérique
@@ -52,6 +57,10 @@ FIELD_QUALITY = {
     "engine_rpm": "opendbc_candidate",
     "accelerator_pct": "opendbc_candidate",
     "engine_torque_nm": "opendbc_candidate",
+    "current_gear": "opendbc_candidate",
+    "target_gear": "opendbc_candidate",
+    "gear_shift_active": "opendbc_candidate",
+    "drivetrain_engaged_state": "opendbc_candidate_raw_state",
     "longitudinal_accel_ms2": "opendbc_candidate",
     "brake_active": "opendbc_candidate",
     "brake_system_state": "opendbc_candidate",
@@ -74,6 +83,20 @@ FIELD_QUALITY = {
     "battery_charge_pct": "opendbc_candidate",
     "ambient_temperature_c": "opendbc_candidate",
     "atmospheric_pressure_hpa": "opendbc_candidate",
+    "obd_error": "opendbc_candidate",
+    "mil_on": "opendbc_candidate",
+    "mil_blinking": "opendbc_candidate",
+    "esp_fault_state": "opendbc_candidate",
+    "esp_intervention": "opendbc_candidate",
+    "abs_intervention": "opendbc_candidate",
+    "gearbox_fault": "opendbc_candidate",
+    "generic_warning_requested": "opendbc_candidate",
+    "brake_fault": "opendbc_candidate",
+    "low_fuel_warning": "opendbc_candidate",
+    "fuel_level_fault_state": "opendbc_candidate",
+    "headlamp_fault": "opendbc_candidate",
+    "driver_seatbelt_state": "opendbc_candidate_raw_state",
+    "passenger_seatbelt_state": "opendbc_candidate_raw_state",
     "lane_assist_status": "opendbc_candidate",
     "lane_departure": "opendbc_candidate",
     "lka_active": "opendbc_candidate",
@@ -134,6 +157,24 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["engine_rpm"] = _number(values, "P000_Com_nEng")
         state["accelerator_pct"] = _number(values, "P002_Com_rAPP")
         state["engine_torque_nm"] = _number(values, "P003_Com_trqActOut")
+    elif message == "Dyn2_CMM":
+        current_gear = _number(values, "P152_Gearbx_stGear")
+        state["current_gear"] = int(current_gear) if current_gear is not None and 0 <= current_gear <= 9 else None
+        esp_fault = _number(values, "P025_Com_stESPErr")
+        state["esp_fault_state"] = int(esp_fault) if esp_fault is not None else None
+        state["obd_error"] = _boolean(values, "P343_Com_bOBDErr")
+        state["mil_on"] = _boolean(values, "P344_Com_bMILOn")
+        state["mil_blinking"] = _boolean(values, "P345_Com_bMILBln")
+    elif message == "Dyn_V2_BVMP":
+        target_gear = _number(values, "P283_Com_stGearTrgtPos")
+        state["target_gear"] = int(target_gear) if target_gear is not None and 0 <= target_gear <= 9 else None
+        state["gear_shift_active"] = _boolean(values, "P009_Com_bGearShftActv")
+        drivetrain_state = _number(values, "P030_Gbx_stDrvTrnEgd")
+        state["drivetrain_engaged_state"] = int(drivetrain_state) if drivetrain_state is not None else None
+    elif message == "Dyn_CDS":
+        state["esp_intervention"] = _boolean(values, "P147_Com_bESPIntvActv")
+    elif message == "Dyn_STT_BV":
+        state["gearbox_fault"] = _boolean(values, "P444_Com_bGbxSysFaultRaw")
     elif message == "Dyn5_CMM" and state.get("accelerator_pct") is None:
         state["accelerator_pct"] = _number(values, "P334_ACCPed_Position")
     elif message == "STEERING":
@@ -154,6 +195,7 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         speed = _number(values, "VITESSE_VEHICULE_ROUES")
         state["speed_kph"] = speed if speed is not None and speed < 300 else None
         state["longitudinal_accel_ms2"] = _number(values, "ACCEL_LONGI_ROUES")
+        state["generic_warning_requested"] = _boolean(values, "REQ_LAMPE_WARNING")
     elif message == "Dyn2_FRE":
         brake_state = _number(values, "P226_Com_stBrkActv")
         state["brake_system_state"] = int(brake_state) if brake_state is not None else None
@@ -164,6 +206,10 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["brake_active"] = _boolean(values, "P013_MainBrake")
         state["driver_door"] = _boolean(values, "DRIVER_DOOR")
         state["passenger_door"] = _boolean(values, "PASSENGER_DOOR")
+        state["brake_fault"] = _boolean(values, "P040_MainBrakeFault")
+        state["low_fuel_warning"] = _boolean(values, "P012_Com_bFlMin")
+        fuel_level_fault = _number(values, "P086_Com_stFlLvlDia")
+        state["fuel_level_fault_state"] = int(fuel_level_fault) if fuel_level_fault is not None else None
     elif message == "HS2_DAT_MDD_CMD_452":
         signal = _number(values, "TURN_SIGNAL_STATUS")
         if signal is not None:
@@ -176,6 +222,20 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["low_beam"] = _boolean(values, "ETAT_FEUX_CROIST")
         state["high_beam"] = _boolean(values, "ETAT_FEUX_ROUTE")
         state["fuel_liters"] = _number(values, "INFO_NIV_CARB")
+        headlamp_faults = [
+            _boolean(values, "DEF_FEU_CROISMNT_D"),
+            _boolean(values, "DEF_FEU_CROISMNT_G"),
+            _boolean(values, "DEF_FEU_ROUTE_D"),
+            _boolean(values, "DEF_FEU_ROUTE_G"),
+        ]
+        state["headlamp_fault"] = any(headlamp_faults) if any(value is not None for value in headlamp_faults) else None
+    elif message == "Dat_ABR":
+        state["abs_intervention"] = _boolean(values, "P351_Com_bABSIntvActv")
+    elif message == "RESTRAINTS":
+        driver_seatbelt = _number(values, "DRIVER_SEATBELT")
+        passenger_seatbelt = _number(values, "PASSENGER_SEATBELT")
+        state["driver_seatbelt_state"] = int(driver_seatbelt) if driver_seatbelt is not None else None
+        state["passenger_seatbelt_state"] = int(passenger_seatbelt) if passenger_seatbelt is not None else None
     elif message == "Dat_CMM":
         state["coolant_temperature_c"] = _number(values, "P005_CEngDst_tSens")
         state["oil_temperature_c"] = _number(values, "P011_Oil_tSwmp")
@@ -264,6 +324,8 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="lights", label="Feux de route allumés" if point.high_beam else "Feux de route éteints", value=point.high_beam))
             if point.brake_active and not previous.brake_active:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="brake", label="Frein conducteur", value=True))
+            if point.current_gear is not None and point.current_gear != previous.current_gear:
+                events.append(ReplayEvent(t_ms=point.t_ms, kind="gear", label=f"Rapport {point.current_gear}", value=point.current_gear))
             if point.lane_departure and not previous.lane_departure:
                 side = "droite" if point.lane_departure == 1 else "gauche" if point.lane_departure == 2 else "indéterminée"
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="adas", label=f"Franchissement de ligne {side}", value=point.lane_departure))

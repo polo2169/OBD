@@ -3,7 +3,7 @@ import queue
 import time
 
 from app.models import CanFrame
-from app.safety import authorize_obd, authorize_uds
+from app.safety import TxSafetyProfile, authorize_obd, authorize_psa_lab_uds, authorize_uds
 from app.transports.base import Transport
 
 
@@ -20,10 +20,12 @@ class VirtualVehicleTransport(Transport):
         read_only: bool = True,
         maintenance: bool = False,
         response_ids: dict[int, int] | None = None,
+        safety_profile: TxSafetyProfile = "diagnostic_read_only",
     ) -> None:
         self.read_only = read_only
         self.maintenance = maintenance
         self.response_ids = response_ids or {}
+        self.safety_profile = safety_profile
         self._queue: queue.Queue[CanFrame] = queue.Queue()
         self._open = False
         self._request_id: int | None = None
@@ -117,6 +119,8 @@ class VirtualVehicleTransport(Transport):
     def _handle_request(self, request_id: int, uds: bytes) -> None:
         if uds[:1] in {b"\x01", b"\x09"}:
             decision = authorize_obd(uds)
+        elif self.safety_profile == "psa_lab":
+            decision = authorize_psa_lab_uds(request_id, uds)
         else:
             decision = authorize_uds(uds, self.read_only, maintenance=self.maintenance)
         if not decision.allowed:
@@ -177,20 +181,36 @@ class VirtualVehicleTransport(Transport):
     @staticmethod
     def _response(uds: bytes, request_id: int) -> bytes:
         obd_values = {
-            bytes.fromhex("0100"): bytes.fromhex("4100181B8003"),
-            bytes.fromhex("0120"): bytes.fromhex("412000020001"),
-            bytes.fromhex("0140"): bytes.fromhex("414044000014"),
+            bytes.fromhex("0902"): b"\x49\x02\x01ZFA31200001234567",
+            bytes.fromhex("0904"): b"\x49\x04\x01SIM-CAL-2026",
+            bytes.fromhex("0906"): bytes.fromhex("49060112345678"),
+            bytes.fromhex("090A"): b"\x49\x0A\x01SIM ENGINE ECU",
+            bytes.fromhex("0100"): bytes.fromhex("41001FFF8003"),
+            bytes.fromhex("0120"): bytes.fromhex("4120201A0001"),
+            bytes.fromhex("0140"): bytes.fromhex("414054000094"),
             bytes.fromhex("0104"): bytes.fromhex("410459"),
             bytes.fromhex("0105"): bytes.fromhex("410580"),
+            bytes.fromhex("0106"): bytes.fromhex("410680"),
+            bytes.fromhex("0107"): bytes.fromhex("41077D"),
+            bytes.fromhex("0108"): bytes.fromhex("410880"),
+            bytes.fromhex("0109"): bytes.fromhex("410980"),
+            bytes.fromhex("010A"): bytes.fromhex("410A23"),
+            bytes.fromhex("010B"): bytes.fromhex("410B64"),
             bytes.fromhex("010C"): bytes.fromhex("410C0C30"),
             bytes.fromhex("010D"): bytes.fromhex("410D00"),
+            bytes.fromhex("010E"): bytes.fromhex("410E80"),
             bytes.fromhex("010F"): bytes.fromhex("410F50"),
             bytes.fromhex("0110"): bytes.fromhex("411004D2"),
             bytes.fromhex("0111"): bytes.fromhex("411120"),
             bytes.fromhex("011F"): bytes.fromhex("411F000A"),
+            bytes.fromhex("0123"): bytes.fromhex("41230FA0"),
+            bytes.fromhex("012C"): bytes.fromhex("412C66"),
+            bytes.fromhex("012D"): bytes.fromhex("412D7A"),
             bytes.fromhex("012F"): bytes.fromhex("412F80"),
             bytes.fromhex("0142"): bytes.fromhex("4142315C"),
+            bytes.fromhex("0144"): bytes.fromhex("41448000"),
             bytes.fromhex("0146"): bytes.fromhex("414650"),
+            bytes.fromhex("0159"): bytes.fromhex("41590FA0"),
             bytes.fromhex("015C"): bytes.fromhex("415C80"),
             bytes.fromhex("015E"): bytes.fromhex("415E0032"),
         }
@@ -225,4 +245,18 @@ class VirtualVehicleTransport(Transport):
             return b"\x50" + uds[1:2] + b"\x00\x32\x01\xF4"
         if uds[:1] == b"\x3E":
             return b"\x7E\x00"
+        if uds == b"\x27\x03":
+            return bytes.fromhex("670312345678")
+        if uds[:2] == b"\x27\x04" and len(uds) == 6:
+            return b"\x67\x04"
+        if uds in {
+            bytes.fromhex("2FD6000300"),
+            bytes.fromhex("2FD60000"),
+            bytes.fromhex("2FD66003"),
+            bytes.fromhex("2FD66000"),
+            bytes.fromhex("2FD6700330"),
+            bytes.fromhex("2FD6700340"),
+            bytes.fromhex("2FD6700350"),
+        }:
+            return b"\x6F" + uds[1:]
         return b"\x7F" + uds[:1] + b"\x11"

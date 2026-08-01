@@ -6,7 +6,7 @@ import socket
 import time
 
 from app.models import CanFrame
-from app.safety import authorize_diagnostic_can_frame
+from app.safety import TxSafetyProfile, authorize_transport_can_frame
 from app.transports.base import Transport
 
 
@@ -20,12 +20,14 @@ class Esp32WifiTransport(Transport):
         tx_enabled: bool = False,
         handshake_timeout: float = 3.0,
         reconnect_interval: float = 0.5,
+        safety_profile: TxSafetyProfile = "diagnostic_read_only",
     ) -> None:
         self.host = host
         self.port = port
         self.tx_enabled = tx_enabled
         self.handshake_timeout = handshake_timeout
         self.reconnect_interval = reconnect_interval
+        self.safety_profile = safety_profile
         self.socket: socket.socket | None = None
         self.hello: dict | None = None
         self.last_stats: dict | None = None
@@ -89,7 +91,8 @@ class Esp32WifiTransport(Transport):
     def send(self, frame: CanFrame) -> None:
         if not self.tx_enabled:
             raise PermissionError("Émission ESP32 Wi-Fi désactivée par CAN_TX_ENABLED.")
-        decision = authorize_diagnostic_can_frame(
+        decision = authorize_transport_can_frame(
+            self.safety_profile,
             frame.arbitration_id,
             frame.extended,
             frame.data,
@@ -153,11 +156,20 @@ class Esp32WifiTransport(Transport):
             raise RuntimeError(
                 "CAN_TX_ENABLED=true mais le firmware ESP32 Wi-Fi est en écoute seule."
             )
-        if self.tx_enabled and hello.get("diagnostic_read_only") is not True:
-            self._disconnect("gateway_tx_policy_rejected")
-            raise RuntimeError(
-                "Le firmware ESP32 Wi-Fi n'annonce pas le verrou diagnostic lecture seule."
-            )
+        if self.tx_enabled:
+            psa_lab = hello.get("psa_lab") is True
+            if self.safety_profile == "psa_lab" and not psa_lab:
+                self._disconnect("gateway_psa_lab_rejected")
+                raise RuntimeError("Le firmware ESP32 Wi-Fi n'annonce pas la capacité PSA lab.")
+            if (
+                self.safety_profile == "diagnostic_read_only"
+                and hello.get("diagnostic_read_only") is not True
+                and not psa_lab
+            ):
+                self._disconnect("gateway_tx_policy_rejected")
+                raise RuntimeError(
+                    "Le firmware ESP32 Wi-Fi n'annonce aucun verrou diagnostic compatible."
+                )
 
     def _read_json(self, timeout: float) -> dict | None:
         if self.socket is None:

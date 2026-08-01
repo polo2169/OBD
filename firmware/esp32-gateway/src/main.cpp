@@ -30,15 +30,25 @@ static uint32_t last_alerts = 0;
 static uint32_t last_stats_ms = 0;
 static bool can_ready = false;
 
+#if PSA_LAB
+static bool psa_deadman_armed = false;
+static uint32_t psa_deadman_deadline_ms = 0;
+static uint8_t psa_deadman_attempts = 0;
+static uint8_t psa_deadman_stop_data[8]{};
+static uint8_t psa_deadman_stop_length = 0;
+constexpr uint32_t PSA_DEADMAN_MS = 3500;
+constexpr uint8_t PSA_DEADMAN_MAX_ATTEMPTS = 30;
+#endif
+
 namespace {
 constexpr size_t OUTPUT_PACKET_MAX_BYTES = 512;
 
-#if DIAGNOSTIC_READ_ONLY
+#if DIAGNOSTIC_READ_ONLY || PSA_LAB
 // Peugeot 308 T9 diagnostic request identifiers documented in the selected
 // vehicle profile. No broadcast, extended or arbitrary CAN identifiers.
 constexpr uint16_t DIAGNOSTIC_REQUEST_IDS[] = {
     0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x744, 0x74A,
-    0x752, 0x75D, 0x75F, 0x764, 0x76D, 0x7E0,
+    0x752, 0x75D, 0x75F, 0x764, 0x76D, 0x7B0, 0x7E0,
 };
 
 static bool diagnostic_request_id_allowed(uint32_t id) {
@@ -47,6 +57,42 @@ static bool diagnostic_request_id_allowed(uint32_t id) {
   }
   return false;
 }
+
+#if PSA_LAB
+static bool psa_lab_payload_equals(
+    const uint8_t *payload,
+    uint8_t application_length,
+    const uint8_t *expected,
+    size_t expected_length) {
+  return application_length == expected_length
+      && memcmp(payload + 1, expected, expected_length) == 0;
+}
+
+static bool psa_lab_named_action_allowed(
+    uint32_t id,
+    const uint8_t *payload,
+    uint8_t application_length) {
+  if (id != 0x764) return false;
+  static const uint8_t ACTIONS[][5] = {
+      {0x2F, 0xD6, 0x00, 0x03, 0x00},
+      {0x2F, 0xD6, 0x70, 0x03, 0x30},
+      {0x2F, 0xD6, 0x70, 0x03, 0x40},
+      {0x2F, 0xD6, 0x70, 0x03, 0x50},
+  };
+  for (const auto &action : ACTIONS) {
+    if (psa_lab_payload_equals(payload, application_length, action, sizeof(action))) return true;
+  }
+  static const uint8_t SHORT_ACTIONS[][4] = {
+      {0x2F, 0xD6, 0x00, 0x00},
+      {0x2F, 0xD6, 0x60, 0x03},
+      {0x2F, 0xD6, 0x60, 0x00},
+  };
+  for (const auto &action : SHORT_ACTIONS) {
+    if (psa_lab_payload_equals(payload, application_length, action, sizeof(action))) return true;
+  }
+  return false;
+}
+#endif
 
 static const char *diagnostic_tx_rejection(
     uint32_t id,
@@ -96,6 +142,17 @@ static const char *diagnostic_tx_rejection(
       return application_length == 2 && (payload[2] == 0x00 || payload[2] == 0x80)
           ? nullptr
           : "invalid TesterPresent request";
+#if PSA_LAB
+    case 0x27:
+      if (id != 0x752 && id != 0x764) return "security access is limited to BSI and telematics";
+      if (application_length == 2 && payload[2] == 0x03) return nullptr;
+      if (application_length == 6 && payload[2] == 0x04) return nullptr;
+      return "only PSA configuration security access 0x27/03-04 is allowed";
+    case 0x2F:
+      return psa_lab_named_action_allowed(id, payload, application_length)
+          ? nullptr
+          : "IOControl payload is not a named PSA lab action";
+#endif
     default:
       return "diagnostic service is locked by firmware";
   }
@@ -190,15 +247,25 @@ static size_t format_hello(char *output, size_t capacity) {
   doc["type"] = "hello";
   doc["protocol"] = 6;
   doc["device"] = "opendiag-esp32";
-  doc["firmware"] = "0.7.2-framed-diagnostic-lock";
+  doc["firmware"] = READ_ONLY
+      ? "0.9.0-passive"
+      : (DIAGNOSTIC_READ_ONLY
+          ? "0.9.0-multibrand-readonly"
+          : (PSA_LAB ? "0.9.0-psa-lab-allowlist" : "0.9.0-active"));
   doc["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
   doc["can_ready"] = can_ready;
   doc["readonly"] = READ_ONLY != 0;
   doc["diagnostic_read_only"] = DIAGNOSTIC_READ_ONLY != 0;
-  doc["write_services_locked"] = (READ_ONLY != 0) || (DIAGNOSTIC_READ_ONLY != 0);
+  doc["psa_lab"] = PSA_LAB != 0;
+  doc["write_services_locked"] = (READ_ONLY != 0) || (DIAGNOSTIC_READ_ONLY != 0) || (PSA_LAB != 0);
   doc["tx_policy"] = READ_ONLY
       ? "strict_passive"
-      : (DIAGNOSTIC_READ_ONLY ? "read_only_diagnostics" : "unrestricted");
+      : (DIAGNOSTIC_READ_ONLY
+          ? "read_only_diagnostics"
+          : (PSA_LAB ? "psa_lab_named_actions" : "unrestricted"));
+#if PSA_LAB
+  doc["deadman_ms"] = PSA_DEADMAN_MS;
+#endif
   doc["bitrate"] = cfg::CAN_BITRATE;
 #if USE_MCP2515
   doc["spi_sck_pin"] = cfg::MCP2515_SPI_SCK_PIN;
@@ -381,6 +448,107 @@ static bool decode_hex(const char *text, uint8_t *output, size_t &length) {
   return true;
 }
 
+#if PSA_LAB
+static void psa_lab_disarm_deadman() {
+  psa_deadman_armed = false;
+  psa_deadman_deadline_ms = 0;
+  psa_deadman_attempts = 0;
+  psa_deadman_stop_length = 0;
+  memset(psa_deadman_stop_data, 0, sizeof(psa_deadman_stop_data));
+}
+
+static void psa_lab_arm_deadman(const uint8_t *stop_uds, size_t stop_uds_length) {
+  memset(psa_deadman_stop_data, 0, sizeof(psa_deadman_stop_data));
+  psa_deadman_stop_data[0] = static_cast<uint8_t>(stop_uds_length);
+  memcpy(psa_deadman_stop_data + 1, stop_uds, stop_uds_length);
+  // Match the padded ISO-TP frames emitted by the PC stack.
+  psa_deadman_stop_length = 8;
+  psa_deadman_deadline_ms = millis() + PSA_DEADMAN_MS;
+  psa_deadman_attempts = 0;
+  psa_deadman_armed = true;
+}
+
+static void psa_lab_update_deadman_after_host_tx(
+    uint32_t id,
+    const uint8_t *payload,
+    size_t length) {
+  if (id != 0x764 || length < 2 || (payload[0] >> 4) != 0x0) return;
+  const uint8_t application_length = payload[0] & 0x0F;
+  static const uint8_t SCREEN_START[] = {0x2F, 0xD6, 0x00, 0x03, 0x00};
+  static const uint8_t SCREEN_STOP[] = {0x2F, 0xD6, 0x00, 0x00};
+  static const uint8_t CAMERA_START[] = {0x2F, 0xD6, 0x60, 0x03};
+  static const uint8_t CAMERA_STOP[] = {0x2F, 0xD6, 0x60, 0x00};
+  static const uint8_t CAMERA_STANDARD[] = {0x2F, 0xD6, 0x70, 0x03, 0x30};
+  static const uint8_t CAMERA_ZOOM[] = {0x2F, 0xD6, 0x70, 0x03, 0x40};
+  static const uint8_t CAMERA_LATERAL[] = {0x2F, 0xD6, 0x70, 0x03, 0x50};
+
+  if (psa_lab_payload_equals(payload, application_length, SCREEN_START, sizeof(SCREEN_START))) {
+    psa_lab_arm_deadman(SCREEN_STOP, sizeof(SCREEN_STOP));
+    return;
+  }
+  if (
+      psa_lab_payload_equals(payload, application_length, CAMERA_START, sizeof(CAMERA_START))
+      || psa_lab_payload_equals(payload, application_length, CAMERA_STANDARD, sizeof(CAMERA_STANDARD))
+      || psa_lab_payload_equals(payload, application_length, CAMERA_ZOOM, sizeof(CAMERA_ZOOM))
+      || psa_lab_payload_equals(payload, application_length, CAMERA_LATERAL, sizeof(CAMERA_LATERAL))) {
+    psa_lab_arm_deadman(CAMERA_STOP, sizeof(CAMERA_STOP));
+    return;
+  }
+  if (
+      psa_lab_payload_equals(payload, application_length, SCREEN_STOP, sizeof(SCREEN_STOP))
+      || psa_lab_payload_equals(payload, application_length, CAMERA_STOP, sizeof(CAMERA_STOP))) {
+    psa_lab_disarm_deadman();
+  }
+}
+
+static bool psa_lab_transmit_deadman_stop() {
+#if USE_MCP2515
+  struct can_frame frame{};
+  frame.can_id = 0x764;
+  frame.can_dlc = psa_deadman_stop_length;
+  memcpy(frame.data, psa_deadman_stop_data, psa_deadman_stop_length);
+  const bool sent = mcp2515.sendMessage(&frame) == MCP2515::ERROR_OK;
+#else
+  twai_message_t message{};
+  message.identifier = 0x764;
+  message.extd = false;
+  message.data_length_code = psa_deadman_stop_length;
+  memcpy(message.data, psa_deadman_stop_data, psa_deadman_stop_length);
+  const bool sent = twai_transmit(&message, pdMS_TO_TICKS(50)) == ESP_OK;
+#endif
+  if (!sent) {
+    ++tx_failed_count;
+    return false;
+  }
+  ++tx_count;
+  JsonDocument ack;
+  ack["type"] = "ack";
+  ack["command"] = "psa_deadman_stop";
+  ack["id"] = 0x764;
+  ack["attempt"] = psa_deadman_attempts + 1;
+  ack["ts_us"] = esp_timer_get_time();
+  emit_json(ack);
+  return true;
+}
+
+static void service_psa_deadman() {
+  if (!psa_deadman_armed) return;
+  const uint32_t now = millis();
+  if (static_cast<int32_t>(now - psa_deadman_deadline_ms) < 0) return;
+  if (psa_lab_transmit_deadman_stop()) {
+    psa_lab_disarm_deadman();
+    return;
+  }
+  ++psa_deadman_attempts;
+  if (psa_deadman_attempts >= PSA_DEADMAN_MAX_ATTEMPTS) {
+    emit_error("PSA_DEADMAN_FAILED", "Unable to transmit the automatic NAC stop frame");
+    psa_lab_disarm_deadman();
+    return;
+  }
+  psa_deadman_deadline_ms = now + 100;
+}
+#endif
+
 static void transmit_can(JsonDocument &doc) {
 #if READ_ONLY
   emit_error("READ_ONLY", "CAN TX blocked by firmware build");
@@ -408,7 +576,7 @@ static void transmit_can(JsonDocument &doc) {
     return;
   }
 
-#if DIAGNOSTIC_READ_ONLY
+#if DIAGNOSTIC_READ_ONLY || PSA_LAB
   const char *rejection = diagnostic_tx_rejection(id, extended, payload, length);
   if (rejection != nullptr) {
     ++tx_policy_blocked_count;
@@ -460,6 +628,10 @@ static void transmit_can(JsonDocument &doc) {
   }
 #endif
   ++tx_count;
+
+#if PSA_LAB
+  psa_lab_update_deadman_after_host_tx(id, payload, length);
+#endif
 
   JsonDocument ack;
   ack["type"] = "ack";
@@ -737,7 +909,9 @@ void setup() {
     status["type"] = "status";
     status["can"] = READ_ONLY
         ? "listen_only"
-        : (DIAGNOSTIC_READ_ONLY ? "read_only_diagnostics" : "active");
+        : (DIAGNOSTIC_READ_ONLY
+            ? "read_only_diagnostics"
+            : (PSA_LAB ? "psa_lab_named_actions" : "active"));
     status["driver"] = USE_MCP2515 ? "mcp2515" : "twai";
     status["bitrate"] = cfg::CAN_BITRATE;
     emit_json(status);
@@ -745,6 +919,9 @@ void setup() {
 }
 
 void loop() {
+#if PSA_LAB
+  service_psa_deadman();
+#endif
 #if WIFI_ENABLED
   poll_wifi_commands();
 #endif

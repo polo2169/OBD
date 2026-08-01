@@ -152,3 +152,108 @@ class ClearDtcResult(BaseModel):
     response_hex: str | None = None
     message: str
     session_id: str | None = None
+
+
+class TransportConnectRequest(BaseModel):
+    transport: Literal["esp32_serial", "esp32_wifi"]
+    endpoint: str = Field(min_length=3, max_length=255)
+    baud: int | None = Field(default=None, ge=9_600, le=4_000_000)
+
+
+class PsaSeedKeyRequest(BaseModel):
+    seed_hex: str = Field(pattern=r"^[0-9A-Fa-f]{8}$")
+    application_key_hex: str = Field(pattern=r"^[0-9A-Fa-f]{4}$")
+
+
+class PsaSeedKeyResult(BaseModel):
+    seed_hex: str
+    application_key_hex: str
+    response_key_hex: str
+    source: str
+    transmitted: bool = False
+
+
+class PsaUnlockRequest(BaseModel):
+    application_key_hex: str = Field(pattern=r"^[0-9A-Fa-f]{4}$")
+    confirmation: str
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+
+
+class PsaUnlockResult(BaseModel):
+    ecu_key: str
+    unlocked: bool
+    seed_hex: str
+    response_key_hex: str
+    response_hex: str
+    message: str
+    session_id: str | None = None
+
+
+class PsaActionRequest(BaseModel):
+    confirmation: str
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+    duration_ms: int = Field(default=1_500, ge=250, le=3_000)
+
+
+class PsaActionResult(BaseModel):
+    action_key: str
+    executed: bool
+    started_response_hex: str | None = None
+    stopped_response_hex: str | None = None
+    duration_ms: int
+    message: str
+    session_id: str | None = None
+
+
+class VehicleIdentityRequest(BaseModel):
+    vehicle_profile: str = Field(min_length=1, max_length=100)
+
+
+class VehicleIdentityAttempt(BaseModel):
+    key: str
+    label: str
+    protocol: Literal["uds", "obd"]
+    request_id: int
+    response_id: int
+    command_hex: str
+    source: str | None = None
+    confidence: str = "experimental"
+    success: bool = False
+    vin: str | None = None
+    raw_hex: str | None = None
+    error: str | None = None
+
+
+class VehicleIdentityField(BaseModel):
+    key: str
+    name: str
+    protocol: Literal["uds", "obd"]
+    command_hex: str
+    value: str | None = None
+    raw_hex: str | None = None
+    source: str | None = None
+    confidence: str = "experimental"
+    error: str | None = None
+
+
+class VehicleIdentityResult(BaseModel):
+    vehicle_profile: str
+    manufacturer: str
+    model: str
+    year: str | int | None = None
+    transport: str
+    found: bool = False
+    vin: str | None = None
+    wmi: str | None = None
+    detected_manufacturer: str | None = None
+    profile_match: bool | None = None
+    attempts: list[VehicleIdentityAttempt] = Field(default_factory=list)
+    fields: list[VehicleIdentityField] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    debug: DebugSummary = Field(default_factory=DebugSummary)

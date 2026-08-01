@@ -1,0 +1,6 @@
+{
+  "transport": "esp32_serial",
+  "endpoint": "/dev/cu.usbserial-0001",
+  "baud": 921600,
+  "updated_at": "2026-08-01T01:43:17+00:00"
+}

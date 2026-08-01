@@ -78,7 +78,12 @@ def test_virtual_sensor_only_snapshot():
     assert values["engine_rpm"] == 780
     assert values["coolant_temperature"] == 88
     assert values["control_module_voltage"] == 12.636
+    assert values["intake_manifold_pressure"] == 100
+    assert values["fuel_rail_gauge_pressure"] == 40_000
+    assert values["commanded_equivalence_ratio"] == 1
+    assert values["fuel_rate"] == 2.5
     assert 0x0C in snapshot.supported_pids
+    assert 0x23 in snapshot.supported_pids
     assert snapshot.debug.event_types["obd_request"] > 0
 
 

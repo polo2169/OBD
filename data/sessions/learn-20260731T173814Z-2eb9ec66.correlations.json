@@ -1,0 +1,2710 @@
+{
+  "session_id": "learn-20260731T173814Z-2eb9ec66",
+  "generated_at": "2026-07-31T20:33:27.089827+00:00",
+  "total_frames": 95,
+  "unique_ids": 34,
+  "duration_ms": 5207.8,
+  "marker_count": 0,
+  "inventory": [
+    {
+      "arbitration_id": 969,
+      "extended": false,
+      "frame_count": 10,
+      "frequency_hz": 1.89,
+      "dlc_counts": {
+        "8": 10
+      },
+      "changing_bytes": [
+        1,
+        3,
+        5
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 4,
+          "minimum": 52,
+          "maximum": 55,
+          "toggle_count": 5,
+          "entropy": 1.685
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 240,
+          "maximum": 240,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 10,
+          "minimum": 15,
+          "maximum": 242,
+          "toggle_count": 9,
+          "entropy": 3.322
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 33,
+          "maximum": 33,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 4,
+          "minimum": 161,
+          "maximum": 164,
+          "toggle_count": 5,
+          "entropy": 1.846
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn2_V2_BV",
+      "opendbc_signals": [
+        "P291_Com_trqMaxConv",
+        "P__Rapport_cible",
+        "P340_Com_xChkSum2",
+        "P230_Com_ctGbxCnt2",
+        "P293_Com_stGbxEngShOff"
+      ]
+    },
+    {
+      "arbitration_id": 520,
+      "extended": false,
+      "frame_count": 9,
+      "frequency_hz": 2.01,
+      "dlc_counts": {
+        "8": 9
+      },
+      "changing_bytes": [
+        1,
+        2,
+        5,
+        7
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 26,
+          "maximum": 26,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 8,
+          "minimum": 122,
+          "maximum": 208,
+          "toggle_count": 7,
+          "entropy": 2.948
+        },
+        {
+          "index": 2,
+          "distinct_values": 2,
+          "minimum": 48,
+          "maximum": 49,
+          "toggle_count": 2,
+          "entropy": 0.503
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 78,
+          "maximum": 78,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 2,
+          "minimum": 48,
+          "maximum": 49,
+          "toggle_count": 3,
+          "entropy": 0.991
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 2,
+          "minimum": 48,
+          "maximum": 49,
+          "toggle_count": 2,
+          "entropy": 0.764
+        }
+      ],
+      "opendbc_message": "Dyn_CMM",
+      "opendbc_signals": [
+        "P000_Com_nEng",
+        "P003_Com_trqActOut",
+        "P002_Com_rAPP",
+        "P027_ACCtl_stLogicOut",
+        "P014_Brk_stRed",
+        "P037_VehV_stXVV",
+        "P153_Com_bTrqInacc",
+        "P042_Inm_bCanMon",
+        "P127_EGT_st_Bit30",
+        "P198_ActMod_trqClthTraIntv"
+      ]
+    },
+    {
+      "arbitration_id": 773,
+      "extended": false,
+      "frame_count": 7,
+      "frequency_hz": 1.41,
+      "dlc_counts": {
+        "7": 7
+      },
+      "changing_bytes": [
+        4
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 95,
+          "maximum": 95,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 7,
+          "maximum": 7,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 4,
+          "minimum": 28,
+          "maximum": 148,
+          "toggle_count": 5,
+          "entropy": 1.842
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 32,
+          "maximum": 32,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "STEERING_ALT",
+      "opendbc_signals": [
+        "ANGLE",
+        "RATE",
+        "RATE_SIGN",
+        "SIG_0_CHECKSUM",
+        "SIG_0_COUNTER",
+        "RATE_ALT"
+      ]
+    },
+    {
+      "arbitration_id": 841,
+      "extended": false,
+      "frame_count": 6,
+      "frequency_hz": 1.57,
+      "dlc_counts": {
+        "8": 6
+      },
+      "changing_bytes": [
+        6
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 12,
+          "maximum": 12,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 254,
+          "maximum": 254,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 254,
+          "maximum": 254,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 160,
+          "maximum": 160,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 4,
+          "minimum": 9,
+          "maximum": 205,
+          "toggle_count": 5,
+          "entropy": 1.792
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 254,
+          "maximum": 254,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn_V2_BVMP",
+      "opendbc_signals": [
+        "P030_Gbx_stDrvTrnEgd",
+        "P360_Com_stIntvTyp",
+        "P440_Com_bUCAPSWkUpReqRaw",
+        "P057_Com_xTrqTIIDes",
+        "P009_Com_bGearShftActv",
+        "P362_Com_bGearShftExpt",
+        "P333_Com_stGbxTrqIntv",
+        "P085_Com_bGbxACCmprShOff",
+        "P167_Com_stEngSpdCtl",
+        "P287_Com_stGearRat",
+        "P283_Com_stGearTrgtPos",
+        "P340_Com_xTSCChkSum",
+        "P230_Com_ctTSCCntr",
+        "P166_Com_nEngTSC"
+      ]
+    },
+    {
+      "arbitration_id": 757,
+      "extended": false,
+      "frame_count": 5,
+      "frequency_hz": 0.91,
+      "dlc_counts": {
+        "7": 5
+      },
+      "changing_bytes": [
+        0
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 5,
+          "minimum": 5,
+          "maximum": 156,
+          "toggle_count": 4,
+          "entropy": 2.322
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 127,
+          "maximum": 127,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 255,
+          "maximum": 255,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "STEERING",
+      "opendbc_signals": [
+        "CHECKSUM",
+        "COUNTER",
+        "DRIVER_TORQUE",
+        "ANGLE",
+        "RATE",
+        "NEW_SIGNAL_1"
+      ]
+    },
+    {
+      "arbitration_id": 973,
+      "extended": false,
+      "frame_count": 5,
+      "frequency_hz": 1.2,
+      "dlc_counts": {
+        "8": 5
+      },
+      "changing_bytes": [
+        0,
+        1,
+        6,
+        7
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 2,
+          "minimum": 0,
+          "maximum": 255,
+          "toggle_count": 2,
+          "entropy": 0.722
+        },
+        {
+          "index": 1,
+          "distinct_values": 3,
+          "minimum": 0,
+          "maximum": 255,
+          "toggle_count": 3,
+          "entropy": 1.522
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 11,
+          "maximum": 11,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 45,
+          "maximum": 45,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 3,
+          "minimum": 209,
+          "maximum": 241,
+          "toggle_count": 3,
+          "entropy": 1.371
+        },
+        {
+          "index": 7,
+          "distinct_values": 5,
+          "minimum": 24,
+          "maximum": 235,
+          "toggle_count": 4,
+          "entropy": 2.322
+        }
+      ],
+      "opendbc_message": "Dyn2_FRE",
+      "opendbc_signals": [
+        "P226_Com_stBrkActv",
+        "P225_Com_stBrkRaw_0",
+        "P224_Com_stBrkRaw_1",
+        "BRAKE_PRESSURE",
+        "P319_FrmMng_rClthPos"
+      ]
+    },
+    {
+      "arbitration_id": 1010,
+      "extended": false,
+      "frame_count": 5,
+      "frequency_hz": 1.5,
+      "dlc_counts": {
+        "8": 5
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 12,
+          "maximum": 12,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 8,
+          "maximum": 8,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "LANE_KEEP_ASSIST",
+      "opendbc_signals": [
+        "DRIVE",
+        "CHECKSUM",
+        "COUNTER",
+        "unknown2",
+        "TORQUE",
+        "STATUS",
+        "LANE_DEPARTURE",
+        "TORQUE_FACTOR",
+        "LXA_ACTIVATION",
+        "SET_ANGLE",
+        "unknown4"
+      ]
+    },
+    {
+      "arbitration_id": 1080,
+      "extended": false,
+      "frame_count": 4,
+      "frequency_hz": 0.72,
+      "dlc_counts": {
+        "8": 4
+      },
+      "changing_bytes": [
+        3
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 35,
+          "maximum": 35,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 2,
+          "minimum": 0,
+          "maximum": 128,
+          "toggle_count": 1,
+          "entropy": 0.811
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 941,
+      "extended": false,
+      "frame_count": 4,
+      "frequency_hz": 1.03,
+      "dlc_counts": {
+        "8": 4
+      },
+      "changing_bytes": [
+        7
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 80,
+          "maximum": 80,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 128,
+          "maximum": 128,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 82,
+          "maximum": 82,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 3,
+          "minimum": 68,
+          "maximum": 189,
+          "toggle_count": 3,
+          "entropy": 1.5
+        }
+      ],
+      "opendbc_message": "Dyn_EasyMove",
+      "opendbc_signals": [
+        "P299_Com_bCrCtlInhib",
+        "P337_Com_stPrkBrk"
+      ]
+    },
+    {
+      "arbitration_id": 781,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 0.56,
+      "dlc_counts": {
+        "8": 3
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn4_FRE",
+      "opendbc_signals": [
+        "P263_VehV_VPsvValWhlFrtL",
+        "P264_VehV_VPsvValWhlFrtR",
+        "P265_VehV_VPsvValWhlBckL",
+        "P266_VehV_VPsvValWhlBckR"
+      ]
+    },
+    {
+      "arbitration_id": 1074,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 1.19,
+      "dlc_counts": {
+        "8": 3
+      },
+      "changing_bytes": [
+        1
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 129,
+          "maximum": 129,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 3,
+          "minimum": 16,
+          "maximum": 29,
+          "toggle_count": 2,
+          "entropy": 1.585
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 64,
+          "maximum": 64,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 254,
+          "maximum": 254,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 61,
+          "maximum": 61,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 82,
+          "maximum": 82,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dat_BSI1",
+      "opendbc_signals": [
+        "P249_Com_stEngStopReq",
+        "P216_Com_bSiaWkUp",
+        "P214_Com_stMnWkUp",
+        "P402_Com_stStaDemActv",
+        "P253_Com_bEngPrepReq",
+        "P267_Exh_volRefl",
+        "P276_Com_bOilWkUp",
+        "P274_Exh_ctRefl",
+        "P403_Com_stStaReq",
+        "P439_Com_bUCAPSWkUpReqRaw",
+        "P350_Com_bPstVtln",
+        "P368_Com_stMnSEVRaw",
+        "P367_Com_stCtxJDDRaw",
+        "P369_Com_stElecNetRaw"
+      ]
+    },
+    {
+      "arbitration_id": 952,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 0.6,
+      "dlc_counts": {
+        "7": 3
+      },
+      "changing_bytes": [
+        1,
+        4,
+        6
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 229,
+          "maximum": 229,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 3,
+          "minimum": 51,
+          "maximum": 114,
+          "toggle_count": 2,
+          "entropy": 1.585
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 207,
+          "maximum": 207,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 255,
+          "maximum": 255,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 2,
+          "minimum": 206,
+          "maximum": 207,
+          "toggle_count": 1,
+          "entropy": 0.918
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 207,
+          "maximum": 207,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 3,
+          "minimum": 48,
+          "maximum": 224,
+          "toggle_count": 2,
+          "entropy": 1.585
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 1037,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 1.66,
+      "dlc_counts": {
+        "8": 3
+      },
+      "changing_bytes": [
+        7
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 6,
+          "maximum": 6,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 2,
+          "maximum": 2,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 4,
+          "maximum": 4,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 248,
+          "maximum": 248,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 7,
+          "maximum": 7,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 3,
+          "minimum": 243,
+          "maximum": 252,
+          "toggle_count": 2,
+          "entropy": 1.585
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 840,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 1.06,
+      "dlc_counts": {
+        "8": 3
+      },
+      "changing_bytes": [
+        1,
+        2,
+        3
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 2,
+          "minimum": 36,
+          "maximum": 37,
+          "toggle_count": 1,
+          "entropy": 0.918
+        },
+        {
+          "index": 2,
+          "distinct_values": 2,
+          "minimum": 128,
+          "maximum": 129,
+          "toggle_count": 1,
+          "entropy": 0.918
+        },
+        {
+          "index": 3,
+          "distinct_values": 2,
+          "minimum": 63,
+          "maximum": 64,
+          "toggle_count": 1,
+          "entropy": 0.918
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 17,
+          "maximum": 17,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 112,
+          "maximum": 112,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 89,
+          "maximum": 89,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn2_CMM",
+      "opendbc_signals": [
+        "P165_FlFCD_stWtLvlSensDebVal",
+        "P152_Gearbx_stGear",
+        "P019_Com_trqPrp",
+        "P211_AirC_pClnt",
+        "P017_Com_trqFrc",
+        "P026_Com_bESPAck",
+        "P025_Com_stESPErr",
+        "P091_ConvCD_stDebVal",
+        "P212_Comp_load_shed",
+        "P134_Com_stEng",
+        "P343_Com_bOBDErr",
+        "P344_Com_bMILOn",
+        "P345_Com_bMILBln",
+        "P370_Com_bWUC",
+        "P371_Com_bDrivingCycl",
+        "P372_T15_st",
+        "P207_Fan_rAct",
+        "P269_StSys_stStrtBVMPAuth"
+      ]
+    },
+    {
+      "arbitration_id": 744,
+      "extended": false,
+      "frame_count": 3,
+      "frequency_hz": 1.71,
+      "dlc_counts": {
+        "4": 3
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 240,
+          "maximum": 240,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 968,
+      "extended": false,
+      "frame_count": 2,
+      "frequency_hz": 0.34,
+      "dlc_counts": {
+        "2": 2
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 4,
+          "maximum": 4,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn_STT_CMM",
+      "opendbc_signals": [
+        "P412_Com_stDeadPnt",
+        "P428_Com_stCDTReq"
+      ]
+    },
+    {
+      "arbitration_id": 845,
+      "extended": false,
+      "frame_count": 2,
+      "frequency_hz": 1.01,
+      "dlc_counts": {
+        "8": 2
+      },
+      "changing_bytes": [
+        5
+      ],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 35,
+          "maximum": 35,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 250,
+          "maximum": 250,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 250,
+          "maximum": 250,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 2,
+          "minimum": 8,
+          "maximum": 15,
+          "toggle_count": 1,
+          "entropy": 1.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 223,
+          "maximum": 223,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn_CDS",
+      "opendbc_signals": [
+        "P047_Com_stESPIntv",
+        "P088_CutOffForbidden_OR_ESP_STATUS_INV",
+        "P147_Com_bESPIntvActv",
+        "P043_Com_xTCSStatRaw",
+        "P044_Com_trqTCSRaw",
+        "P045_Com_trqDCSRaw",
+        "P157_Com_ctESP",
+        "P352_StbIntv_bTCSIntvActv",
+        "P353_StbIntv_bESPExclvIntvActv"
+      ]
+    },
+    {
+      "arbitration_id": 1330,
+      "extended": false,
+      "frame_count": 2,
+      "frequency_hz": 1.86,
+      "dlc_counts": {
+        "5": 2
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 141,
+          "maximum": 141,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 149,
+          "maximum": 149,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 78,
+          "maximum": 78,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 905,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "5": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    },
+    {
+      "arbitration_id": 1042,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 48,
+          "maximum": 48,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 120,
+          "maximum": 120,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dat_BSI",
+      "opendbc_signals": [
+        "P040_MainBrakeFault",
+        "P103_Com_bRevGear",
+        "PARKING_BRAKE",
+        "P013_MainBrake",
+        "P277_Com_bOilLvlDem",
+        "P298_Req_RTE_Ena",
+        "P012_Com_bFlMin",
+        "P086_Com_stFlLvlDia",
+        "P328_Com_stEHRPmp",
+        "P104_Dspl_stAOHt",
+        "PASSENGER_DOOR",
+        "DRIVER_DOOR"
+      ]
+    },
+    {
+      "arbitration_id": 1161,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 110,
+          "maximum": 110,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 7,
+          "maximum": 7,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 4,
+          "maximum": 4,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 10,
+          "maximum": 10,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dat_V2_BV",
+      "opendbc_signals": [
+        "P029_Com_stPrg",
+        "P282_Com_stGbxErr",
+        "P374_Com_bOBDRdy",
+        "P285_Com_bPNDia",
+        "P376_Com_bMILcntResDemRaw",
+        "P375_Com_bMILDem",
+        "P218_Com_stDrvIdx"
+      ]
+    },
+    {
+      "arbitration_id": 114,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "5": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 2,
+          "maximum": 2,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "RQD_CMM",
+      "opendbc_signals": [
+        "ADC2_Req_Status",
+        "ADC2_Seed_Byte3",
+        "ADC2_Seed_Byte2",
+        "ADC2_Seed_Byte1",
+        "ADC2_Seed_Byte0"
+      ]
+    },
+    {
+      "arbitration_id": 809,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "4": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 80,
+          "maximum": 80,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 16,
+          "maximum": 16,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 33,
+          "maximum": 33,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 64,
+          "maximum": 64,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn_STT_BV",
+      "opendbc_signals": [
+        "P340_Com_xChkSum3",
+        "P230_Com_ctGbxCnt3",
+        "P441_Com_bGbxAuthRstrtRaw",
+        "P444_Com_bGbxSysFaultRaw",
+        "P443_Com_bGbxRstrtReq",
+        "P442_Com_bGbxAuthStopRaw"
+      ]
+    },
+    {
+      "arbitration_id": 1544,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 13,
+          "maximum": 13,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 72,
+          "maximum": 72,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 199,
+          "maximum": 199,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "EOBD_CMM",
+      "opendbc_signals": [
+        "P__LID_No",
+        "P__Data1_PID",
+        "P__Data2_PID",
+        "P__Data3_PID",
+        "P__Data4_PID",
+        "P__Data5_PID",
+        "P__Data6_PID",
+        "P__Data7_PID"
+      ]
+    },
+    {
+      "arbitration_id": 552,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 48,
+          "maximum": 48,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 115,
+          "maximum": 115,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 254,
+          "maximum": 254,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 195,
+          "maximum": 195,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 50,
+          "maximum": 50,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn5_CMM",
+      "opendbc_signals": [
+        "P320_EasyMvTrqInfo",
+        "P411_Com_stTrqAvlStSp",
+        "P410_Com_stEngTrqStSp",
+        "P321_StatusOfEasyMvTrq",
+        "P334_ACCPed_Position",
+        "P336_Com_xDyn5CMMChkSum",
+        "P335_Com_ctDyn5CMMCntr",
+        "P388_Com_rClthPedPos"
+      ]
+    },
+    {
+      "arbitration_id": 1106,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "6": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "HS2_DAT_MDD_CMD_452",
+      "opendbc_signals": [
+        "FRONT_WIPER_STATUS",
+        "TURN_SIGNAL_STATUS",
+        "LONGITUDINAL_REGULATION_TYPE",
+        "SPEED_SETPOINT",
+        "RVV_ACC_ACTIVATION_REQ",
+        "LVV_ACTIVATION_REQ",
+        "BRAKE_ONLY_CMD_BSI",
+        "CHECKSUM_CONS_RVV_LVV2",
+        "COUNTER",
+        "ARC_HABIT_ACTIVATION_REQ",
+        "ARC_HABIT_SENSITIVITY",
+        "INTER_VEHICLE_TIME_SETPOINT",
+        "FORCE_ACTIVATION_HAB_CMD",
+        "FRONT_WASH_STATUS",
+        "ACC_PROGRAM_MODE",
+        "COCKPIT_GO_ACC_REQUEST",
+        "CHECKSUM"
+      ]
+    },
+    {
+      "arbitration_id": 1554,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 128,
+          "maximum": 128,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 32,
+          "maximum": 32,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 73,
+          "maximum": 73,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 52,
+          "maximum": 52,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 4,
+          "maximum": 4,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 16,
+          "maximum": 16,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "HS2_DAT7_BSI_612",
+      "opendbc_signals": [
+        "INH_DIURNE_ECLRGE",
+        "INH_ECLAIRAGE_AUTOROUTE",
+        "INH_ECLAIRAGE_VIRAGE_DYN",
+        "CDE_CLG_ET_HDC",
+        "MODE_CONF_VEH",
+        "ETAT_FEUX_ROUTE",
+        "ETAT_FEUX_CROIST",
+        "DEF_FEU_CROISMNT_D",
+        "DEF_FEU_CROISMNT_G",
+        "DEF_FEU_ROUTE_D",
+        "DEF_FEU_ROUTE_G",
+        "MODE_ASR_PLUS_SELECT",
+        "MODE_ECO",
+        "INFO_NIV_CARB",
+        "INFO_REQ_OLVI_REAR_ACT",
+        "POS_DEFLEC_MOBILE",
+        "U_PRED_DEMARRAGE",
+        "D_LIGNE_REL_R1",
+        "D_LIGNE_REL_R2",
+        "UB_D_LIGNE_REL_RX",
+        "D_LIGNE_REL_R3",
+        "CONFIG_VHL"
+      ]
+    },
+    {
+      "arbitration_id": 1173,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "4": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 48,
+          "maximum": 48,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 32,
+          "maximum": 32,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "IS_DAT_DIRA",
+      "opendbc_signals": [
+        "EPS_TORQUE",
+        "ETAT_DA_2010",
+        "ETAT_DA_DYN",
+        "ETAT_DA_2004",
+        "STEERING_REBOOT_REQUEST",
+        "AUTOR_ARRET_MOT_DA",
+        "EPS_STATE_LKA",
+        "STEERWHL_HOLD_BY_DRV",
+        "TRQ_LIMIT_STATE",
+        "Reserved"
+      ]
+    },
+    {
+      "arbitration_id": 1069,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "4": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 31,
+          "maximum": 31,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 162,
+          "maximum": 162,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "NEW_MSG_42D",
+      "opendbc_signals": [
+        "COUNTER",
+        "CHECKSUM",
+        "ACC_RELATED"
+      ]
+    },
+    {
+      "arbitration_id": 1128,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "7": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 32,
+          "maximum": 32,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 8,
+          "maximum": 8,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 64,
+          "maximum": 64,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 194,
+          "maximum": 194,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 48,
+          "maximum": 48,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 135,
+          "maximum": 135,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dyn3_CMM",
+      "opendbc_signals": [
+        "P247_Com_stStaFunc",
+        "P246_Com_bStaPrt",
+        "P245_Com_stRedBrkPlaus",
+        "P244_Com_bSta",
+        "P400_Com_stDrvTrnTx",
+        "P401_Com_stStrtAuth",
+        "P234_Com_stAcvWarn",
+        "P346_Alt_enumPwrProd",
+        "P347_Alt_uSetPoint",
+        "P408_Com_bRly3CtlReq"
+      ]
+    },
+    {
+      "arbitration_id": 909,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 51,
+          "maximum": 51,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 175,
+          "maximum": 175,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 252,
+          "maximum": 252,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 118,
+          "maximum": 118,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "HS2_DYN_ABR_38D",
+      "opendbc_signals": [
+        "VITESSE_VEHICULE_ROUES",
+        "DISTANCE_ROUES",
+        "P052_Com_aLng",
+        "ACCEL_LONGI_ROUES",
+        "COUNTER",
+        "CHECKSUM",
+        "REQ_LAMPE_WARNING",
+        "AUTOR_ARRET_HILL_STT",
+        "SENS_ROULAGE",
+        "VVH_INDISP",
+        "VHL_MVT",
+        "HADC_CLUTCH_CONDITION",
+        "HADC_SPEED_CONDITION",
+        "HADC_STATUS",
+        "HADC_FAULTY"
+      ]
+    },
+    {
+      "arbitration_id": 1101,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Vroues_ABR",
+      "opendbc_signals": [
+        "P330_VehV_vWhlRrL",
+        "P331_VehV_vWhlRrR",
+        "P354_VehV_nWhlAvrg"
+      ]
+    },
+    {
+      "arbitration_id": 1293,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "8": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 127,
+          "maximum": 127,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 0,
+          "maximum": 0,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 127,
+          "maximum": 127,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 139,
+          "maximum": 139,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 140,
+          "maximum": 140,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 7,
+          "distinct_values": 1,
+          "minimum": 69,
+          "maximum": 69,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": "Dat_ABR",
+      "opendbc_signals": [
+        "P351_Com_bABSIntvActv",
+        "P415_Com_stABSSTTReqRaw"
+      ]
+    },
+    {
+      "arbitration_id": 749,
+      "extended": false,
+      "frame_count": 1,
+      "frequency_hz": 0.0,
+      "dlc_counts": {
+        "7": 1
+      },
+      "changing_bytes": [],
+      "byte_profiles": [
+        {
+          "index": 0,
+          "distinct_values": 1,
+          "minimum": 115,
+          "maximum": 115,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 1,
+          "distinct_values": 1,
+          "minimum": 16,
+          "maximum": 16,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 2,
+          "distinct_values": 1,
+          "minimum": 113,
+          "maximum": 113,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 3,
+          "distinct_values": 1,
+          "minimum": 3,
+          "maximum": 3,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 4,
+          "distinct_values": 1,
+          "minimum": 15,
+          "maximum": 15,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 5,
+          "distinct_values": 1,
+          "minimum": 240,
+          "maximum": 240,
+          "toggle_count": 0,
+          "entropy": -0.0
+        },
+        {
+          "index": 6,
+          "distinct_values": 1,
+          "minimum": 255,
+          "maximum": 255,
+          "toggle_count": 0,
+          "entropy": -0.0
+        }
+      ],
+      "opendbc_message": null,
+      "opendbc_signals": []
+    }
+  ],
+  "correlations": [],
+  "opendbc": {
+    "enabled": true,
+    "loaded": true,
+    "database": "psa_aee2010_r3",
+    "revision": "a0febba355168a5cb6168b535144c8c41a5ce323",
+    "license": "MIT",
+    "source_url": "https://github.com/commaai/opendbc/blob/a0febba355168a5cb6168b535144c8c41a5ce323/opendbc/dbc/psa_aee2010_r3.dbc",
+    "compatibility": "PSA AEE2010 R3; upstream car port validated for Peugeot 208 2019-2025 only",
+    "message_count": 107,
+    "signal_count": 430,
+    "observed_message_count": 27,
+    "observed_messages": [
+      "Dat_ABR",
+      "Dat_BSI",
+      "Dat_BSI1",
+      "Dat_V2_BV",
+      "Dyn2_CMM",
+      "Dyn2_FRE",
+      "Dyn2_V2_BV",
+      "Dyn3_CMM",
+      "Dyn4_FRE",
+      "Dyn5_CMM",
+      "Dyn_CDS",
+      "Dyn_CMM",
+      "Dyn_EasyMove",
+      "Dyn_STT_BV",
+      "Dyn_STT_CMM",
+      "Dyn_V2_BVMP",
+      "EOBD_CMM",
+      "HS2_DAT7_BSI_612",
+      "HS2_DAT_MDD_CMD_452",
+      "HS2_DYN_ABR_38D",
+      "IS_DAT_DIRA",
+      "LANE_KEEP_ASSIST",
+      "NEW_MSG_42D",
+      "RQD_CMM",
+      "STEERING",
+      "STEERING_ALT",
+      "Vroues_ABR"
+    ],
+    "decoded_frame_count": 78,
+    "decode_error_count": 0,
+    "error": null
+  },
+  "warnings": [
+    "Les correspondances sont des hypothèses statistiques, pas des décodages validés.",
+    "Répéter chaque action au moins trois fois avec le même marqueur améliore fortement la confiance.",
+    "Valider une hypothèse sur plusieurs sessions avant de l'ajouter à la base véhicule.",
+    "Les libellés opendbc proviennent d'une base PSA externe non validée pour la 308 T9 2018.",
+    "Aucun marqueur présent : seule la cartographie des identifiants est disponible."
+  ],
+  "analysis_path": "../data/sessions/learn-20260731T173814Z-2eb9ec66.correlations.json"
+}

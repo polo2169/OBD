@@ -42,12 +42,14 @@ def test_sensor_mode_only_allows_reading_obd_pids():
 
 def test_can_policy_allows_read_did_and_flow_control():
     assert authorize_diagnostic_can_frame(0x74A, False, bytes.fromhex("0322F19000000000")).allowed
+    assert authorize_diagnostic_can_frame(0x7B0, False, bytes.fromhex("0322F19000000000")).allowed
     assert authorize_diagnostic_can_frame(0x74A, False, bytes.fromhex("3008000000000000")).allowed
 
 
 def test_can_policy_blocks_write_clear_security_and_unknown_ids():
     for data in ("042E123400000000", "0414FFFFFF000000", "0227010000000000"):
         assert not authorize_diagnostic_can_frame(0x752, False, bytes.fromhex(data)).allowed
+        assert not authorize_diagnostic_can_frame(0x7B0, False, bytes.fromhex(data)).allowed
     assert not authorize_diagnostic_can_frame(0x123, False, bytes.fromhex("0322F19000000000")).allowed
 
 

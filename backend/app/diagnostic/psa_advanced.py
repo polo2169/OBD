@@ -1,0 +1,476 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import time
+
+from udsoncan.exceptions import NegativeResponseException
+
+from app.config import settings
+from app.database import KnowledgeBase
+from app.diagnostic.isotp import UdsSession
+from app.diagnostic.uds import read_data_by_identifier
+from app.learn.capture import capture_manager
+from app.models import (
+    DidReadResult,
+    PsaActionRequest,
+    PsaActionResult,
+    PsaSeedKeyResult,
+    PsaUnlockRequest,
+    PsaUnlockResult,
+)
+from app.safety import authorize_psa_lab_uds
+from app.session import SessionWriter
+from app.transports.factory import build_transport
+
+
+PSA_DIAG_SOURCE = "https://github.com/ludwig-v/arduino-psa-diag"
+PSA_SEEDKEY_SOURCE = "https://github.com/ludwig-v/psa-seedkey-algorithm"
+PSA_NAC_SOURCE = "https://github.com/dragouf/PSA-Arduino-NAC-RCC/blob/master/protocol.md"
+
+
+SECURITY_KEY_CANDIDATES: dict[str, list[dict[str, str]]] = {
+    "bsi": [
+        {"variant": "BSI_2010", "key_hex": "E4D8"},
+        {"variant": "BSI_2010_EV", "key_hex": "B4E0"},
+    ],
+    "telematics": [
+        {"variant": "NAC", "key_hex": "D91C"},
+        {"variant": "RCC", "key_hex": "F107"},
+    ],
+    "instrument_cluster": [
+        {"variant": "CIROCCO", "key_hex": "FAFA"},
+        {"variant": "MATT", "key_hex": "ECEC"},
+    ],
+    "abs_esp": [{"variant": "ESP81", "key_hex": "ABFB"}],
+    "power_steering": [{"variant": "GEP", "key_hex": "4628"}],
+    "gearbox": [
+        {"variant": "EAT8", "key_hex": "4854"},
+        {"variant": "AT6", "key_hex": "8086"},
+    ],
+    "parking_assistance": [{"variant": "AAS_UDS", "key_hex": "EFCA"}],
+}
+
+
+@dataclass(frozen=True)
+class PsaActionDefinition:
+    key: str
+    ecu_key: str
+    name: str
+    description: str
+    start_payload: bytes | None
+    stop_payload: bytes | None = None
+    timed: bool = False
+    confidence: str = "documented_community"
+    source: str = PSA_NAC_SOURCE
+    unavailable_reason: str | None = None
+
+    def as_catalog(self) -> dict:
+        return {
+            "key": self.key,
+            "ecu_key": self.ecu_key,
+            "name": self.name,
+            "description": self.description,
+            "available": self.start_payload is not None,
+            "timed": self.timed,
+            "start_payload_hex": self.start_payload.hex().upper() if self.start_payload else None,
+            "stop_payload_hex": self.stop_payload.hex().upper() if self.stop_payload else None,
+            "confirmation": f"ACTIVER {self.key.upper()}" if self.start_payload else None,
+            "confidence": self.confidence,
+            "source": self.source,
+            "unavailable_reason": self.unavailable_reason,
+        }
+
+
+PSA_ACTIONS: dict[str, PsaActionDefinition] = {
+    action.key: action
+    for action in (
+        PsaActionDefinition(
+            key="nac_black_screen",
+            ecu_key="telematics",
+            name="Écran NAC noir",
+            description="Force temporairement l'écran noir puis envoie systématiquement la restauration.",
+            start_payload=bytes.fromhex("2FD6000300"),
+            stop_payload=bytes.fromhex("2FD60000"),
+            timed=True,
+        ),
+        PsaActionDefinition(
+            key="nac_restore_screen",
+            ecu_key="telematics",
+            name="Restaurer l'écran NAC",
+            description="Commande de retour immédiat à l'affichage normal.",
+            start_payload=bytes.fromhex("2FD60000"),
+        ),
+        PsaActionDefinition(
+            key="nac_camera",
+            ecu_key="telematics",
+            name="Afficher la caméra",
+            description="Affiche temporairement la caméra puis envoie la commande d'arrêt.",
+            start_payload=bytes.fromhex("2FD66003"),
+            stop_payload=bytes.fromhex("2FD66000"),
+            timed=True,
+        ),
+        PsaActionDefinition(
+            key="nac_camera_standard",
+            ecu_key="telematics",
+            name="Caméra 180° · vue standard",
+            description="Sélectionne temporairement la vue standard de la caméra 180°.",
+            start_payload=bytes.fromhex("2FD6700330"),
+            stop_payload=bytes.fromhex("2FD66000"),
+            timed=True,
+        ),
+        PsaActionDefinition(
+            key="nac_camera_zoom",
+            ecu_key="telematics",
+            name="Caméra 180° · zoom",
+            description="Sélectionne temporairement la vue zoom de la caméra 180°.",
+            start_payload=bytes.fromhex("2FD6700340"),
+            stop_payload=bytes.fromhex("2FD66000"),
+            timed=True,
+        ),
+        PsaActionDefinition(
+            key="nac_camera_lateral",
+            ecu_key="telematics",
+            name="Caméra 180° · vue latérale",
+            description="Sélectionne temporairement la vue latérale de la caméra 180°.",
+            start_payload=bytes.fromhex("2FD6700350"),
+            stop_payload=bytes.fromhex("2FD66000"),
+            timed=True,
+        ),
+        PsaActionDefinition(
+            key="bsi_turn_left",
+            ecu_key="bsi",
+            name="Clignotant gauche",
+            description="Emplacement réservé au test actionneur BSI.",
+            start_payload=None,
+            confidence="unknown_command",
+            unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+        ),
+        PsaActionDefinition(
+            key="bsi_turn_right",
+            ecu_key="bsi",
+            name="Clignotant droit",
+            description="Emplacement réservé au test actionneur BSI.",
+            start_payload=None,
+            confidence="unknown_command",
+            unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+        ),
+        PsaActionDefinition(
+            key="bsi_hazard",
+            ecu_key="bsi",
+            name="Feux de détresse",
+            description="Emplacement réservé au test actionneur BSI.",
+            start_payload=None,
+            confidence="unknown_command",
+            unavailable_reason="DID et paramètres BSI non confirmés ; aucune trame ne sera inventée.",
+        ),
+    )
+}
+
+
+def _trace_sink(session: SessionWriter):
+    def sink(event: dict) -> None:
+        if event.get("type") == "can_frame" and not settings.trace_can_frames:
+            return
+        session.write(event)
+
+    return sink
+
+
+def _require_advanced_read() -> None:
+    if not settings.psa_advanced_enabled:
+        raise PermissionError("Diagnostic PSA avancé verrouillé : PSA_ADVANCED_ENABLED=false.")
+    if settings.transport != "virtual" and not settings.can_tx_enabled:
+        raise PermissionError("Lecture PSA active impossible tant que CAN_TX_ENABLED=false.")
+
+
+def _find_ecu(ecu_key: str):
+    ecu = next((item for item in KnowledgeBase().ecus() if item.key == ecu_key), None)
+    if ecu is None:
+        raise KeyError(f"Calculateur inconnu : {ecu_key}.")
+    if ecu.request_id is None or ecu.response_id is None:
+        raise ValueError(f"Adresses non documentées pour {ecu.name}.")
+    return ecu
+
+
+def _require_lab_preconditions(
+    ecu_key: str,
+    confirmation: str,
+    expected_confirmation: str,
+    *,
+    vehicle_stationary: bool,
+    ignition_on_engine_off: bool,
+    stable_battery_voltage: bool,
+    workshop_or_private_site: bool,
+) -> None:
+    _require_advanced_read()
+    if settings.read_only:
+        raise PermissionError("Mode PSA lab impossible tant que READ_ONLY=true.")
+    if confirmation.strip() != expected_confirmation:
+        raise PermissionError(f"Confirmation exacte requise : {expected_confirmation}")
+    missing = [
+        label
+        for checked, label in (
+            (vehicle_stationary, "véhicule immobilisé"),
+            (ignition_on_engine_off, "contact mis et moteur arrêté"),
+            (stable_battery_voltage, "tension batterie stable"),
+            (workshop_or_private_site, "atelier ou site privé"),
+        )
+        if not checked
+    ]
+    if missing:
+        raise PermissionError("Préconditions non confirmées : " + ", ".join(missing) + ".")
+    if capture_manager.status().active:
+        raise PermissionError("Arrête et sauvegarde la capture avant une commande PSA lab active.")
+    _find_ecu(ecu_key)
+
+
+def advanced_catalog() -> dict:
+    kb = KnowledgeBase()
+    ecus = []
+    for ecu in kb.ecus():
+        ecus.append({
+            "key": ecu.key,
+            "name": ecu.name,
+            "family": ecu.family,
+            "request_id": ecu.request_id,
+            "response_id": ecu.response_id,
+            "protocol": ecu.protocol,
+            "optional": ecu.optional,
+            "security_keys": SECURITY_KEY_CANDIDATES.get(ecu.key, []),
+        })
+    return {
+        "enabled": settings.psa_advanced_enabled,
+        "security_access_enabled": settings.psa_security_access_enabled,
+        "actuator_enabled": settings.psa_actuator_enabled,
+        "read_only": settings.read_only,
+        "can_tx_enabled": settings.can_tx_enabled,
+        "required_firmware_policy": "psa_lab_named_actions",
+        "wiring": {
+            "vehicle_can": "OBD 6/14 selon le profil T9 actuel",
+            "nac_reference": "OBD 3/8 dans le projet Arduino NAC/RCC",
+            "warning": "Identifier physiquement le réseau avant de modifier le câblage ; ne jamais ponter les deux paires.",
+        },
+        "ecus": ecus,
+        "actions": [action.as_catalog() for action in PSA_ACTIONS.values()],
+        "sources": [PSA_DIAG_SOURCE, PSA_SEEDKEY_SOURCE, PSA_NAC_SOURCE],
+    }
+
+
+def _to_int16(value: int) -> int:
+    value &= 0xFFFF
+    return value - 0x10000 if value & 0x8000 else value
+
+
+def _trunc_div(dividend: int, divisor: int) -> int:
+    quotient = abs(dividend) // abs(divisor)
+    return -quotient if (dividend < 0) != (divisor < 0) else quotient
+
+
+def _c_mod(dividend: int, divisor: int) -> int:
+    return dividend - _trunc_div(dividend, divisor) * divisor
+
+
+def _seed_transform(value: int, secret: tuple[int, int, int]) -> int:
+    value = _to_int16(value)
+    first, second, third = secret
+    result = (_c_mod(value, first) * third) - (_trunc_div(value, first) * second)
+    if result < 0:
+        result += (first * third) + second
+    return result & 0xFFFF
+
+
+def compute_psa_seed_key(seed_hex: str, application_key_hex: str) -> str:
+    seed = bytes.fromhex(seed_hex.strip())
+    application_key = bytes.fromhex(application_key_hex.strip())
+    if len(seed) != 4:
+        raise ValueError("Le seed PSA doit contenir exactement 4 octets.")
+    if len(application_key) != 2:
+        raise ValueError("La clé application PSA doit contenir exactement 2 octets.")
+    secret_one = (0xB2, 0x3F, 0xAA)
+    secret_two = (0xB1, 0x02, 0xAB)
+    result_msb = _seed_transform(int.from_bytes(application_key, "big"), secret_one) | _seed_transform(
+        (seed[0] << 8) | seed[3], secret_two
+    )
+    result_lsb = _seed_transform((seed[1] << 8) | seed[2], secret_one) | _seed_transform(
+        result_msb, secret_two
+    )
+    return f"{((result_msb << 16) | result_lsb):08X}"
+
+
+def calculate_seed_key(seed_hex: str, application_key_hex: str) -> PsaSeedKeyResult:
+    normalized_seed = seed_hex.strip().upper()
+    normalized_key = application_key_hex.strip().upper()
+    return PsaSeedKeyResult(
+        seed_hex=normalized_seed,
+        application_key_hex=normalized_key,
+        response_key_hex=compute_psa_seed_key(normalized_seed, normalized_key),
+        source=PSA_SEEDKEY_SOURCE,
+        transmitted=False,
+    )
+
+
+def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
+    _require_advanced_read()
+    if not 0 <= did <= 0xFFFF:
+        raise ValueError("Le DID doit tenir sur deux octets.")
+    ecu = _find_ecu(ecu_key)
+    trace = SessionWriter() if settings.debug_sessions_enabled else None
+    transport = build_transport(_trace_sink(trace) if trace else None)
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=True,
+        ) as session:
+            response, value = read_data_by_identifier(session, did)
+        printable = value.decode("ascii", errors="replace").strip("\x00 ")
+        mostly_printable = bool(printable) and sum(character.isprintable() for character in printable) / len(printable) > 0.85
+        return DidReadResult(
+            did=did,
+            name=f"Zone PSA / DID 0x{did:04X}",
+            codec="ascii" if mostly_printable else "bytes",
+            value=printable if mostly_printable else value.hex().upper(),
+            raw_hex=value.hex().upper(),
+            source=PSA_DIAG_SOURCE,
+            confidence="raw_vehicle_response",
+        )
+    finally:
+        if opened:
+            transport.close()
+        if trace:
+            trace.finish()
+
+
+def unlock_configuration(ecu_key: str, request: PsaUnlockRequest) -> PsaUnlockResult:
+    if not settings.psa_security_access_enabled:
+        raise PermissionError("Accès sécurité PSA verrouillé : PSA_SECURITY_ACCESS_ENABLED=false.")
+    expected_confirmation = f"DEVERROUILLER {ecu_key.upper()}"
+    _require_lab_preconditions(
+        ecu_key,
+        request.confirmation,
+        expected_confirmation,
+        vehicle_stationary=request.vehicle_stationary,
+        ignition_on_engine_off=request.ignition_on_engine_off,
+        stable_battery_voltage=request.stable_battery_voltage,
+        workshop_or_private_site=request.workshop_or_private_site,
+    )
+    ecu = _find_ecu(ecu_key)
+    if ecu.request_id not in {0x752, 0x764}:
+        raise PermissionError("Accès sécurité transmis limité au BSI et au calculateur télématique.")
+
+    trace = SessionWriter()
+    transport = build_transport(_trace_sink(trace), safety_profile="psa_lab")
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        policy = lambda payload: authorize_psa_lab_uds(ecu.request_id, payload)
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=False,
+            safety_policy=policy,
+        ) as session:
+            session.request(bytes.fromhex("1003"))
+            seed_response = session.request(bytes.fromhex("2703"))
+            if len(seed_response) != 6 or seed_response[:2] != bytes.fromhex("6703"):
+                raise ValueError("Réponse seed PSA inattendue.")
+            seed_hex = seed_response[2:].hex().upper()
+            response_key = compute_psa_seed_key(seed_hex, request.application_key_hex)
+            unlock_response = session.request(bytes.fromhex("2704") + bytes.fromhex(response_key))
+            if unlock_response[:2] != bytes.fromhex("6704"):
+                raise ValueError("Réponse de déverrouillage PSA inattendue.")
+        result = PsaUnlockResult(
+            ecu_key=ecu_key,
+            unlocked=True,
+            seed_hex=seed_hex,
+            response_key_hex=response_key,
+            response_hex=unlock_response.hex().upper(),
+            message="Session de configuration déverrouillée puis refermée sans écriture.",
+            session_id=trace.id,
+        )
+        trace.write({"type": "psa_unlock_result", "payload": result.model_dump()})
+        return result
+    finally:
+        if opened:
+            transport.close()
+        trace.finish()
+
+
+def execute_named_action(action_key: str, request: PsaActionRequest) -> PsaActionResult:
+    if not settings.psa_actuator_enabled:
+        raise PermissionError("Actionneurs PSA verrouillés : PSA_ACTUATOR_ENABLED=false.")
+    action = PSA_ACTIONS.get(action_key)
+    if action is None:
+        raise KeyError(f"Action PSA inconnue : {action_key}.")
+    if action.start_payload is None:
+        raise PermissionError(action.unavailable_reason or "Commande PSA non documentée.")
+    expected_confirmation = f"ACTIVER {action.key.upper()}"
+    _require_lab_preconditions(
+        action.ecu_key,
+        request.confirmation,
+        expected_confirmation,
+        vehicle_stationary=request.vehicle_stationary,
+        ignition_on_engine_off=request.ignition_on_engine_off,
+        stable_battery_voltage=request.stable_battery_voltage,
+        workshop_or_private_site=request.workshop_or_private_site,
+    )
+    if request.duration_ms > settings.psa_actuator_max_duration_ms:
+        raise PermissionError(
+            f"Durée supérieure au plafond PSA_ACTUATOR_MAX_DURATION_MS={settings.psa_actuator_max_duration_ms}."
+        )
+
+    ecu = _find_ecu(action.ecu_key)
+    trace = SessionWriter()
+    transport = build_transport(_trace_sink(trace), safety_profile="psa_lab")
+    opened = False
+    started_response: bytes | None = None
+    stopped_response: bytes | None = None
+    try:
+        transport.open()
+        opened = True
+        policy = lambda payload: authorize_psa_lab_uds(ecu.request_id, payload)
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=False,
+            safety_policy=policy,
+        ) as session:
+            session.request(bytes.fromhex("1003"))
+            try:
+                started_response = session.request(action.start_payload)
+                if action.timed:
+                    time.sleep(request.duration_ms / 1_000)
+            finally:
+                if action.stop_payload is not None:
+                    stopped_response = session.request(action.stop_payload)
+        result = PsaActionResult(
+            action_key=action.key,
+            executed=True,
+            started_response_hex=started_response.hex().upper() if started_response else None,
+            stopped_response_hex=stopped_response.hex().upper() if stopped_response else None,
+            duration_ms=request.duration_ms if action.timed else 0,
+            message=(
+                "Action terminée et commande d'arrêt envoyée."
+                if action.stop_payload is not None
+                else "Commande de restauration envoyée."
+            ),
+            session_id=trace.id,
+        )
+        trace.write({"type": "psa_action_result", "payload": result.model_dump()})
+        return result
+    except NegativeResponseException:
+        raise
+    finally:
+        if opened:
+            transport.close()
+        trace.finish()

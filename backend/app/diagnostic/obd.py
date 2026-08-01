@@ -19,6 +19,8 @@ class PidDefinition:
     unit: str
     length: int
     decoder: Callable[[bytes], float | int]
+    group: str = "Moteur"
+    description: str = "Paramètre OBD-II normalisé lu en mode 01."
 
 
 def _percent(data: bytes) -> float:
@@ -33,20 +35,36 @@ def _word(data: bytes) -> int:
     return int.from_bytes(data[:2], "big")
 
 
+def _signed_percent(data: bytes) -> float:
+    return round(data[0] * 100 / 128 - 100, 2)
+
+
 PID_DEFINITIONS = (
-    PidDefinition("engine_load", 0x04, "Charge moteur calculée", "%", 1, _percent),
-    PidDefinition("coolant_temperature", 0x05, "Température liquide de refroidissement", "°C", 1, _temperature),
-    PidDefinition("engine_rpm", 0x0C, "Régime moteur", "tr/min", 2, lambda data: round(_word(data) / 4, 2)),
-    PidDefinition("vehicle_speed", 0x0D, "Vitesse véhicule", "km/h", 1, lambda data: data[0]),
-    PidDefinition("intake_air_temperature", 0x0F, "Température d'air d'admission", "°C", 1, _temperature),
-    PidDefinition("maf", 0x10, "Débit d'air massique", "g/s", 2, lambda data: round(_word(data) / 100, 2)),
-    PidDefinition("throttle_position", 0x11, "Position papillon", "%", 1, _percent),
-    PidDefinition("engine_runtime", 0x1F, "Temps depuis démarrage moteur", "s", 2, _word),
-    PidDefinition("fuel_level", 0x2F, "Niveau carburant", "%", 1, _percent),
-    PidDefinition("control_module_voltage", 0x42, "Tension calculateur", "V", 2, lambda data: round(_word(data) / 1000, 3)),
-    PidDefinition("ambient_temperature", 0x46, "Température ambiante", "°C", 1, _temperature),
-    PidDefinition("engine_oil_temperature", 0x5C, "Température huile moteur", "°C", 1, _temperature),
-    PidDefinition("fuel_rate", 0x5E, "Débit carburant", "L/h", 2, lambda data: round(_word(data) / 20, 2)),
+    PidDefinition("engine_load", 0x04, "Charge moteur calculée", "%", 1, _percent, "Combustion", "Charge moteur normalisée calculée par l'ECU."),
+    PidDefinition("coolant_temperature", 0x05, "Température liquide de refroidissement", "°C", 1, _temperature, "Températures", "Température moteur utilisée par la stratégie d'injection."),
+    PidDefinition("short_fuel_trim_bank_1", 0x06, "Correction carburant court terme B1", "%", 1, _signed_percent, "Carburant", "Correction de richesse OBD court terme; souvent non prise en charge sur diesel."),
+    PidDefinition("long_fuel_trim_bank_1", 0x07, "Correction carburant long terme B1", "%", 1, _signed_percent, "Carburant", "Adaptation de richesse OBD long terme; souvent non prise en charge sur diesel."),
+    PidDefinition("short_fuel_trim_bank_2", 0x08, "Correction carburant court terme B2", "%", 1, _signed_percent, "Carburant", "Correction de richesse de la banque 2 quand elle existe."),
+    PidDefinition("long_fuel_trim_bank_2", 0x09, "Correction carburant long terme B2", "%", 1, _signed_percent, "Carburant", "Adaptation de richesse de la banque 2 quand elle existe."),
+    PidDefinition("fuel_pressure", 0x0A, "Pression carburant basse pression", "kPa", 1, lambda data: data[0] * 3, "Carburant", "Pression carburant relative normalisée; ce n'est pas la pression de rampe haute pression."),
+    PidDefinition("intake_manifold_pressure", 0x0B, "Pression collecteur d'admission", "kPa abs", 1, lambda data: data[0], "Air", "Pression absolue dans le collecteur, incluant la suralimentation."),
+    PidDefinition("engine_rpm", 0x0C, "Régime moteur", "tr/min", 2, lambda data: round(_word(data) / 4, 2), "Combustion", "Vitesse de rotation moteur diffusée par l'ECU."),
+    PidDefinition("vehicle_speed", 0x0D, "Vitesse véhicule", "km/h", 1, lambda data: data[0], "Contexte", "Vitesse véhicule associée au relevé injection."),
+    PidDefinition("timing_advance", 0x0E, "Avance à l'allumage", "°", 1, lambda data: round(data[0] / 2 - 64, 2), "Combustion", "Avance normalisée; surtout pertinente pour un moteur essence."),
+    PidDefinition("intake_air_temperature", 0x0F, "Température d'air d'admission", "°C", 1, _temperature, "Air", "Température d'air prise en compte pour la masse injectée."),
+    PidDefinition("maf", 0x10, "Débit d'air massique", "g/s", 2, lambda data: round(_word(data) / 100, 2), "Air", "Masse d'air mesurée par le débitmètre."),
+    PidDefinition("throttle_position", 0x11, "Position papillon", "%", 1, _percent, "Air", "Position absolue du papillon ou doseur d'air."),
+    PidDefinition("engine_runtime", 0x1F, "Temps depuis démarrage moteur", "s", 2, _word, "Contexte", "Durée de fonctionnement depuis le dernier démarrage."),
+    PidDefinition("fuel_rail_gauge_pressure", 0x23, "Pression de rampe carburant", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression de rampe relative normalisée, typique de l'injection directe/diesel."),
+    PidDefinition("commanded_egr", 0x2C, "Commande EGR", "%", 1, _percent, "Dépollution", "Consigne d'ouverture EGR demandée par le calculateur."),
+    PidDefinition("egr_error", 0x2D, "Écart EGR", "%", 1, _signed_percent, "Dépollution", "Écart entre la consigne et le retour EGR."),
+    PidDefinition("fuel_level", 0x2F, "Niveau carburant", "%", 1, _percent, "Carburant", "Niveau de carburant déclaré au diagnostic OBD."),
+    PidDefinition("control_module_voltage", 0x42, "Tension calculateur", "V", 2, lambda data: round(_word(data) / 1000, 3), "Électrique", "Tension d'alimentation du calculateur d'injection."),
+    PidDefinition("commanded_equivalence_ratio", 0x44, "Richesse commandée (lambda)", "λ", 2, lambda data: round(_word(data) * 2 / 65536, 4), "Combustion", "Rapport d'équivalence commandé; 1 correspond au mélange stœchiométrique."),
+    PidDefinition("ambient_temperature", 0x46, "Température ambiante", "°C", 1, _temperature, "Températures", "Température extérieure utilisée comme contexte moteur."),
+    PidDefinition("absolute_fuel_rail_pressure", 0x59, "Pression absolue de rampe", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression absolue de rampe carburant lorsqu'elle est exposée par l'ECU."),
+    PidDefinition("engine_oil_temperature", 0x5C, "Température huile moteur", "°C", 1, _temperature, "Températures", "Température d'huile utilisée pour la protection moteur."),
+    PidDefinition("fuel_rate", 0x5E, "Débit carburant", "L/h", 2, lambda data: round(_word(data) / 20, 2), "Carburant", "Débit total de carburant consommé par le moteur."),
 )
 
 
@@ -57,6 +75,8 @@ def sensor_catalog() -> list[dict]:
             "pid": definition.pid,
             "name": definition.name,
             "unit": definition.unit,
+            "group": definition.group,
+            "description": definition.description,
         }
         for definition in PID_DEFINITIONS
     ]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 import isotp
 from udsoncan import Request, Response
@@ -10,7 +11,7 @@ from udsoncan.connections import PythonIsoTpConnection
 from udsoncan.exceptions import NegativeResponseException
 
 from app.models import CanFrame
-from app.safety import authorize_obd, authorize_uds
+from app.safety import SafetyDecision, authorize_obd, authorize_uds
 from app.transports.base import Transport
 
 
@@ -26,6 +27,7 @@ class UdsSession:
         timeout: float = 1.0,
         read_only: bool = True,
         maintenance: bool = False,
+        safety_policy: Callable[[bytes], SafetyDecision] | None = None,
     ) -> None:
         if (request_id > 0x7FF) != (response_id > 0x7FF):
             raise ValueError("Les identifiants ISO-TP doivent utiliser le même format CAN.")
@@ -35,6 +37,7 @@ class UdsSession:
         self.timeout = timeout
         self.read_only = read_only
         self.maintenance = maintenance
+        self.safety_policy = safety_policy
         self.errors: list[str] = []
         self._client: Client | None = None
         self._connection: PythonIsoTpConnection | None = None
@@ -106,7 +109,11 @@ class UdsSession:
         if self._client is None:
             raise RuntimeError("Session UDS fermée.")
         payload = request.get_payload()
-        decision = authorize_uds(payload, self.read_only, maintenance=self.maintenance)
+        decision = (
+            self.safety_policy(payload)
+            if self.safety_policy is not None
+            else authorize_uds(payload, self.read_only, maintenance=self.maintenance)
+        )
         started = time.perf_counter()
         self.transport.debug(
             "uds_request",

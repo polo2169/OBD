@@ -14,10 +14,39 @@ class KnowledgeBase:
 
     def vehicle(self, profile: str | None = None) -> dict:
         name = profile or settings.vehicle_profile
-        path = self.root / "psa" / "vehicles" / f"{name}.yaml"
-        if not path.exists():
-            raise FileNotFoundError(f"Profil véhicule introuvable : {path}")
+        path = self._vehicle_paths().get(name)
+        if path is None:
+            raise FileNotFoundError(f"Profil véhicule introuvable : {name}")
         return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def _vehicle_paths(self) -> dict[str, Path]:
+        paths: dict[str, Path] = {}
+        for path in sorted(self.root.glob("*/vehicles/*.yaml")):
+            paths[path.stem] = path
+        return paths
+
+    def vehicle_profiles(self) -> list[dict]:
+        profiles: list[dict] = []
+        for key, path in self._vehicle_paths().items():
+            vehicle = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            diagnostic = vehicle.get("diagnostic", {})
+            strategies = diagnostic.get("vin_strategies", [])
+            profiles.append({
+                "key": key,
+                "manufacturer": vehicle.get("manufacturer", "Inconnu"),
+                "model": vehicle.get("model", "Inconnu"),
+                "platform": vehicle.get("platform"),
+                "year": vehicle.get("year"),
+                "architecture": vehicle.get("architecture"),
+                "confidence": vehicle.get("confidence", "experimental"),
+                "identity_scope": diagnostic.get("identity_scope", "full_profile"),
+                "vin_methods": [
+                    strategy.get("label", strategy.get("key", "Méthode inconnue"))
+                    for strategy in strategies
+                ],
+                "notes": vehicle.get("notes", []),
+            })
+        return profiles
 
     def ecus(self, profile: str | None = None) -> list[EcuDefinition]:
         vehicle = self.vehicle(profile)
