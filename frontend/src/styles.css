@@ -335,9 +335,9 @@ button:disabled { opacity: .5; cursor: wait; }
 .sensor-editor-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(3, 6, 8, .78); backdrop-filter: blur(5px); }
 .sensor-editor { width: min(660px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; padding: 24px; border: 1px solid var(--border-bright); border-radius: 14px; background: #11171c; box-shadow: 0 26px 80px rgba(0, 0, 0, .45); }
 .sensor-editor > label, .sensor-editor-grid label { display: grid; gap: 6px; margin-top: 12px; color: var(--muted); font-size: .63rem; font-weight: 700; }
-.sensor-editor input, .sensor-editor textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--border-bright); border-radius: 8px; outline: 0; color: var(--text); background: #0c1115; font-size: .7rem; }
+.sensor-editor input, .sensor-editor textarea, .sensor-editor select { width: 100%; padding: 10px 11px; border: 1px solid var(--border-bright); border-radius: 8px; outline: 0; color: var(--text); background: #0c1115; font-size: .7rem; }
 .sensor-editor textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
-.sensor-editor input:focus, .sensor-editor textarea:focus { border-color: rgba(89, 168, 255, .55); }
+.sensor-editor input:focus, .sensor-editor textarea:focus, .sensor-editor select:focus { border-color: rgba(89, 168, 255, .55); }
 .sensor-editor-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px; }
 .sensor-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .sensor-editor-actions .stop-button { width: auto; margin: 0; }
@@ -895,6 +895,9 @@ button:disabled { opacity: .5; cursor: wait; }
 .pedal-stack strong { font: 600 .61rem "IBM Plex Mono", monospace; }
 
 .adas-panel { display: flex; flex-direction: column; }
+.route-capability-card { min-height: 145px; display: grid; align-content: center; gap: 9px; margin-bottom: 12px; padding: 18px; border: 1px solid rgba(98, 227, 154, .22); border-radius: 11px; background: radial-gradient(circle at 82% 30%, rgba(98, 227, 154, .1), transparent 9rem), #0b1013; }
+.route-capability-card strong { color: var(--accent); font-size: .82rem; }
+.route-capability-card p { margin: 0; color: var(--muted); font-size: .59rem; line-height: 1.55; }
 .lane-visual { position: relative; height: 145px; margin-bottom: 12px; border: 1px solid #28323a; border-radius: 11px; background: linear-gradient(110deg, transparent 48%, rgba(255, 255, 255, .025) 49%, transparent 50%), #0b1013; overflow: hidden; }
 .lane-line { position: absolute; top: -12%; width: 4px; height: 125%; background: repeating-linear-gradient(to bottom, rgba(231, 238, 242, .72) 0 18px, transparent 18px 34px); transform-origin: bottom; }
 .lane-line.left { left: 25%; transform: rotate(10deg); }
@@ -1728,7 +1731,83 @@ button:disabled { opacity: .5; cursor: wait; }
 .maintenance-service-grid footer { margin-top: auto; padding-top: 16px; }
 .maintenance-service-grid footer span { max-width: 55%; color: var(--muted); font-size: 12px; }
 
+/* Six-module OpenDiag shell and focused ECU workspace. */
+.database-page, .security-page { display: grid; gap: 18px; }
+.module-card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.module-card-grid > button { min-height: 190px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 19px; text-align: left; border: 1px solid var(--border); border-radius: 11px; color: var(--text); background: var(--panel); }
+.module-card-grid > button:hover { border-color: rgba(91, 190, 255, .38); transform: translateY(-1px); }
+.module-card-grid > button > span { color: var(--blue); font: 700 .63rem "IBM Plex Mono", monospace; letter-spacing: .08em; }
+.module-card-grid > button > strong { margin-top: 8px; font-size: 1rem; }
+.module-card-grid > button > p { margin: 0; color: var(--text); font-size: .78rem; line-height: 1.5; }
+.module-card-grid > button > small { margin-top: auto; color: var(--muted); font-size: .68rem; }
+.knowledge-lifecycle { border-left: 3px solid var(--accent); }
+.workflow-chain { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; margin-top: 20px; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--border); }
+.workflow-chain > div { min-height: 150px; display: grid; align-content: start; gap: 7px; padding: 15px; background: var(--panel-deep); }
+.workflow-chain span { color: var(--blue); font: 700 .58rem "IBM Plex Mono", monospace; }
+.workflow-chain strong { font-size: .78rem; }
+.workflow-chain small { color: var(--muted); font-size: .65rem; line-height: 1.45; }
+.security-state-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.security-state-grid article { min-height: 145px; display: grid; align-content: start; gap: 8px; padding: 17px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.security-state-grid span { color: var(--muted); font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; }
+.security-state-grid strong { font-size: .83rem; }
+.security-state-grid small { color: var(--muted); font-size: .67rem; line-height: 1.45; }
+.mode-status-button { font-family: inherit; cursor: pointer; }
+.mode-status-button:hover { filter: brightness(1.12); }
+.operating-mode-selector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.operating-mode-selector > button { min-height: 170px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 17px; text-align: left; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--panel-deep); }
+.operating-mode-selector > button:not(:disabled):hover { border-color: rgba(89, 168, 255, .36); }
+.operating-mode-selector > button.selected.safe { border-color: rgba(98, 227, 154, .42); background: linear-gradient(145deg, rgba(98, 227, 154, .08), var(--panel-deep)); }
+.operating-mode-selector > button.selected.maintenance { border-color: rgba(255, 107, 101, .45); background: linear-gradient(145deg, rgba(255, 107, 101, .09), var(--panel-deep)); }
+.operating-mode-selector > button:disabled:not(.selected) { opacity: .55; }
+.operating-mode-selector span { color: var(--blue); font: 700 .57rem "IBM Plex Mono", monospace; letter-spacing: .08em; }
+.operating-mode-selector strong { margin-top: 5px; font-size: .9rem; }
+.operating-mode-selector p { margin: 0; color: var(--text); font-size: .7rem; line-height: 1.48; }
+.operating-mode-selector small { margin-top: auto; color: var(--muted); font-size: .61rem; line-height: 1.4; }
+.mode-switch-modal { width: min(760px, 100%); }
+.mode-readiness-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.mode-readiness-grid > div { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-deep); }
+.mode-readiness-grid > div.ready { border-color: rgba(98, 227, 154, .25); }
+.mode-readiness-grid > div.blocked { border-color: rgba(255, 107, 101, .25); }
+.mode-readiness-grid span { color: var(--muted); font-size: .58rem; text-transform: uppercase; }
+.mode-readiness-grid strong { overflow-wrap: anywhere; font-size: .67rem; }
+.mode-preconditions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.mode-preconditions label { min-height: 70px; display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-deep); cursor: pointer; }
+.mode-preconditions input { width: auto; accent-color: var(--accent); }
+.mode-preconditions span { display: grid; gap: 3px; }
+.mode-preconditions strong { color: var(--text); font-size: .66rem; }
+.mode-preconditions small { color: var(--muted); font-size: .56rem; line-height: 1.35; }
+.lab-entry { display: flex; align-items: center; justify-content: space-between; gap: 22px; border-color: rgba(255, 105, 105, .25); }
+.lab-entry h2, .lab-entry p { margin-bottom: 0; }
+
+.ecu-selector { display: flex; gap: 7px; margin-top: 18px; padding: 7px; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-deep); }
+.ecu-selector button { min-width: 135px; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 10px 11px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); text-align: left; background: transparent; }
+.ecu-selector button:hover, .ecu-selector button.selected { color: var(--text); border-color: rgba(91, 190, 255, .28); background: rgba(91, 190, 255, .07); }
+.ecu-selector button > i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(98, 227, 154, .35); }
+.ecu-selector button > span { overflow: hidden; font-size: .7rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.ecu-selector button > small { min-width: 22px; color: var(--muted); font: 700 .55rem "IBM Plex Mono", monospace; text-align: right; }
+.ecu-workspace { display: grid; gap: 17px; margin-top: 12px; padding: 20px; border: 1px solid rgba(91, 190, 255, .2); border-radius: 11px; background: linear-gradient(145deg, rgba(91, 190, 255, .055), transparent 55%), var(--panel-deep); }
+.ecu-workspace > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ecu-workspace h3 { margin: 5px 0; font-size: 1.35rem; }
+.ecu-workspace p { margin: 0; color: var(--muted); }
+.ecu-workspace-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ecu-workspace-summary > div { min-height: 104px; display: grid; align-content: start; gap: 5px; padding: 13px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0, 0, 0, .12); }
+.ecu-workspace-summary span { color: var(--muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
+.ecu-workspace-summary strong { font-size: .78rem; }
+.ecu-workspace-summary small { color: var(--muted); font-size: .61rem; line-height: 1.4; }
+.ecu-workspace-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ecu-identification-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ecu-identification-list article { min-height: 105px; display: grid; align-content: start; gap: 6px; padding: 13px; border: 1px solid rgba(98, 227, 154, .14); border-radius: 8px; background: rgba(0, 0, 0, .14); }
+.ecu-identification-list span { color: var(--blue); font-size: .62rem; }
+.ecu-identification-list strong { overflow-wrap: anywhere; font-size: .78rem; }
+.ecu-identification-list small, .ecu-read-summary { color: var(--muted); font-size: .61rem; }
+.ecu-inventory-details { margin-top: 15px; border-top: 1px solid var(--border); }
+.ecu-inventory-details > summary { padding: 15px 3px 4px; color: var(--muted); cursor: pointer; font-size: .7rem; }
+.ecu-inventory-details .ecu-list { margin-top: 10px; }
+
 @media (max-width: 1380px) {
+  .module-card-grid, .security-state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workflow-chain { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ecu-workspace-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .maintenance-protocol-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .maintenance-service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .studio-toolbar { flex-wrap: wrap; }
@@ -1780,6 +1859,11 @@ button:disabled { opacity: .5; cursor: wait; }
 }
 
 @media (max-width: 760px) {
+  .operating-mode-selector, .mode-preconditions { grid-template-columns: 1fr; }
+  .mode-readiness-grid { grid-template-columns: 1fr; }
+  .module-card-grid, .security-state-grid, .workflow-chain { grid-template-columns: 1fr; }
+  .lab-entry, .ecu-workspace > header { display: grid; }
+  .ecu-identification-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .maintenance-protocol-grid, .maintenance-service-grid { grid-template-columns: 1fr; }
   .app-shell { display: block; }
   .workspace, .topbar, .content, .sensor-inventory-page, .inventory-hero, .inventory-hero-copy, .powertrain-selector { min-width: 0; max-width: 100%; }
@@ -1865,6 +1949,7 @@ button:disabled { opacity: .5; cursor: wait; }
 }
 
 @media (max-width: 520px) {
+  .ecu-workspace-summary, .ecu-identification-list { grid-template-columns: 1fr; }
   .metric-grid, .sensor-grid, .workflow-grid, .compact-metrics, .injection-summary-grid, .injection-sensor-grid, .psa-specific-grid, .inventory-summary-grid { grid-template-columns: 1fr; }
   .topbar-status { flex-wrap: wrap; }
   .panel { padding: 17px; }

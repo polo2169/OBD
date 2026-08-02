@@ -59,6 +59,7 @@ class CaptureStatus(BaseModel):
     vin: str | None = None
     vehicle_profile: str | None = None
     vehicle_label: str | None = None
+    mode: Literal["learn_passive", "live_data"] | None = None
 
 
 class CapturedEvent(BaseModel):
@@ -187,7 +188,15 @@ class PassiveCanSignal(BaseModel):
     raw_hex: str
     source: Literal["can", "obd"] = "can"
     pid: int | None = None
-    confidence: Literal["validated", "dbc_candidate", "standardized"] = "dbc_candidate"
+    confidence: Literal[
+        "validated",
+        "vehicle_observed_candidate",
+        "dbc_candidate",
+        "standardized",
+    ] = "dbc_candidate"
+    user_defined: bool = False
+    definition_key: str | None = None
+    derived_from: str | None = None
 
 
 class PassiveSensorOverride(BaseModel):
@@ -300,11 +309,35 @@ class ReplaySample(BaseModel):
     t_ms: int
     speed_kph: float | None = None
     engine_rpm: float | None = None
+    engine_load_pct: float | None = None
+    absolute_engine_load_pct: float | None = None
+    fuel_pressure_kpa: float | None = None
+    manifold_pressure_kpa: float | None = None
+    mass_air_flow_g_s: float | None = None
+    throttle_position_pct: float | None = None
+    relative_throttle_position_pct: float | None = None
+    throttle_position_b_pct: float | None = None
+    throttle_position_c_pct: float | None = None
+    commanded_throttle_actuator_pct: float | None = None
+    fiat_throttle_candidate_pct: float | None = None
+    fiat_air_load_candidate_raw: float | None = None
+    ignition_advance_deg: float | None = None
+    fuel_injection_timing_deg: float | None = None
+    short_fuel_trim_pct: float | None = None
+    long_fuel_trim_pct: float | None = None
+    oxygen_sensor_b1s1_v: float | None = None
+    oxygen_sensor_b1s2_v: float | None = None
+    commanded_equivalence_ratio: float | None = None
+    evap_purge_pct: float | None = None
+    engine_runtime_s: float | None = None
+    fuel_level_pct: float | None = None
+    fuel_rate_lph: float | None = None
     steering_angle_deg: float | None = None
     steering_rate_deg_s: float | None = None
     driver_torque: float | None = None
     accelerator_pct: float | None = None
     accelerator_secondary_pct: float | None = None
+    relative_accelerator_position_pct: float | None = None
     engine_torque_nm: float | None = None
     idle_setpoint_rpm: float | None = None
     fuel_consumption_candidate_mm3: float | None = None

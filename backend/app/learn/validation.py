@@ -12,16 +12,40 @@ from app.learn.models import ReplayData, ReplayValidation, SignalValidation
 from app.learn.replay import prepare_replay
 
 
-VALIDATION_VERSION = 3
+VALIDATION_VERSION = 4
 
 LABELS = {
     "speed_kph": "Vitesse véhicule",
     "engine_rpm": "Régime moteur",
+    "engine_load_pct": "Charge moteur calculée",
+    "absolute_engine_load_pct": "Charge moteur absolue",
+    "fuel_pressure_kpa": "Pression carburant basse pression",
+    "manifold_pressure_kpa": "Pression du collecteur d’admission",
+    "mass_air_flow_g_s": "Débit d’air massique",
+    "throttle_position_pct": "Position du papillon",
+    "relative_throttle_position_pct": "Position relative du papillon",
+    "throttle_position_b_pct": "Position du papillon voie B",
+    "throttle_position_c_pct": "Position du papillon voie C",
+    "commanded_throttle_actuator_pct": "Commande de l’actionneur de papillon",
+    "fiat_throttle_candidate_pct": "Position papillon CAN Fiat candidate",
+    "fiat_air_load_candidate_raw": "Charge d’air CAN Fiat candidate",
+    "ignition_advance_deg": "Avance à l’allumage",
+    "fuel_injection_timing_deg": "Calage d’injection",
+    "short_fuel_trim_pct": "Correction richesse court terme",
+    "long_fuel_trim_pct": "Correction richesse long terme",
+    "oxygen_sensor_b1s1_v": "Sonde lambda amont B1S1",
+    "oxygen_sensor_b1s2_v": "Sonde lambda aval B1S2",
+    "commanded_equivalence_ratio": "Richesse commandée",
+    "evap_purge_pct": "Commande purge canister",
+    "engine_runtime_s": "Temps de fonctionnement moteur",
+    "fuel_level_pct": "Niveau de carburant OBD",
+    "fuel_rate_lph": "Débit de carburant",
     "steering_angle_deg": "Angle du volant",
     "steering_rate_deg_s": "Vitesse du volant",
     "driver_torque": "Effort conducteur",
     "accelerator_pct": "Pédale d’accélérateur",
     "accelerator_secondary_pct": "Pédale d’accélérateur (voie redondante)",
+    "relative_accelerator_position_pct": "Position relative de l’accélérateur",
     "engine_torque_nm": "Couple moteur",
     "idle_setpoint_rpm": "Consigne de ralenti",
     "fuel_consumption_candidate_mm3": "Consommation carburant passive candidate",
@@ -60,10 +84,34 @@ LABELS = {
 PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
     "speed_kph": (0, 260),
     "engine_rpm": (0, 8_000),
+    "engine_load_pct": (0, 100),
+    "absolute_engine_load_pct": (0, 300),
+    "fuel_pressure_kpa": (0, 765),
+    "manifold_pressure_kpa": (10, 255),
+    "mass_air_flow_g_s": (0, 655.35),
+    "throttle_position_pct": (0, 100),
+    "relative_throttle_position_pct": (0, 100),
+    "throttle_position_b_pct": (0, 100),
+    "throttle_position_c_pct": (0, 100),
+    "commanded_throttle_actuator_pct": (0, 100),
+    "fiat_throttle_candidate_pct": (0, 100),
+    "fiat_air_load_candidate_raw": (0, 255),
+    "ignition_advance_deg": (-64, 63.5),
+    "fuel_injection_timing_deg": (-210, 301.992),
+    "short_fuel_trim_pct": (-100, 99.22),
+    "long_fuel_trim_pct": (-100, 99.22),
+    "oxygen_sensor_b1s1_v": (0, 1.275),
+    "oxygen_sensor_b1s2_v": (0, 1.275),
+    "commanded_equivalence_ratio": (0, 2),
+    "evap_purge_pct": (0, 100),
+    "engine_runtime_s": (0, 65_535),
+    "fuel_level_pct": (0, 100),
+    "fuel_rate_lph": (0, 3_276.75),
     "steering_angle_deg": (-1_080, 1_080),
     "steering_rate_deg_s": (-2_000, 2_000),
     "accelerator_pct": (0, 100),
     "accelerator_secondary_pct": (0, 100),
+    "relative_accelerator_position_pct": (0, 100),
     "engine_torque_nm": (-600, 800),
     "idle_setpoint_rpm": (600, 1_200),
     "longitudinal_accel_ms2": (-15, 15),
@@ -103,7 +151,7 @@ EXPECTED_UNAVAILABLE = {
         "Pression de rampe d’injection",
         "Non diffusée dans les trames passives décodées ; lecture OBD/DID moteur nécessaire.",
     ),
-    "intake_manifold_pressure_kpa": (
+    "manifold_pressure_kpa": (
         "Pression admission / suralimentation",
         "Non diffusée dans les trames passives décodées ; lecture OBD/DID moteur nécessaire.",
     ),
@@ -197,7 +245,10 @@ def _base_validation(replay: ReplayData, key: str) -> SignalValidation:
 
     quality = replay.field_quality.get(key, "candidate")
     rejected = quality == "rejected_on_vehicle"
-    if quality in {"validated_on_vehicle", "validated_on_vehicle_state_only"}:
+    if quality == "validated_on_fiat_500_vin":
+        result.status = "validated"
+        result.evidence.append("Fonction et sens confirmés physiquement par le conducteur sur cette Fiat.")
+    elif quality in {"validated_on_vehicle", "validated_on_vehicle_state_only"}:
         result.status = "validated"
         result.evidence.append("Décodage et sens validés directement sur cette Peugeot.")
     elif rejected:
@@ -227,6 +278,44 @@ def _base_validation(replay: ReplayData, key: str) -> SignalValidation:
 
 
 def _apply_powertrain_checks(replay: ReplayData, by_key: dict[str, SignalValidation]) -> None:
+    fiat_throttle_pairs = [
+        (float(point.fiat_throttle_candidate_pct), float(point.throttle_position_pct))
+        for point in replay.points
+        if _is_number(point.fiat_throttle_candidate_pct)
+        and _is_number(point.throttle_position_pct)
+    ]
+    fiat_throttle_correlation = _correlation(fiat_throttle_pairs)
+    if fiat_throttle_correlation is not None:
+        candidate_span = max(left for left, _ in fiat_throttle_pairs) - min(left for left, _ in fiat_throttle_pairs)
+        obd_span = max(right for _, right in fiat_throttle_pairs) - min(right for _, right in fiat_throttle_pairs)
+        evidence = (
+            f"Papillon CAN Fiat comparé au PID EOBD 01/11 sur {len(fiat_throttle_pairs)} points : "
+            f"corrélation {fiat_throttle_correlation:.3f}, amplitudes {candidate_span:.1f}/{obd_span:.1f} %."
+        )
+        result = by_key.get("fiat_throttle_candidate_pct")
+        if result:
+            result.evidence.append(evidence)
+            if result.status != "suspicious" and fiat_throttle_correlation >= 0.9 and min(candidate_span, obd_span) >= 5:
+                result.status = "validated"
+
+    fiat_air_pairs = [
+        (float(point.fiat_air_load_candidate_raw), float(point.manifold_pressure_kpa))
+        for point in replay.points
+        if _is_number(point.fiat_air_load_candidate_raw)
+        and _is_number(point.manifold_pressure_kpa)
+    ]
+    fiat_air_correlation = _correlation(fiat_air_pairs)
+    if fiat_air_correlation is not None:
+        evidence = (
+            f"Octet d'air Fiat comparé au MAP EOBD 01/0B sur {len(fiat_air_pairs)} points : "
+            f"corrélation {fiat_air_correlation:.3f}."
+        )
+        result = by_key.get("fiat_air_load_candidate_raw")
+        if result:
+            result.evidence.append(evidence)
+            if result.status != "suspicious" and abs(fiat_air_correlation) >= 0.85:
+                result.status = "plausible"
+
     idle_pairs = [
         (float(point.engine_rpm), float(point.idle_setpoint_rpm))
         for point in replay.points

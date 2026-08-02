@@ -1,5 +1,5 @@
 export type PowertrainProfile = "unknown" | "gasoline" | "diesel";
-export type InventorySource = "can" | "psa";
+export type InventorySource = "can" | "psa" | "fiat";
 
 export type VehicleSensorCandidate = {
   id: string;
@@ -130,3 +130,57 @@ export const vehicleSensorCandidates: VehicleSensorCandidate[] = [
   { id: "psa-gps-motion", label: "Cap, altitude et vitesse GPS", system: "Pneumatiques / position", description: "Mouvement absolu distinct de la trajectoire estimée.", source: "psa", optional: true, priority: 2 },
 ];
 
+// Fiat 500 type 312 · 1.2 8V essence (véhicule 2010 actuellement utilisé).
+// Les données OBD-II normalisées sont ajoutées séparément par le catalogue
+// backend. Cette liste couvre les signaux CAN déjà prouvés et les grandeurs
+// physiques que l'eLearn Fiat confirme au niveau du véhicule/ECU, sans
+// prétendre connaître leur trame constructeur tant qu'elle n'a pas été captée.
+export const fiat500SensorCandidates: VehicleSensorCandidate[] = [
+  { id: "fiat-can-engine-rpm", label: "Régime moteur", system: "Moteur / injection", description: "Régime diffusé en CAN 29 bits et recoupé avec le PID EOBD 01/0C.", source: "can", liveFields: ["engine_rpm"], priority: 1 },
+  { id: "fiat-map", label: "Pression collecteur d'admission", system: "Moteur / injection", description: "Mesure MAP testable en EOBD 01/0B; l'octet 4 de 0x0618A001 est conservé séparément comme charge d'air brute candidate.", source: "fiat", liveFields: ["manifold_pressure_kpa", "fiat_air_load_candidate_raw"], priority: 1 },
+  { id: "fiat-intake-temperature", label: "Température d'air d'admission", system: "Moteur / injection", description: "Voie température du capteur d'admission combiné; testable en EOBD 01/0F.", source: "fiat", priority: 1 },
+  { id: "fiat-coolant-temperature", label: "Température liquide de refroidissement", system: "Moteur / injection", description: "Sonde moteur utilisée par l'injection et le combiné; testable en EOBD 01/05.", source: "fiat", priority: 1 },
+  { id: "fiat-throttle", label: "Position papillon motorisé", system: "Moteur / injection", description: "L'octet 7 de 0x0618A001 est un candidat papillon fortement corrélé; il doit être comparé aux positions EOBD 01/11, 01/45 et 01/47.", source: "fiat", liveFields: ["throttle_position_pct", "fiat_throttle_candidate_pct", "relative_throttle_position_pct", "throttle_position_b_pct"], priority: 1 },
+  { id: "fiat-accelerator", label: "Pédale d'accélérateur · voies 1 et 2", system: "Moteur / injection", description: "Deux potentiomètres de demande conducteur; voies EOBD 01/49 et 01/4A lorsqu'elles sont exposées.", source: "fiat", priority: 1 },
+  { id: "fiat-crank", label: "Capteur de régime vilebrequin", system: "Moteur / injection", description: "Source physique du régime et de la position vilebrequin; son état détaillé nécessite un paramètre constructeur.", source: "fiat", priority: 2 },
+  { id: "fiat-cam", label: "Capteur de phase arbre à cames", system: "Moteur / injection", description: "Synchronisation de phase moteur; présence confirmée par l'architecture IAW5SF, valeur à décoder.", source: "fiat", priority: 2 },
+  { id: "fiat-knock", label: "Capteur de cliquetis", system: "Moteur / injection", description: "Signal de détonation utilisé pour corriger l'avance; correction détaillée à identifier.", source: "fiat", applicability: "gasoline", priority: 2 },
+  { id: "fiat-oil-switch", label: "Contacteur de pression d'huile", system: "Moteur / injection", description: "État logique d'alerte; ce moteur ne fournit pas nécessairement une pression analogique en bar.", source: "fiat", priority: 1 },
+  { id: "fiat-brake-switch", label: "Contacteur de pédale de frein", system: "Commandes conducteur", description: "Deux états de frein transmis au calculateur moteur et au réseau CAN.", source: "fiat", priority: 1 },
+  { id: "fiat-clutch-switch", label: "Contacteur de pédale d'embrayage", system: "Commandes conducteur", description: "Candidat 0x0628A001 octet 5 bit 5, présent dans la capture; à confirmer par trois appuis annotés.", source: "fiat", optional: true, priority: 2 },
+
+  { id: "fiat-lambda-upstream", label: "Sonde lambda amont catalyseur", system: "Dépollution", description: "Sonde de régulation de richesse; tension EOBD candidate 01/14 selon les PID annoncés par l'ECU.", source: "fiat", applicability: "gasoline", priority: 1 },
+  { id: "fiat-lambda-downstream", label: "Sonde lambda aval catalyseur", system: "Dépollution", description: "Contrôle de l'efficacité catalyseur; tension EOBD candidate 01/15.", source: "fiat", applicability: "gasoline", priority: 1 },
+  { id: "fiat-fuel-trims", label: "Corrections de richesse court/long terme", system: "Dépollution", description: "Adaptations STFT/LTFT de la banque 1, normalisées par les PID 01/06 et 01/07.", source: "fiat", applicability: "gasoline", priority: 1 },
+  { id: "fiat-evap-purge", label: "Commande purge canister", system: "Dépollution", description: "Commande de récupération des vapeurs d'essence; PID EOBD 01/2E si supporté.", source: "fiat", applicability: "gasoline", priority: 2 },
+  { id: "fiat-catalyst-status", label: "État catalyseur et moniteurs OBD", system: "Dépollution", description: "Disponibilité et résultat des moniteurs antipollution issus du statut OBD normalisé.", source: "fiat", priority: 2 },
+
+  { id: "fiat-vehicle-speed", label: "Vitesse véhicule", system: "Freinage / châssis", description: "Vitesse normalisée EOBD 01/0D, suffisante avec le GPS pour reconstruire un trajet.", source: "can", liveFields: ["speed_kph"], priority: 1 },
+  { id: "fiat-wheel-speeds", label: "Vitesses des quatre roues", system: "Freinage / châssis", description: "Candidat 0x0218A006 observé : quatre mots 16 bits à résolution 1/16 km/h, avec 0x002C à l'arrêt; validation roulante requise.", source: "fiat", liveFields: ["wheel_front_left_kph", "wheel_front_right_kph", "wheel_rear_left_kph", "wheel_rear_right_kph"], priority: 1 },
+  { id: "fiat-brake-pressure", label: "État / niveau brut de freinage", system: "Freinage / châssis", description: "Appui de pédale 0x0810A000 validé sur ce VIN; le niveau brut évolue avec l'appui mais n'est pas encore étalonné en bar.", source: "fiat", liveFields: ["brake_active", "brake_pressure_raw"], optional: true, priority: 2 },
+  { id: "fiat-steering-angle", label: "Angle du volant", system: "Direction", description: "Disponible via le système ESP lorsque le véhicule en est équipé; indispensable à une reconstruction sans GPS.", source: "fiat", liveFields: ["steering_angle_deg"], optional: true, priority: 1 },
+  { id: "fiat-yaw-lateral", label: "Lacet et accélération latérale", system: "Freinage / châssis", description: "Capteur combiné du système ESP; absent des versions sans ESP.", source: "fiat", liveFields: ["yaw_rate_deg_s", "lateral_accel_ms2"], optional: true, priority: 2 },
+
+  { id: "fiat-battery-voltage", label: "Tension réseau 12 V", system: "Électricité", description: "Tension d'alimentation du calculateur, normalisée par le PID EOBD 01/42.", source: "can", liveFields: ["battery_voltage_v"], priority: 1 },
+  { id: "fiat-charging", label: "État de charge alternateur", system: "Électricité", description: "Commande et état du circuit de charge; valeurs constructeur à identifier sur le CAN Fiat.", source: "fiat", priority: 2 },
+
+  { id: "fiat-fuel-level", label: "Niveau de carburant", system: "Habitacle / Body Computer", description: "Flotteur traité par le Body Computer et le combiné; PID EOBD 01/2F seulement si l'ECU le relaie.", source: "fiat", liveFields: ["fuel_level_pct"], priority: 1 },
+  { id: "fiat-doors", label: "Portes et hayon", system: "Habitacle / Body Computer", description: "Porte conducteur validée sur 0x0A18A000 octet 2 bit 3; autres ouvrants encore à identifier.", source: "fiat", liveFields: ["driver_door"], priority: 1 },
+  { id: "fiat-lights", label: "Feux et clignotants", system: "Habitacle / Body Computer", description: "Commandes et retours d'éclairage nécessaires à l'animation de la vue du dessus.", source: "fiat", liveFields: ["turn_signal", "low_beam", "high_beam"], priority: 1 },
+  { id: "fiat-wipers", label: "Essuie-glaces", system: "Habitacle / Body Computer", description: "Position du commodo et état de fonctionnement; trames B-CAN à identifier.", source: "fiat", liveFields: ["front_wiper_status"], priority: 2 },
+  { id: "fiat-reverse-parking", label: "Marche arrière et frein à main", system: "Habitacle / Body Computer", description: "Frein à main candidat sur 0x0A18A000 octet 0 bit 5; marche arrière encore à identifier.", source: "fiat", liveFields: ["reverse", "parking_brake"], priority: 1 },
+  { id: "fiat-city-defrost", label: "Mode City et dégivrage arrière", system: "Habitacle / Body Computer", description: "Bits candidats observés sur 0x0A18A000; à confirmer par actions annotées.", source: "fiat", priority: 2 },
+  { id: "fiat-start-stop-state", label: "État et disponibilité Start&Stop", system: "Habitacle / Body Computer", description: "Candidats sur 0x0C1CA000, uniquement si la voiture est équipée du Start&Stop.", source: "fiat", optional: true, priority: 2 },
+  { id: "fiat-network-clock", label: "Date et heure du véhicule", system: "Combiné d'instruments", description: "Horloge BCD candidate sur 0x0C28A000, cohérente avec la date de la capture.", source: "fiat", priority: 2 },
+  { id: "fiat-odometer", label: "Kilométrage total", system: "Combiné d'instruments", description: "Valeur mémorisée par le combiné/Body Computer; lecture constructeur à documenter.", source: "fiat", priority: 2 },
+
+  { id: "fiat-ambient-temperature", label: "Température extérieure", system: "Climatisation", description: "Sonde extérieure présente selon équipement; PID EOBD 01/46 seulement si relayé par le moteur.", source: "fiat", liveFields: ["ambient_temperature_c"], optional: true, priority: 2 },
+  { id: "fiat-ac-pressure", label: "Pression de climatisation", system: "Climatisation", description: "Capteur de pression réfrigérant transmis à la gestion moteur; paramètre constructeur à identifier.", source: "fiat", optional: true, priority: 2 },
+  { id: "fiat-ac-request", label: "Demande et activation climatisation", system: "Climatisation", description: "Demande conducteur, autorisation moteur et activation compresseur.", source: "fiat", optional: true, priority: 2 },
+
+  { id: "fiat-gps-position", label: "Position GPS navigateur", system: "Trajet / position", description: "Latitude, longitude, précision et cap fournis par le navigateur pendant l'enregistrement.", source: "can", liveFields: ["latitude", "longitude", "gps_accuracy_m", "gps_heading_deg"], optional: true, priority: 1 },
+];
+
+export function sensorCandidatesForProfile(profileKey?: string | null): VehicleSensorCandidate[] {
+  return profileKey === "fiat_500_generic" ? fiat500SensorCandidates : vehicleSensorCandidates;
+}

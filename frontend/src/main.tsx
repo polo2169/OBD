@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { vehicleSensorCandidates } from "./sensorInventory";
+import { sensorCandidatesForProfile } from "./sensorInventory";
 import type { PowertrainProfile } from "./sensorInventory";
 
 type Status = {
@@ -22,6 +22,26 @@ type Status = {
   gateway_verified?: boolean;
   gateway_hello?: Record<string, unknown> | null;
   gateway_error?: string | null;
+  operating_mode?: "read_only" | "maintenance";
+  runtime_mode_switch_enabled?: boolean;
+};
+
+type OperatingModeState = {
+  mode: "read_only" | "maintenance";
+  read_only: boolean;
+  maintenance_available: boolean;
+  runtime_switch_enabled: boolean;
+  can_tx_enabled: boolean;
+  gateway_ready: boolean;
+  capture_active: boolean;
+  blockers: string[];
+  capabilities: {
+    diagnostic_reads: boolean;
+    dtc_clear: boolean;
+    safety_ecu_clear: boolean;
+    psa_actions: boolean;
+    security_access: boolean;
+  };
 };
 
 type TransportOption = {
@@ -470,7 +490,7 @@ type SensorInventoryRow = {
   label: string;
   system: string;
   description: string;
-  source: "OBD-II" | "CAN direct" | "PSA spécifique";
+  source: "OBD-II" | "CAN / OBD direct" | "Fiat spécifique" | "PSA spécifique";
   status: SensorInventoryStatus;
   statusLabel: string;
   priority: 1 | 2 | 3;
@@ -499,7 +519,10 @@ type PassiveCanSignal = {
   raw_hex: string;
   source: "can" | "obd";
   pid?: number | null;
-  confidence: "validated" | "dbc_candidate" | "standardized";
+  confidence: "validated" | "vehicle_observed_candidate" | "dbc_candidate" | "standardized";
+  user_defined?: boolean;
+  definition_key?: string | null;
+  derived_from?: string | null;
 };
 
 type PassiveSteeringSnapshot = {
@@ -534,6 +557,22 @@ type PassiveSensorSnapshot = {
   obd_error?: string | null;
 };
 
+type LiveSensorDefinition = {
+  key: string;
+  source_key: string;
+  vin?: string | null;
+  label: string;
+  description: string;
+  category: string;
+  unit?: string | null;
+  factor: number;
+  offset: number;
+  state: "discovered" | "observed" | "validated" | "documented" | "published";
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 type CaptureStatus = {
   session_id: string;
   active: boolean;
@@ -560,6 +599,7 @@ type CaptureStatus = {
   vin?: string | null;
   vehicle_profile?: string | null;
   vehicle_label?: string | null;
+  mode?: "learn_passive" | "live_data" | null;
 };
 
 type DiscoverySession = {
@@ -673,11 +713,35 @@ type ReplaySample = {
   t_ms: number;
   speed_kph?: number | null;
   engine_rpm?: number | null;
+  engine_load_pct?: number | null;
+  absolute_engine_load_pct?: number | null;
+  fuel_pressure_kpa?: number | null;
+  manifold_pressure_kpa?: number | null;
+  mass_air_flow_g_s?: number | null;
+  throttle_position_pct?: number | null;
+  relative_throttle_position_pct?: number | null;
+  throttle_position_b_pct?: number | null;
+  throttle_position_c_pct?: number | null;
+  commanded_throttle_actuator_pct?: number | null;
+  fiat_throttle_candidate_pct?: number | null;
+  fiat_air_load_candidate_raw?: number | null;
+  ignition_advance_deg?: number | null;
+  fuel_injection_timing_deg?: number | null;
+  short_fuel_trim_pct?: number | null;
+  long_fuel_trim_pct?: number | null;
+  oxygen_sensor_b1s1_v?: number | null;
+  oxygen_sensor_b1s2_v?: number | null;
+  commanded_equivalence_ratio?: number | null;
+  evap_purge_pct?: number | null;
+  engine_runtime_s?: number | null;
+  fuel_level_pct?: number | null;
+  fuel_rate_lph?: number | null;
   steering_angle_deg?: number | null;
   steering_rate_deg_s?: number | null;
   driver_torque?: number | null;
   accelerator_pct?: number | null;
   accelerator_secondary_pct?: number | null;
+  relative_accelerator_position_pct?: number | null;
   engine_torque_nm?: number | null;
   idle_setpoint_rpm?: number | null;
   fuel_consumption_candidate_mm3?: number | null;
@@ -841,6 +905,29 @@ type ReplayGaugeDefinition = {
 const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "speed_kph", label: "Vitesse véhicule", unit: "km/h", minimum: 0, maximum: 150, precision: 1, color: "#62e39a", note: "Vitesse véhicule calculée à partir des roues ABS." },
   { key: "engine_rpm", label: "Régime moteur", unit: "tr/min", minimum: 0, maximum: 6500, color: "#8ce9b4", note: "Régime moteur diffusé par le calculateur moteur." },
+  { key: "engine_load_pct", label: "Charge moteur", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#ff8d72", note: "Charge moteur calculée normalisée EOBD 01/04." },
+  { key: "absolute_engine_load_pct", label: "Charge moteur absolue", unit: "%", minimum: 0, maximum: 150, precision: 1, color: "#ffb45f", note: "Charge absolue normalisée EOBD 01/43." },
+  { key: "fuel_pressure_kpa", label: "Pression carburant basse", unit: "kPa", minimum: 0, maximum: 765, precision: 0, color: "#f2cc60", note: "Pression carburant relative EOBD 01/0A, uniquement si l'ECU Fiat l'annonce." },
+  { key: "manifold_pressure_kpa", label: "Pression collecteur", unit: "kPa abs", minimum: 20, maximum: 110, precision: 0, color: "#72c6ff", note: "Capteur MAP normalisé EOBD 01/0B; particulièrement pertinent sur le 1.2 FIRE." },
+  { key: "mass_air_flow_g_s", label: "Débit d'air massique", unit: "g/s", minimum: 0, maximum: 150, precision: 2, color: "#63e6e2", note: "Débit d'air MAF EOBD 01/10 lorsqu'un débitmètre est exposé." },
+  { key: "throttle_position_pct", label: "Position papillon", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#62e39a", note: "Position absolue du papillon EOBD 01/11." },
+  { key: "relative_throttle_position_pct", label: "Position relative papillon", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#8ce9b4", note: "Ouverture relative du papillon EOBD 01/45." },
+  { key: "throttle_position_b_pct", label: "Papillon voie B", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#59a8ff", note: "Seconde piste de position du papillon EOBD 01/47." },
+  { key: "throttle_position_c_pct", label: "Papillon voie C", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#89d7ff", note: "Troisième piste de position du papillon EOBD 01/48 lorsqu'elle existe." },
+  { key: "commanded_throttle_actuator_pct", label: "Commande actionneur papillon", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#b8efc9", note: "Consigne envoyée au papillon motorisé EOBD 01/4C." },
+  { key: "fiat_throttle_candidate_pct", label: "Papillon CAN Fiat candidat", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#62e39a", note: "Octet 7 de 0x0618A001 mis à l'échelle 0…100 %. À comparer au papillon EOBD 01/11." },
+  { key: "fiat_air_load_candidate_raw", label: "Charge d'air Fiat candidate", unit: "brut", minimum: 0, maximum: 255, precision: 0, color: "#72c6ff", note: "Octet 4 de 0x0618A001. Sa dynamique suit l'admission, mais aucune unité physique n'est encore attribuée." },
+  { key: "ignition_advance_deg", label: "Avance à l'allumage", unit: "°", minimum: -20, maximum: 60, precision: 1, color: "#b384ff", note: "Avance d'allumage essence EOBD 01/0E." },
+  { key: "fuel_injection_timing_deg", label: "Calage d'injection", unit: "°", minimum: -90, maximum: 90, precision: 1, color: "#ff8ec7", note: "Calage normalisé de l'injection EOBD 01/5D si pris en charge." },
+  { key: "short_fuel_trim_pct", label: "Correction richesse court terme", unit: "%", minimum: -25, maximum: 25, precision: 1, color: "#f2cc60", note: "STFT banque 1 normalisée EOBD 01/06." },
+  { key: "long_fuel_trim_pct", label: "Correction richesse long terme", unit: "%", minimum: -25, maximum: 25, precision: 1, color: "#ffb45f", note: "LTFT banque 1 normalisée EOBD 01/07." },
+  { key: "oxygen_sensor_b1s1_v", label: "Lambda amont B1S1", unit: "V", minimum: 0, maximum: 1.1, precision: 3, color: "#63e6e2", note: "Tension de la sonde amont EOBD 01/14 lorsqu'elle est exposée." },
+  { key: "oxygen_sensor_b1s2_v", label: "Lambda aval B1S2", unit: "V", minimum: 0, maximum: 1.1, precision: 3, color: "#89d7ff", note: "Tension de la sonde aval EOBD 01/15 lorsqu'elle est exposée." },
+  { key: "commanded_equivalence_ratio", label: "Richesse commandée", unit: "λ", minimum: .7, maximum: 1.3, precision: 3, color: "#b8efc9", note: "Rapport lambda commandé EOBD 01/44." },
+  { key: "evap_purge_pct", label: "Purge canister", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#a7c7e7", note: "Commande de purge des vapeurs d'essence EOBD 01/2E." },
+  { key: "engine_runtime_s", label: "Temps moteur", unit: "s", minimum: 0, maximum: 7200, precision: 0, color: "#8ce9b4", note: "Temps écoulé depuis le démarrage EOBD 01/1F." },
+  { key: "fuel_level_pct", label: "Niveau carburant", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#f2cc60", note: "Niveau déclaré en EOBD 01/2F si le calculateur Fiat le relaie." },
+  { key: "fuel_rate_lph", label: "Débit carburant", unit: "L/h", minimum: 0, maximum: 30, precision: 2, color: "#ff8d72", note: "Débit carburant normalisé EOBD 01/5E si pris en charge." },
   { key: "idle_setpoint_rpm", label: "Consigne de ralenti", unit: "tr/min", minimum: 650, maximum: 1100, color: "#b8efc9", note: "Consigne du calculateur moteur, validée par comparaison avec le régime réel au ralenti." },
   { key: "current_gear", label: "Rapport engagé", unit: "rapport", minimum: 0, maximum: 9, color: "#f2cc60", note: "Rapport réellement engagé diffusé par le calculateur moteur. Sur cette capture, le code 9 correspond à la marche arrière." },
   { key: "target_gear", label: "Rapport cible", unit: "rapport", minimum: 0, maximum: 9, color: "#ffb45f", note: "Rapport demandé pendant la stratégie de changement de vitesse. Le code 9 est affiché R." },
@@ -857,7 +944,9 @@ const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "atmospheric_pressure_hpa", label: "Pression atmosphérique", unit: "hPa", minimum: 850, maximum: 1100, color: "#a7c7e7", note: "Pression environnementale candidate OpenDBC." },
   { key: "fuel_liters", label: "Niveau carburant filtré", unit: "L", minimum: 0, maximum: 53, precision: 1, color: "#f2cc60", note: "Mesure du flotteur amortie sur 120 s pour réduire le ballottement; l'étalonnage absolu reste à confirmer." },
   { key: "engine_torque_nm", label: "Couple moteur", unit: "Nm", minimum: -100, maximum: 400, color: "#ff8d72", note: "Estimation de couple moteur réel." },
-  { key: "accelerator_pct", label: "Accélérateur", unit: "%", minimum: 0, maximum: 100, color: "#62e39a", note: "Position de pédale diffusée par le moteur." },
+  { key: "accelerator_pct", label: "Accélérateur · voie D", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#62e39a", note: "Position de pédale; sur la Fiat, voie normalisée EOBD 01/49." },
+  { key: "accelerator_secondary_pct", label: "Accélérateur · voie E", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#8ce9b4", note: "Seconde voie redondante de la pédale EOBD 01/4A." },
+  { key: "relative_accelerator_position_pct", label: "Accélérateur relatif", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#b8efc9", note: "Position relative de l'accélérateur EOBD 01/5A." },
   { key: "longitudinal_accel_ms2", label: "Accélération longitudinale", unit: "m/s²", minimum: -4, maximum: 4, precision: 2, color: "#72c6ff", note: "Accélération calculée à partir des roues." },
   { key: "lateral_accel_ms2", label: "Accélération latérale", unit: "m/s²", minimum: -5, maximum: 5, precision: 2, color: "#ff8ec7", note: "Trame 0x3CD, échelle 0,05 m/s² validée par corrélation avec les quatre roues et le volant." },
   { key: "yaw_rate_deg_s", label: "Vitesse de lacet", unit: "°/s", minimum: -40, maximum: 40, precision: 1, color: "#63e6e2", note: "Trame 0x3CD, échelle 0,1°/s validée par deux références CAN indépendantes." },
@@ -957,6 +1046,38 @@ const defaultReplayIndicatorKeys = [
 ];
 
 const PEUGEOT_308_HANDBOOK_URL = "https://public.servicebox.peugeot.com/APddb/modeles/308n/eGuide_308n_308_ed01-18_dag/pdfs/9999_9999_226_en-GB.pdf";
+const FIAT_500_HANDBOOK_URL = "https://aftersales.fiat.com/eLumData/EN/00/150_500/00_150_500_603.81.684_EN_01_02.10_L_LG/00_150_500_603.81.684_EN_01_02.10_L_LG.pdf";
+
+type VehicleVisualProfile = {
+  label: string;
+  topImage: string;
+  steeringImage: string;
+  topAlt: string;
+  steeringAlt: string;
+  frontAtTop: boolean;
+};
+
+const PEUGEOT_308_VISUAL: VehicleVisualProfile = {
+  label: "Peugeot 308",
+  topImage: "/peugeot-308-top.png",
+  steeringImage: "/peugeot-308-gt-steering.png",
+  topAlt: "Peugeot 308 vue du dessus",
+  steeringAlt: "Volant Peugeot 308 GT",
+  frontAtTop: false,
+};
+
+const FIAT_500_VISUAL: VehicleVisualProfile = {
+  label: "Fiat 500",
+  topImage: "/fiat-500-top.png",
+  steeringImage: "/fiat-500-steering.png",
+  topAlt: "Fiat 500 vue du dessus",
+  steeringAlt: "Volant Fiat 500",
+  frontAtTop: true,
+};
+
+function vehicleVisualForProfile(profileKey?: string | null): VehicleVisualProfile {
+  return profileKey === "fiat_500_generic" ? FIAT_500_VISUAL : PEUGEOT_308_VISUAL;
+}
 
 type StudioWidgetKind = "speed" | "steering" | "gear" | "vehicle" | "capture" | "gauge" | "graph" | "numeric" | "lamp" | "indicator";
 type StudioSensorStyle = "gauge" | "graph" | "numeric" | "lamp";
@@ -989,12 +1110,16 @@ const defaultStudioWidgets: StudioWidget[] = [
   { id: "studio-battery", kind: "gauge", key: "battery_voltage_v", x: 9, y: 8, w: 3, h: 3 },
 ];
 
-type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery";
+type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery" | "database" | "security";
+type NavModule = "diagnostic" | "atelier" | "learn";
 
-const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery"];
+const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery", "database", "security"];
+const LAB_MODE = new URLSearchParams(window.location.search).get("lab") === "1"
+  || import.meta.env.VITE_LAB_MODE === "true";
 
 function initialView(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
+  if (requested === "psa" && !LAB_MODE) return "security";
   return views.includes(requested as View) ? (requested as View) : "dashboard";
 }
 
@@ -1066,6 +1191,16 @@ const viewTitles: Record<View, { eyebrow: string; title: string; description: st
     eyebrow: "OpenDiag Learn",
     title: "Découverte & corrélation",
     description: "Enregistrer passivement, annoter les actions et analyser hors ligne.",
+  },
+  database: {
+    eyebrow: "Connaissance ouverte",
+    title: "Database OpenDiag",
+    description: "ECU, capteurs, DTC, procédures, sources et niveaux de confiance.",
+  },
+  security: {
+    eyebrow: "Moteur interne de protection",
+    title: "Security & Workflow",
+    description: "Préconditions, autorisations, journalisation, contrôle et rapports pour chaque opération.",
   },
 };
 
@@ -1283,19 +1418,52 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_G"),
     logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_G"),
   ];
+  const fiatWheelSpeeds = [
+    numeric("FIAT_ABS.WHEEL_FRONT_LEFT_SPEED"),
+    numeric("FIAT_ABS.WHEEL_FRONT_RIGHT_SPEED"),
+    numeric("FIAT_ABS.WHEEL_REAR_LEFT_SPEED"),
+    numeric("FIAT_ABS.WHEEL_REAR_RIGHT_SPEED"),
+  ];
+  const fiatAverageWheelSpeed = fiatWheelSpeeds.every((value) => value !== null)
+    ? fiatWheelSpeeds.reduce<number>((total, value) => total + (value ?? 0), 0) / fiatWheelSpeeds.length
+    : null;
   const point: ReplaySample = {
     t_ms: 0,
     x_m: 0,
     y_m: 0,
     heading_deg: 0,
     distance_m: 0,
-    speed_kph: numeric("HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES") ?? numeric("OBD01.vehicle_speed"),
+    speed_kph: numeric("HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES") ?? numeric("OBD01.vehicle_speed") ?? fiatAverageWheelSpeed,
     engine_rpm: numeric("Dyn_CMM.P000_Com_nEng") ?? numeric("FIAT_ENGINE.ENGINE_RPM") ?? numeric("OBD01.engine_rpm"),
+    engine_load_pct: numeric("OBD01.engine_load"),
+    absolute_engine_load_pct: numeric("OBD01.absolute_engine_load"),
+    fuel_pressure_kpa: numeric("OBD01.fuel_pressure"),
+    manifold_pressure_kpa: numeric("OBD01.intake_manifold_pressure"),
+    mass_air_flow_g_s: numeric("OBD01.maf"),
+    throttle_position_pct: numeric("OBD01.throttle_position"),
+    relative_throttle_position_pct: numeric("OBD01.relative_throttle_position"),
+    throttle_position_b_pct: numeric("OBD01.absolute_throttle_position_b"),
+    throttle_position_c_pct: numeric("OBD01.absolute_throttle_position_c"),
+    commanded_throttle_actuator_pct: numeric("OBD01.commanded_throttle_actuator"),
+    fiat_throttle_candidate_pct: numeric("FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE"),
+    fiat_air_load_candidate_raw: numeric("FIAT_ENGINE.AIR_LOAD_CANDIDATE_RAW"),
+    ignition_advance_deg: numeric("OBD01.timing_advance"),
+    fuel_injection_timing_deg: numeric("OBD01.fuel_injection_timing"),
+    short_fuel_trim_pct: numeric("OBD01.short_fuel_trim_bank_1"),
+    long_fuel_trim_pct: numeric("OBD01.long_fuel_trim_bank_1"),
+    oxygen_sensor_b1s1_v: numeric("OBD01.oxygen_sensor_b1s1_voltage"),
+    oxygen_sensor_b1s2_v: numeric("OBD01.oxygen_sensor_b1s2_voltage"),
+    commanded_equivalence_ratio: numeric("OBD01.commanded_equivalence_ratio"),
+    evap_purge_pct: numeric("OBD01.commanded_evap_purge"),
+    engine_runtime_s: numeric("OBD01.engine_runtime"),
+    fuel_level_pct: numeric("OBD01.fuel_level"),
+    fuel_rate_lph: numeric("OBD01.fuel_rate"),
     steering_angle_deg: snapshot.steering.detected ? snapshot.steering.angle_degrees ?? null : null,
     steering_rate_deg_s: snapshot.steering.detected ? snapshot.steering.rate_degrees_s ?? null : null,
     driver_torque: snapshot.steering.detected ? snapshot.steering.driver_torque ?? null : null,
     accelerator_pct: numeric("Dyn_CMM.P002_Com_rAPP") ?? numeric("Dyn5_CMM.P334_ACCPed_Position") ?? numeric("DRIVER.GAS_PEDAL") ?? numeric("OBD01.accelerator_pedal_d") ?? numeric("OBD01.throttle_position"),
-    accelerator_secondary_pct: numeric("Dyn5_CMM.P334_ACCPed_Position"),
+    accelerator_secondary_pct: numeric("Dyn5_CMM.P334_ACCPed_Position") ?? numeric("OBD01.accelerator_pedal_e"),
+    relative_accelerator_position_pct: numeric("OBD01.relative_accelerator_position"),
     engine_torque_nm: numeric("Dyn_CMM.P003_Com_trqActOut"),
     idle_setpoint_rpm: numeric("Dat_CMM.P022_Com_nSetPLo"),
     fuel_consumption_candidate_mm3: numeric("Dat_CMM.P021_Com_volFlCons"),
@@ -1307,15 +1475,15 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     longitudinal_accel_ms2: numeric("HS2_DYN_ABR_38D.ACCEL_LONGI_ROUES"),
     lateral_accel_ms2: numeric("Dyn2_FRE.LATERAL_ACCELERATION"),
     yaw_rate_deg_s: numeric("Dyn2_FRE.YAW_RATE"),
-    brake_active: logical("Dat_BSI.P013_MainBrake"),
+    brake_active: logical("Dat_BSI.P013_MainBrake") ?? logical("FIAT_ABS.BRAKE_PEDAL_ACTIVE"),
     brake_system_state: integer("Dyn2_FRE.P226_Com_stBrkActv"),
-    brake_pressure_raw: numeric("Dyn2_FRE.BRAKE_PRESSURE"),
+    brake_pressure_raw: numeric("Dyn2_FRE.BRAKE_PRESSURE") ?? numeric("FIAT_ABS.BRAKE_PEDAL_STATE_RAW"),
     turn_signal: turnSignalValue === null ? null : ({ 0: "off", 1: "right", 2: "left", 3: "hazard" } as const)[turnSignalValue as 0 | 1 | 2 | 3] ?? "off",
     low_beam: logical("HS2_DAT7_BSI_612.ETAT_FEUX_CROIST"),
     high_beam: logical("HS2_DAT7_BSI_612.ETAT_FEUX_ROUTE"),
     reverse: logical("Dat_BSI.P103_Com_bRevGear"),
-    parking_brake: logical("Dat_BSI.PARKING_BRAKE"),
-    driver_door: logical("Dat_BSI.DRIVER_DOOR"),
+    parking_brake: logical("Dat_BSI.PARKING_BRAKE") ?? logical("FIAT_BODY.PARKING_BRAKE"),
+    driver_door: logical("Dat_BSI.DRIVER_DOOR") ?? logical("FIAT_BODY.DRIVER_DOOR_OPEN"),
     passenger_door: logical("Dat_BSI.PASSENGER_DOOR"),
     front_wiper_status: integer("HS2_DAT_MDD_CMD_452.FRONT_WIPER_STATUS"),
     fuel_liters_raw: numeric("HS2_DAT7_BSI_612.INFO_NIV_CARB"),
@@ -1348,10 +1516,10 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     acc_mode: integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE"),
     acc_requested: logical("HS2_DAT_MDD_CMD_452.RVV_ACC_ACTIVATION_REQ"),
     speed_setpoint_kph: numeric("HS2_DAT_MDD_CMD_452.SPEED_SETPOINT"),
-    wheel_front_left_kph: numeric("Dyn4_FRE.P263_VehV_VPsvValWhlFrtL"),
-    wheel_front_right_kph: numeric("Dyn4_FRE.P264_VehV_VPsvValWhlFrtR"),
-    wheel_rear_left_kph: numeric("Dyn4_FRE.P265_VehV_VPsvValWhlBckL"),
-    wheel_rear_right_kph: numeric("Dyn4_FRE.P266_VehV_VPsvValWhlBckR"),
+    wheel_front_left_kph: numeric("Dyn4_FRE.P263_VehV_VPsvValWhlFrtL") ?? fiatWheelSpeeds[0],
+    wheel_front_right_kph: numeric("Dyn4_FRE.P264_VehV_VPsvValWhlFrtR") ?? fiatWheelSpeeds[1],
+    wheel_rear_left_kph: numeric("Dyn4_FRE.P265_VehV_VPsvValWhlBckL") ?? fiatWheelSpeeds[2],
+    wheel_rear_right_kph: numeric("Dyn4_FRE.P266_VehV_VPsvValWhlBckR") ?? fiatWheelSpeeds[3],
   };
   const availableFields = Object.entries(point)
     .filter(([key, value]) => !["t_ms", "x_m", "y_m", "heading_deg", "distance_m"].includes(key) && value !== null && value !== undefined)
@@ -1546,14 +1714,31 @@ function EmptyState({ title, text, action }: { title: string; text: string; acti
 
 function App() {
   const [view, setView] = useState<View>(initialView);
-  const [toolsOpen, setToolsOpen] = useState(() => ["sensors", "identity", "injection", "psa", "dtcs", "discovery"].includes(initialView()));
+  const [openNavModule, setOpenNavModule] = useState<NavModule | null>(() => {
+    const initial = initialView();
+    if (["ecus", "sensors", "dtcs", "identity"].includes(initial)) return "diagnostic";
+    if (["injection", "maintenance", "studio"].includes(initial)) return "atelier";
+    if (["discovery", "inventory", "replay"].includes(initial)) return "learn";
+    return null;
+  });
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState("");
+  const [operatingMode, setOperatingMode] = useState<OperatingModeState | null>(null);
+  const [modeDialogOpen, setModeDialogOpen] = useState(false);
+  const [modeSwitchBusy, setModeSwitchBusy] = useState(false);
+  const [modeConfirmation, setModeConfirmation] = useState("");
+  const [modeChecks, setModeChecks] = useState({
+    vehicle_stationary: false,
+    ignition_on_engine_off: false,
+    stable_battery_voltage: false,
+    workshop_or_private_site: false,
+  });
   const [transportCatalog, setTransportCatalog] = useState<TransportCatalog | null>(null);
   const [selectedTransportId, setSelectedTransportId] = useState("");
   const [transportConnectBusy, setTransportConnectBusy] = useState(false);
   const [transportMessage, setTransportMessage] = useState("");
   const [report, setReport] = useState<Report | null>(null);
+  const [selectedEcuKey, setSelectedEcuKey] = useState("");
   const [diagnosticRegression, setDiagnosticRegression] = useState<RegressionResult | null>(null);
   const [diagnosticRegressionBusy, setDiagnosticRegressionBusy] = useState(false);
   const [traceImportResult, setTraceImportResult] = useState<TraceImportResult | null>(null);
@@ -1640,6 +1825,18 @@ function App() {
     customized: boolean;
   } | null>(null);
   const [sensorEditorBusy, setSensorEditorBusy] = useState(false);
+  const [liveSensorDefinitions, setLiveSensorDefinitions] = useState<LiveSensorDefinition[]>([]);
+  const [liveSensorEditor, setLiveSensorEditor] = useState<{
+    key?: string;
+    sourceKey: string;
+    label: string;
+    description: string;
+    category: string;
+    unit: string;
+    factor: string;
+    offset: string;
+  } | null>(null);
+  const [liveSensorEditorBusy, setLiveSensorEditorBusy] = useState(false);
   const [detectionEndsAt, setDetectionEndsAt] = useState<number | null>(null);
   const [detectionRemaining, setDetectionRemaining] = useState(0);
   const [detectionBusy, setDetectionBusy] = useState(false);
@@ -1727,6 +1924,7 @@ function App() {
         setStatusError("");
       })
       .catch((err) => setStatusError(err instanceof Error ? err.message : String(err)));
+    void refreshOperatingMode();
     refreshCapture();
     refreshTransportCatalog();
     refreshPassiveSensors();
@@ -1755,6 +1953,10 @@ function App() {
     const timer = window.setInterval(refreshCapture, capture?.active ? 800 : 2500);
     return () => window.clearInterval(timer);
   }, [capture?.active]);
+
+  useEffect(() => {
+    if (view === "security") void refreshOperatingMode();
+  }, [view, capture?.active]);
 
   useEffect(() => {
     if (capture?.active && captureGpsEnabled) startGpsTracking(capture.session_id);
@@ -1855,11 +2057,25 @@ function App() {
   useEffect(() => {
     if (selectedDiagnosticVin) window.localStorage.setItem("opendiag.diagnostic-vin", selectedDiagnosticVin);
     else window.localStorage.removeItem("opendiag.diagnostic-vin");
+    void refreshLiveSensorDefinitions();
   }, [selectedDiagnosticVin]);
 
   useEffect(() => () => studioInteractionCleanup.current?.(), []);
 
   const detectedEcus = report?.ecus.filter((ecu) => ecu.detected) ?? [];
+  const selectedEcu = detectedEcus.find((ecu) => ecu.key === selectedEcuKey)
+    ?? detectedEcus[0]
+    ?? report?.ecus[0]
+    ?? null;
+  useEffect(() => {
+    if (!report?.ecus.length) {
+      if (selectedEcuKey) setSelectedEcuKey("");
+      return;
+    }
+    if (!report.ecus.some((ecu) => ecu.key === selectedEcuKey && ecu.detected)) {
+      setSelectedEcuKey(report.ecus.find((ecu) => ecu.detected)?.key ?? report.ecus[0].key);
+    }
+  }, [report, selectedEcuKey]);
   const dtcs = useMemo(
     () => report?.ecus.flatMap((ecu) => ecu.dtcs.map((dtc) => ({ ecu, dtc }))) ?? [],
     [report],
@@ -1885,6 +2101,9 @@ function App() {
       : selectedDiagnosticVehicle?.vehicle_profile ?? identityProfileKey
   );
   const activeCommunicationProfile = vehicleProfiles.find((profile) => profile.key === activeCommunicationProfileKey) ?? selectedIdentityProfile;
+  const activeIsFiat500 = activeCommunicationProfileKey === "fiat_500_generic";
+  const activeVehicleVisual = vehicleVisualForProfile(activeCommunicationProfileKey);
+  const effectivePowertrainProfile: PowertrainProfile = activeIsFiat500 ? "gasoline" : powertrainProfile;
   useEffect(() => {
     if (!activeCommunicationProfileKey) return;
     setMaintenanceCatalog(null);
@@ -2081,12 +2300,12 @@ function App() {
       if (typeof raw === "string") return raw;
       return null;
     };
-    const advancedRows: SensorInventoryRow[] = vehicleSensorCandidates.map((candidate) => {
+    const advancedRows: SensorInventoryRow[] = sensorCandidatesForProfile(activeCommunicationProfileKey).map((candidate) => {
       const applicability = candidate.applicability ?? "all";
-      const excluded = powertrainProfile !== "unknown" && applicability !== "all" && applicability !== powertrainProfile;
-      let status: SensorInventoryStatus = excluded ? "not_applicable" : candidate.source === "psa" ? "to_decode" : "to_observe";
+      const excluded = effectivePowertrainProfile !== "unknown" && applicability !== "all" && applicability !== effectivePowertrainProfile;
+      let status: SensorInventoryStatus = excluded ? "not_applicable" : candidate.source === "can" ? "to_observe" : "to_decode";
       let value: string | null = null;
-      if (!excluded && candidate.source === "can") {
+      if (!excluded && candidate.liveFields?.length) {
         const observedField = (candidate.liveFields ?? []).find((field) => availableFields.has(field));
         if (observedField) {
           status = "measured";
@@ -2098,24 +2317,36 @@ function App() {
         label: candidate.label,
         system: candidate.system,
         description: candidate.description,
-        source: candidate.source === "can" ? "CAN direct" : "PSA spécifique",
+        source: candidate.source === "can" ? "CAN / OBD direct" : candidate.source === "fiat" ? "Fiat spécifique" : "PSA spécifique",
         status,
         statusLabel: statusLabels[status],
         priority: candidate.priority,
         optional: Boolean(candidate.optional),
         value,
-        reference: candidate.source === "can" ? candidate.liveFields?.join(" · ") : "DID ou trame constructeur à identifier",
+        reference: candidate.source === "can"
+          ? candidate.liveFields?.join(" · ")
+          : candidate.source === "fiat"
+            ? "Paramètre IAW/Body CAN Fiat à identifier"
+            : "DID ou trame PSA à identifier",
       };
     });
     const criticalObdKeys = new Set([
       "engine_rpm", "coolant_temperature", "fuel_pressure", "intake_manifold_pressure", "maf",
       "fuel_rail_gauge_pressure", "absolute_fuel_rail_pressure", "fuel_rate", "control_module_voltage",
+      "engine_load", "throttle_position", "timing_advance", "short_fuel_trim_bank_1",
+      "long_fuel_trim_bank_1", "oxygen_sensor_b1s1_voltage", "oxygen_sensor_b1s2_voltage",
+    ]);
+    const fiatNotApplicableObdKeys = new Set([
+      "short_fuel_trim_bank_2", "long_fuel_trim_bank_2",
+      "fuel_rail_gauge_pressure", "absolute_fuel_rail_pressure",
+      "commanded_egr", "egr_error",
     ]);
     const obdRows: SensorInventoryRow[] = diagnosticSensorCatalog.map((sensor) => {
       const value = injectionValues.get(sensor.key);
       const supported = Boolean(injectionSnapshot?.supported_pids.includes(sensor.pid));
-      let status: SensorInventoryStatus = "to_test";
-      if (injectionSnapshot) status = supported ? value?.error ? "supported" : typeof value?.value === "number" ? "measured" : "supported" : "unsupported";
+      const excluded = activeIsFiat500 && fiatNotApplicableObdKeys.has(sensor.key) && !supported;
+      let status: SensorInventoryStatus = excluded ? "not_applicable" : "to_test";
+      if (injectionSnapshot) status = supported ? value?.error ? "supported" : typeof value?.value === "number" ? "measured" : "supported" : excluded ? "not_applicable" : "unsupported";
       return {
         id: `obd-${sensor.key}`,
         label: sensor.name,
@@ -2133,7 +2364,7 @@ function App() {
     return [...obdRows, ...advancedRows].sort((left, right) =>
       left.priority - right.priority || left.system.localeCompare(right.system, "fr") || left.label.localeCompare(right.label, "fr"),
     );
-  }, [diagnosticSensorCatalog, injectionSnapshot, injectionValues, powertrainProfile, studioLiveSample]);
+  }, [activeCommunicationProfileKey, activeIsFiat500, diagnosticSensorCatalog, effectivePowertrainProfile, injectionSnapshot, injectionValues, studioLiveSample]);
   const inventorySystems = useMemo(
     () => ["Tous", ...Array.from(new Set(sensorInventoryRows.map((row) => row.system)))],
     [sensorInventoryRows],
@@ -2239,6 +2470,78 @@ function App() {
     }
   }
 
+  async function refreshOperatingMode() {
+    try {
+      setOperatingMode(await api<OperatingModeState>("/api/system/operating-mode"));
+    } catch {
+      setOperatingMode(null);
+    }
+  }
+
+  function openMaintenanceModeDialog() {
+    setError("");
+    setModeConfirmation("");
+    setModeChecks({
+      vehicle_stationary: false,
+      ignition_on_engine_off: false,
+      stable_battery_voltage: false,
+      workshop_or_private_site: false,
+    });
+    setModeDialogOpen(true);
+    void refreshOperatingMode();
+  }
+
+  async function activateReadOnlyMode() {
+    if (operatingMode?.mode === "read_only") return;
+    setModeSwitchBusy(true);
+    setError("");
+    try {
+      const payload = await api<OperatingModeState>("/api/system/operating-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "read_only", vin: selectedDiagnosticVin || null }),
+      });
+      setOperatingMode(payload);
+      setStatus(await api<Status>("/api/system/status"));
+      setPsaCatalog(await api<PsaAdvancedCatalog>("/api/diagnostic/psa/catalog").catch(() => null));
+      setModeDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModeSwitchBusy(false);
+    }
+  }
+
+  async function activateMaintenanceMode(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedDiagnosticVin) {
+      setError("Charge d’abord le véhicule concerné depuis le Garage.");
+      return;
+    }
+    setModeSwitchBusy(true);
+    setError("");
+    try {
+      const payload = await api<OperatingModeState>("/api/system/operating-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "maintenance",
+          confirmation: modeConfirmation,
+          vin: selectedDiagnosticVin,
+          ...modeChecks,
+        }),
+      });
+      setOperatingMode(payload);
+      setStatus(await api<Status>("/api/system/status"));
+      setPsaCatalog(await api<PsaAdvancedCatalog>("/api/diagnostic/psa/catalog").catch(() => null));
+      setModeDialogOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModeSwitchBusy(false);
+    }
+  }
+
   async function connectSelectedTransport() {
     const option = transportCatalog?.options.find((candidate) => candidate.id === selectedTransportId);
     if (!option || capture?.active) return;
@@ -2256,6 +2559,7 @@ function App() {
       setStatusError("");
       setTransportMessage(connection.verified ? "ESP32 validé" : "Connexion non validée");
       await refreshTransportCatalog();
+      await refreshOperatingMode();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setTransportMessage("Échec de connexion");
@@ -2559,9 +2863,10 @@ function App() {
     sensorRefreshBusy.current = true;
     try {
       const cursor = sensorCursorUs.current;
-      const path = cursor > 0
-        ? `/api/learn/sensors/passive/updates?since_us=${cursor}`
-        : "/api/learn/sensors/passive";
+      const query = new URLSearchParams();
+      if (cursor > 0) query.set("since_us", String(cursor));
+      if (selectedDiagnosticVin) query.set("vin", selectedDiagnosticVin);
+      const path = `/api/live-data/snapshot${query.toString() ? `?${query.toString()}` : ""}`;
       const payload = await api<PassiveSensorSnapshot>(path);
       setPassiveSensors((current) => {
         if (!current || current.session_id !== payload.session_id || cursor === 0) return payload;
@@ -2590,16 +2895,31 @@ function App() {
   async function openPassiveSensors() {
     setError("");
     setView("sensors");
-    await refreshPassiveSensors();
+    await Promise.all([refreshPassiveSensors(), refreshLiveSensorDefinitions()]);
   }
 
-  async function startFullSensorDetection(openSensors = true) {
+  async function refreshLiveSensorDefinitions() {
+    try {
+      const query = new URLSearchParams();
+      if (selectedDiagnosticVin) query.set("vin", selectedDiagnosticVin);
+      const definitions = await api<LiveSensorDefinition[]>(
+        `/api/live-data/sensors${query.toString() ? `?${query.toString()}` : ""}`,
+      );
+      setLiveSensorDefinitions(definitions);
+    } catch {
+      setLiveSensorDefinitions([]);
+    }
+  }
+
+  async function startFullSensorDetection(openSensors = true, liveDataReads = true) {
     setDetectionBusy(true);
     setError("");
     setSensorCategory("Essentiels");
     setSensorSearch("");
     try {
-      const payload = await api<PassiveSensorSnapshot>("/api/learn/sensors/passive/detect", {
+      const query = selectedDiagnosticVin ? `?vin=${encodeURIComponent(selectedDiagnosticVin)}` : "";
+      const endpoint = liveDataReads ? "/api/live-data/detect" : "/api/learn/sensors/passive/detect";
+      const payload = await api<PassiveSensorSnapshot>(`${endpoint}${query}`, {
         method: "POST",
       });
       sensorCursorUs.current = payload.cursor_us;
@@ -2670,6 +2990,107 @@ function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSensorEditorBusy(false);
+    }
+  }
+
+  function createLiveSensor() {
+    if (!selectedDiagnosticVin) {
+      setError("Charge d’abord un véhicule dans le Garage pour rattacher ce capteur à son VIN.");
+      return;
+    }
+    const source = passiveSensors?.signals.find((signal) => !signal.user_defined);
+    if (!source) {
+      setError("Aucune source CAN ou OBD décodée n’est disponible pour créer un capteur.");
+      return;
+    }
+    setLiveSensorEditor({
+      sourceKey: source.key,
+      label: "",
+      description: "",
+      category: source.category || "Personnalisés",
+      unit: source.unit ?? "",
+      factor: "1",
+      offset: "0",
+    });
+  }
+
+  function editLiveSensor(signal: PassiveCanSignal) {
+    const definition = liveSensorDefinitions.find((item) => item.key === signal.definition_key);
+    if (!definition) {
+      setError("Définition locale de ce capteur introuvable.");
+      return;
+    }
+    setLiveSensorEditor({
+      key: definition.key,
+      sourceKey: definition.source_key,
+      label: definition.label,
+      description: definition.description,
+      category: definition.category,
+      unit: definition.unit ?? "",
+      factor: String(definition.factor),
+      offset: String(definition.offset),
+    });
+  }
+
+  async function saveLiveSensor(event: React.FormEvent) {
+    event.preventDefault();
+    if (!liveSensorEditor) return;
+    setLiveSensorEditorBusy(true);
+    setError("");
+    const editing = Boolean(liveSensorEditor.key);
+    try {
+      const common = {
+        label: liveSensorEditor.label.trim(),
+        description: liveSensorEditor.description.trim(),
+        category: liveSensorEditor.category.trim() || "Personnalisés",
+        unit: liveSensorEditor.unit.trim() || null,
+        factor: Number(liveSensorEditor.factor),
+        offset: Number(liveSensorEditor.offset),
+      };
+      await api(
+        editing
+          ? `/api/live-data/sensors/${encodeURIComponent(liveSensorEditor.key!)}`
+          : "/api/live-data/sensors",
+        {
+          method: editing ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editing
+            ? { ...common, archived: false }
+            : {
+                ...common,
+                source_key: liveSensorEditor.sourceKey,
+                vin: selectedDiagnosticVin || null,
+              }),
+        },
+      );
+      await refreshLiveSensorDefinitions();
+      sensorCursorUs.current = 0;
+      await refreshPassiveSensors();
+      setLiveSensorEditor(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLiveSensorEditorBusy(false);
+    }
+  }
+
+  async function archiveLiveSensor() {
+    if (!liveSensorEditor?.key) return;
+    if (!window.confirm("Supprimer ce capteur des vues Live Data ? Son historique restera conservé.")) return;
+    setLiveSensorEditorBusy(true);
+    setError("");
+    try {
+      await api(`/api/live-data/sensors/${encodeURIComponent(liveSensorEditor.key)}`, {
+        method: "DELETE",
+      });
+      await refreshLiveSensorDefinitions();
+      sensorCursorUs.current = 0;
+      await refreshPassiveSensors();
+      setLiveSensorEditor(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLiveSensorEditorBusy(false);
     }
   }
 
@@ -3063,11 +3484,12 @@ function App() {
     }
   }
 
-  async function startCapture() {
+  async function startCapture(enableLiveDataReads = true) {
     if (transportConnectBusy) return;
     setError("");
     try {
-      const payload = await api<CaptureStatus>("/api/learn/capture/start", {
+      const endpoint = enableLiveDataReads ? "/api/live-data/start" : "/api/learn/capture/start";
+      const payload = await api<CaptureStatus>(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3185,7 +3607,9 @@ function App() {
     if (replayBusy || !replay || !currentReplayPoint) {
       return <>{selector}<section className="panel replay-loading"><EmptyState title="Préparation du trajet…" text="Décodage CAN, échantillonnage temporel et reconstruction locale de la trajectoire. La capture originale reste intacte." /></section></>;
     }
-    const replayProfileCompatible = !replay.vehicle_profile || replay.vehicle_profile.startsWith("peugeot_") || replay.vehicle_profile.startsWith("psa_");
+    const replayIsFiat500 = replay.vehicle_profile === "fiat_500_generic";
+    const replayVisual = vehicleVisualForProfile(replay.vehicle_profile);
+    const replayProfileCompatible = !replay.vehicle_profile || replayIsFiat500 || replay.vehicle_profile.startsWith("peugeot_") || replay.vehicle_profile.startsWith("psa_");
     if (!replayProfileCompatible) {
       return <>{selector}<section className="panel"><EmptyState title={`Replay visuel indisponible pour ${replay.vehicle}`} text="La capture est correctement classée sous ce VIN, mais le décodeur dynamique Fiat n’est pas encore validé. Le fichier CAN brut reste conservé et analysable sans afficher de fausses valeurs Peugeot." action={<button className="secondary-button" onClick={() => setView("discovery")}>Ouvrir l’analyse brute</button>} /></section></>;
     }
@@ -3195,10 +3619,13 @@ function App() {
     const progress = replay.duration_ms ? replayTimeMs / replay.duration_ms : 0;
     const speed = Math.max(0, point.speed_kph ?? 0);
     const rpm = Math.max(0, point.engine_rpm ?? 0);
-    const currentGearLabel = point.reverse || point.current_gear === 9 ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
+    const currentGearLabel = point.reverse || point.current_gear === 9 ? "R" : typeof point.current_gear === "number" ? point.current_gear > 0 ? String(point.current_gear) : "N" : "—";
     const targetGearLabel = point.reverse || point.target_gear === 9 ? "R" : (point.target_gear ?? 0) > 0 ? String(point.target_gear) : "—";
+    const steeringAvailable = typeof point.steering_angle_deg === "number";
     const steering = point.steering_angle_deg ?? 0;
+    const acceleratorAvailable = typeof point.accelerator_pct === "number";
     const accelerator = Math.max(0, Math.min(100, point.accelerator_pct ?? 0));
+    const brakeAvailable = typeof point.brake_active === "boolean";
     const blinkOn = Math.floor(replayTimeMs / 430) % 2 === 0;
     const leftIndicator = blinkOn && ["left", "hazard"].includes(point.turn_signal ?? "off");
     const rightIndicator = blinkOn && ["right", "hazard"].includes(point.turn_signal ?? "off");
@@ -3344,12 +3771,12 @@ function App() {
                 </g>)}
                 <circle cx={currentRouteGeometry.coordinates[0]?.x} cy={currentRouteGeometry.coordinates[0]?.y} r="5" className="route-start" />
                 <image
-                  href="/peugeot-308-top.png"
+                  href={replayVisual.topImage}
                   x={coordinate.x - 26}
                   y={coordinate.y - 26}
                   width="52"
                   height="52"
-                  transform={`rotate(${point.heading_deg + 180} ${coordinate.x} ${coordinate.y})`}
+                  transform={`rotate(${point.heading_deg + (replayVisual.frontAtTop ? 0 : 180)} ${coordinate.x} ${coordinate.y})`}
                   className="map-car"
                 />
                 <circle cx={coordinate.x} cy={coordinate.y} r="3" className="map-car-center" />
@@ -3369,13 +3796,13 @@ function App() {
 
           <article className="panel vehicle-panel">
             <div className="section-heading">
-              <div><span className="eyebrow">État carrosserie</span><h2>Peugeot 308 vue du dessus</h2></div>
-              <span className="source-badge candidate">CAN décodé</span>
+              <div><span className="eyebrow">État carrosserie</span><h2>{replayVisual.label} vue du dessus</h2></div>
+              <span className="source-badge candidate">{replayIsFiat500 ? "EOBD + CAN Fiat" : "CAN décodé"}</span>
             </div>
             <div className="vehicle-stage">
               <div className={`headlight-cone left ${point.low_beam || point.high_beam ? "on" : ""} ${point.high_beam ? "high" : ""}`} />
               <div className={`headlight-cone right ${point.low_beam || point.high_beam ? "on" : ""} ${point.high_beam ? "high" : ""}`} />
-              <img src="/peugeot-308-top.png" alt="Peugeot 308 vue du dessus" className="vehicle-image" />
+              <img src={replayVisual.topImage} alt={replayVisual.topAlt} className="vehicle-image" style={{ transform: replayVisual.frontAtTop ? "none" : "rotate(180deg)" }} />
               <span className="vehicle-mirror left" aria-label="Rétroviseur gauche visible"><i /></span>
               <span className="vehicle-mirror right" aria-label="Rétroviseur droit visible"><i /></span>
               <i className={`vehicle-lamp front left indicator ${leftIndicator ? "on" : ""}`} />
@@ -3400,57 +3827,82 @@ function App() {
 
         <section className="cockpit-grid">
           <article className="panel instrument-panel">
-            <div className="section-heading"><div><span className="eyebrow">Combiné</span><h2>Instruments conducteur</h2></div><span className="source-badge candidate">OpenDBC candidat</span></div>
+            <div className="section-heading"><div><span className="eyebrow">Combiné</span><h2>Instruments conducteur</h2></div><span className="source-badge candidate">{replayIsFiat500 ? "EOBD normalisé" : "OpenDBC candidat"}</span></div>
             <div className="instrument-layout">
               <div className="speed-gauge-wrap">
                 <div
                   className="speed-gauge"
                   style={{ background: `conic-gradient(from 225deg, #62e39a 0deg ${speedGaugeAngle}deg, #263039 ${speedGaugeAngle}deg 270deg, transparent 270deg)` }}
                 >
-                  <div><strong>{Math.round(speed)}</strong><span>km/h</span><small>ABS roues</small></div>
+                  <div><strong>{Math.round(speed)}</strong><span>km/h</span><small>{replayIsFiat500 ? "EOBD 01/0D" : "ABS roues"}</small></div>
                 </div>
               </div>
               <div className="engine-readouts">
                 <div><span>Régime moteur</span><strong>{Math.round(rpm).toLocaleString("fr-FR")} <small>tr/min</small></strong><i><b style={{ width: `${Math.min(100, rpm / 6000 * 100)}%` }} /></i></div>
-                <div><span>Couple moteur</span><strong>{(point.engine_torque_nm ?? 0).toFixed(0)} <small>Nm</small></strong></div>
-                <div><span>Accélération long.</span><strong>{(point.longitudinal_accel_ms2 ?? 0).toFixed(2)} <small>m/s²</small></strong></div>
-                <div><span>Accélération lat.</span><strong>{(point.lateral_accel_ms2 ?? 0).toFixed(2)} <small>m/s²</small></strong></div>
-                <div><span>Vitesse de lacet</span><strong>{(point.yaw_rate_deg_s ?? 0).toFixed(1)} <small>°/s</small></strong></div>
+                  {replayIsFiat500 ? <>
+                    <div><span>Charge moteur</span><strong>{typeof point.engine_load_pct === "number" ? point.engine_load_pct.toFixed(1) : "—"} <small>%</small></strong></div>
+                    <div><span>Pression collecteur</span><strong>{typeof point.manifold_pressure_kpa === "number" ? point.manifold_pressure_kpa.toFixed(0) : "—"} <small>kPa</small></strong></div>
+                    <div><span>Position papillon</span><strong>{typeof point.throttle_position_pct === "number" ? point.throttle_position_pct.toFixed(1) : typeof point.fiat_throttle_candidate_pct === "number" ? point.fiat_throttle_candidate_pct.toFixed(1) : "—"} <small>%</small></strong></div>
+                    <div><span>Air d'admission</span><strong>{typeof point.intake_air_temperature_c === "number" ? point.intake_air_temperature_c.toFixed(0) : "—"} <small>°C</small></strong></div>
+                    <div><span>Débit d'air</span><strong>{typeof point.mass_air_flow_g_s === "number" ? point.mass_air_flow_g_s.toFixed(2) : "—"} <small>g/s</small></strong></div>
+                    <div><span>Pédale accélérateur</span><strong>{typeof point.accelerator_pct === "number" ? point.accelerator_pct.toFixed(1) : "—"} <small>%</small></strong></div>
+                    <div><span>Tension batterie</span><strong>{typeof point.battery_voltage_v === "number" ? point.battery_voltage_v.toFixed(2) : "—"} <small>V</small></strong></div>
+                    <div><span>Température moteur</span><strong>{typeof point.coolant_temperature_c === "number" ? point.coolant_temperature_c.toFixed(0) : "—"} <small>°C</small></strong></div>
+                  </> : <>
+                    <div><span>Couple moteur</span><strong>{typeof point.engine_torque_nm === "number" ? point.engine_torque_nm.toFixed(0) : "—"} <small>Nm</small></strong></div>
+                    <div><span>Accélération long.</span><strong>{typeof point.longitudinal_accel_ms2 === "number" ? point.longitudinal_accel_ms2.toFixed(2) : "—"} <small>m/s²</small></strong></div>
+                    <div><span>Accélération lat.</span><strong>{typeof point.lateral_accel_ms2 === "number" ? point.lateral_accel_ms2.toFixed(2) : "—"} <small>m/s²</small></strong></div>
+                    <div><span>Vitesse de lacet</span><strong>{typeof point.yaw_rate_deg_s === "number" ? point.yaw_rate_deg_s.toFixed(1) : "—"} <small>°/s</small></strong></div>
+                  </>}
                 <div className={`gear-readout ${point.gear_shift_active ? "shifting" : ""}`}>
                   <span>Rapport engagé</span>
                   <strong>{currentGearLabel}</strong>
                   <div className="gear-scale">
                     {[1, 2, 3, 4, 5, 6].map((gear) => <b key={gear} className={point.current_gear === gear ? "active" : point.target_gear === gear ? "target" : ""}>{gear}</b>)}
                   </div>
-                  <small>Cible {targetGearLabel} · {point.gear_shift_active ? "changement en cours" : "rapport stabilisé"}</small>
+                  <small>{typeof point.current_gear === "number" || point.reverse ? `Cible ${targetGearLabel} · ${point.gear_shift_active ? "changement en cours" : "rapport stabilisé"}` : "Rapport non exposé pour cette session"}</small>
                 </div>
               </div>
               <div className="driver-inputs">
                 <div className="steering-wheel-block">
-                  <img src="/peugeot-308-gt-steering.png" style={{ transform: `rotate(${Math.max(-540, Math.min(540, -steering))}deg)` }} alt={`Volant Peugeot GT tourné à ${steeringDirection}`} />
-                  <strong>{Math.abs(steering).toFixed(1)}°</strong><span>angle volant · {steeringDirection}</span>
+                  <img src={replayVisual.steeringImage} style={{ transform: `rotate(${steeringAvailable ? Math.max(-540, Math.min(540, -steering)) : 0}deg)` }} alt={replayVisual.steeringAlt} />
+                  <strong>{steeringAvailable ? `${Math.abs(steering).toFixed(1)}°` : "—"}</strong><span>{steeringAvailable ? `angle volant · ${steeringDirection}` : "angle volant non décodé"}</span>
                 </div>
                 <div className="pedal-stack">
-                  <div><span>Accélérateur</span><i><b style={{ height: `${accelerator}%` }} /></i><strong>{accelerator.toFixed(0)}%</strong></div>
-                  <div className={point.brake_active ? "pressed" : ""}><span>Frein</span><i><b style={{ height: point.brake_active ? "100%" : "0%" }} /></i><strong>{point.brake_active ? "ON" : "OFF"}</strong></div>
+                  <div><span>Accélérateur</span><i><b style={{ height: `${acceleratorAvailable ? accelerator : 0}%` }} /></i><strong>{acceleratorAvailable ? `${accelerator.toFixed(0)}%` : "—"}</strong></div>
+                  <div className={point.brake_active ? "pressed" : ""}><span>Frein</span><i><b style={{ height: point.brake_active ? "100%" : "0%" }} /></i><strong>{brakeAvailable ? point.brake_active ? "ON" : "OFF" : "—"}</strong></div>
                 </div>
               </div>
             </div>
           </article>
 
           <article className="panel adas-panel">
-            <div className="section-heading"><div><span className="eyebrow">Aides à la conduite</span><h2>Lecture ADAS</h2></div><span className="source-badge candidate">À confirmer</span></div>
-            <div className={`lane-visual departure-${laneDeparture}`}>
-              <i className="lane-line left" /><i className="lane-line right" />
-              <span className="lane-car">▲</span>
-              <b>{point.lane_departure ? "Alerte de ligne" : "Voie stable"}</b>
-            </div>
-            <div className="adas-state-grid">
-              <div><span>Maintien dans la voie</span><strong className={point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>{laneAssistStatusLabel(point.lane_assist_status)}</strong><small>État brut {point.lane_assist_status ?? "—"} · {point.lka_active ? "activation demandée" : "aucune activation LXA"}</small></div>
-              <div><span>Régulation longitudinale</span><strong>{point.acc_requested ? "Demandée" : "Inactive"}</strong><small>Mode brut {point.acc_mode ?? "—"} · consigne {point.speed_setpoint_kph ?? 0} km/h</small></div>
-              <div><span>Frein conducteur</span><strong className={point.brake_active ? "danger-text" : ""}>{point.brake_active ? "Appuyé" : "Relâché"}</strong><small>État système {point.brake_system_state ?? "—"} · pression brute {point.brake_pressure_raw?.toFixed(0) ?? "—"}</small></div>
-              <div><span>Effort au volant</span><strong>{point.driver_torque?.toFixed(0) ?? "—"}</strong><small>Valeur colonne non calibrée en N·m</small></div>
-            </div>
+            {replayIsFiat500 ? <>
+              <div className="section-heading"><div><span className="eyebrow">Reconstruction Fiat</span><h2>Qualité du trajet</h2></div><span className="source-badge candidate">Pas de valeur inventée</span></div>
+              <div className="route-capability-card">
+                <strong>{replay.gps_available ? "Trajectoire GPS disponible" : steeringAvailable || typeof point.yaw_rate_deg_s === "number" ? "Trajectoire CAN estimable" : "Cap non observable sans GPS"}</strong>
+                <p>La vitesse et le régime viennent de l’EOBD/du CAN Fiat. Les virages utilisent le GPS du navigateur tant que l’angle volant ou le lacet Fiat ne sont pas décodés.</p>
+              </div>
+              <div className="adas-state-grid">
+                <div><span>Vitesse EOBD</span><strong>{typeof point.speed_kph === "number" ? "Mesurée" : "Absente"}</strong><small>Mode 01 · PID 0D</small></div>
+                <div><span>Angle volant</span><strong>{steeringAvailable ? `${steering.toFixed(1)}°` : "À décoder"}</strong><small>Capteur ESP optionnel selon équipement</small></div>
+                <div><span>Vitesse de lacet</span><strong>{typeof point.yaw_rate_deg_s === "number" ? `${point.yaw_rate_deg_s.toFixed(1)}°/s` : "À décoder"}</strong><small>Disponible seulement avec le bloc ESP/capteur combiné</small></div>
+                <div><span>GPS navigateur</span><strong>{replay.gps_available ? `${replay.gps_point_count} points` : "Absent"}</strong><small>Source privilégiée pour cette première version Fiat</small></div>
+              </div>
+            </> : <>
+              <div className="section-heading"><div><span className="eyebrow">Aides à la conduite</span><h2>Lecture ADAS</h2></div><span className="source-badge candidate">À confirmer</span></div>
+              <div className={`lane-visual departure-${laneDeparture}`}>
+                <i className="lane-line left" /><i className="lane-line right" />
+                <span className="lane-car">▲</span>
+                <b>{point.lane_departure ? "Alerte de ligne" : "Voie stable"}</b>
+              </div>
+              <div className="adas-state-grid">
+                <div><span>Maintien dans la voie</span><strong className={point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>{laneAssistStatusLabel(point.lane_assist_status)}</strong><small>État brut {point.lane_assist_status ?? "—"} · {point.lka_active ? "activation demandée" : "aucune activation LXA"}</small></div>
+                <div><span>Régulation longitudinale</span><strong>{point.acc_requested ? "Demandée" : "Inactive"}</strong><small>Mode brut {point.acc_mode ?? "—"} · consigne {point.speed_setpoint_kph ?? 0} km/h</small></div>
+                <div><span>Frein conducteur</span><strong className={point.brake_active ? "danger-text" : ""}>{point.brake_active ? "Appuyé" : "Relâché"}</strong><small>État système {point.brake_system_state ?? "—"} · pression brute {point.brake_pressure_raw?.toFixed(0) ?? "—"}</small></div>
+                <div><span>Effort au volant</span><strong>{point.driver_torque?.toFixed(0) ?? "—"}</strong><small>Valeur colonne non calibrée en N·m</small></div>
+              </div>
+            </>}
           </article>
         </section>
 
@@ -3497,7 +3949,7 @@ function App() {
             </div>
           )}
           <p className="indicator-reference-note">
-            Référentiel visuel basé sur les catégories du <a href={PEUGEOT_308_HANDBOOK_URL} target="_blank" rel="noreferrer">manuel officiel Peugeot 308</a>. Un pictogramme gris signifie uniquement que son signal n'est pas présent dans la capture.
+            Référentiel visuel basé sur les catégories du <a href={replayIsFiat500 ? FIAT_500_HANDBOOK_URL : PEUGEOT_308_HANDBOOK_URL} target="_blank" rel="noreferrer">manuel officiel {replayIsFiat500 ? "Fiat 500" : "Peugeot 308"}</a>. Un pictogramme gris signifie uniquement que son signal n'est pas présent dans la capture.
           </p>
         </section>
 
@@ -3511,10 +3963,11 @@ function App() {
             <div className="gauge-picker">
               <select value={replayGaugeToAdd} onChange={(event) => setReplayGaugeToAdd(event.target.value)} aria-label="Capteur à ajouter">
                 <option value="">Ajouter un capteur…</option>
-                {addableGaugeDefinitions.map((definition) => <option key={definition.key} value={definition.key}>{definition.label}</option>)}
+                {addableGaugeDefinitions.map((definition) => <option key={definition.key} value={definition.key}>{definition.label}{replay.field_quality[String(definition.key)]?.includes("validated") ? "" : " · à confirmer"}</option>)}
                 <option value="__fuel_consumption_unavailable" disabled>Consommation — diagnostic OBD requis</option>
               </select>
               <button className="secondary-button" disabled={!replayGaugeToAdd} onClick={addReplayGauge}>Ajouter</button>
+              <button className="ghost-button" disabled={!availableGaugeDefinitions.length} onClick={() => setSelectedReplayGaugeKeys(availableGaugeDefinitions.map((definition) => String(definition.key)))}>Tout afficher</button>
             </div>
           </div>
           {selectedGaugeDefinitions.length === 0 ? (
@@ -3565,9 +4018,10 @@ function App() {
             <div className="gauge-picker">
               <select value={replayGraphToAdd} onChange={(event) => setReplayGraphToAdd(event.target.value)} aria-label="Graphe à ajouter">
                 <option value="">Ajouter un graphe…</option>
-                {addableGraphDefinitions.map((definition) => <option key={definition.key} value={definition.key}>{definition.label}</option>)}
+                {addableGraphDefinitions.map((definition) => <option key={definition.key} value={definition.key}>{definition.label}{replay.field_quality[String(definition.key)]?.includes("validated") ? "" : " · à confirmer"}</option>)}
               </select>
               <button className="secondary-button" disabled={!replayGraphToAdd} onClick={addReplayGraph}>Ajouter</button>
+              <button className="ghost-button" disabled={!availableGraphDefinitions.length} onClick={() => setSelectedReplayGraphKeys(availableGraphDefinitions.map((definition) => String(definition.key)))}>Tout afficher</button>
             </div>
           </div>
           {selectedGraphDefinitions.length === 0 ? (
@@ -3683,36 +4137,38 @@ function App() {
           </div>
         );
       }
-      if (!point) return <div className="studio-widget-empty">{!directPsaCompatible ? `Profil ${activeVehicleLabel} actif. Seuls les signaux validés pour cette marque seront affichés; les autres trames restent brutes.` : "Démarre le direct pour recevoir les capteurs CAN."}</div>;
+      if (!point) return <div className="studio-widget-empty">{!directPsaCompatible ? `Profil ${activeVehicleLabel} actif. Démarre le direct Live Data pour recevoir le CAN Fiat et les PID EOBD autorisés.` : "Démarre le direct pour recevoir les capteurs CAN."}</div>;
       if (widget.kind === "speed") {
         const speed = Math.max(0, point.speed_kph ?? 0);
         const ratio = Math.min(1, speed / 150);
         return (
           <div className="studio-speed-widget">
             <div className="studio-speed-dial" style={{ background: `conic-gradient(from 225deg, #62e39a 0deg ${ratio * 270}deg, #263039 ${ratio * 270}deg 270deg, transparent 270deg)` }}>
-              <div><strong>{Math.round(speed)}</strong><span>km/h</span><small>ABS roues</small></div>
+              <div><strong>{Math.round(speed)}</strong><span>km/h</span><small>{activeIsFiat500 ? "EOBD 01/0D" : "ABS roues"}</small></div>
             </div>
           </div>
         );
       }
       if (widget.kind === "steering") {
+        const available = typeof point.steering_angle_deg === "number";
         const steering = point.steering_angle_deg ?? 0;
         const direction = Math.abs(steering) < 1 ? "centré" : steering < 0 ? "droite" : "gauche";
         return (
           <div className="studio-steering-widget">
-            <img src="/peugeot-308-gt-steering.png" style={{ transform: `rotate(${Math.max(-540, Math.min(540, -steering))}deg)` }} alt="Volant Peugeot 308 GT" />
-            <strong>{Math.abs(steering).toFixed(1)}°</strong><span>{direction}</span>
+            <img src={activeVehicleVisual.steeringImage} style={{ transform: `rotate(${available ? Math.max(-540, Math.min(540, -steering)) : 0}deg)` }} alt={activeVehicleVisual.steeringAlt} />
+            <strong>{available ? `${Math.abs(steering).toFixed(1)}°` : "—"}</strong><span>{available ? direction : "à décoder"}</span>
           </div>
         );
       }
       if (widget.kind === "gear") {
-        const label = point.reverse || point.current_gear === 9 ? "R" : (point.current_gear ?? 0) > 0 ? String(point.current_gear) : "N";
+        const available = typeof point.current_gear === "number" || Boolean(point.reverse);
+        const label = point.reverse || point.current_gear === 9 ? "R" : typeof point.current_gear === "number" ? point.current_gear > 0 ? String(point.current_gear) : "N" : "—";
         const targetLabel = point.reverse || point.target_gear === 9 ? "R" : point.target_gear ?? "—";
         return (
           <div className={`studio-gear-widget ${point.gear_shift_active ? "shifting" : ""}`}>
             <strong>{label}</strong>
             <div>{[1, 2, 3, 4, 5, 6].map((gear) => <b key={gear} className={point.current_gear === gear ? "active" : point.target_gear === gear ? "target" : ""}>{gear}</b>)}</div>
-            <span>Cible {targetLabel}</span><small>{point.gear_shift_active ? "Changement en cours" : "Rapport stabilisé"}</small>
+            <span>{available ? `Cible ${targetLabel}` : "Boîte manuelle"}</span><small>{available ? point.gear_shift_active ? "Changement en cours" : "Rapport stabilisé" : "Rapport non exposé"}</small>
           </div>
         );
       }
@@ -3723,17 +4179,17 @@ function App() {
         return (
           <div className="studio-vehicle-widget">
             <div className={`studio-light-beam left ${point.low_beam || point.high_beam ? "on" : ""}`} /><div className={`studio-light-beam right ${point.low_beam || point.high_beam ? "on" : ""}`} />
-            <img src="/peugeot-308-top.png" alt="Peugeot 308 vue du dessus" />
+            <img src={activeVehicleVisual.topImage} alt={activeVehicleVisual.topAlt} />
             <i className={`studio-car-lamp front left ${left ? "on" : ""}`} /><i className={`studio-car-lamp front right ${right ? "on" : ""}`} />
             <i className={`studio-car-lamp rear left ${left ? "on" : ""}`} /><i className={`studio-car-lamp rear right ${right ? "on" : ""}`} />
-            <span>{point.low_beam ? "Feux ON" : "Feux OFF"} · {point.turn_signal ?? "off"}</span>
+            <span>{typeof point.low_beam === "boolean" ? point.low_beam ? "Feux ON" : "Feux OFF" : "Feux à décoder"} · {point.turn_signal ?? "clignotants à décoder"}</span>
           </div>
         );
       }
       if (widget.kind === "gauge") {
         const definition = replayGaugeCatalog.find((candidate) => candidate.key === widget.key);
         if (!definition) return <div className="studio-widget-empty">Capteur inconnu.</div>;
-        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté sur cette Peugeot. Consulte le rapport de validation.</div>;
+        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté pour ce véhicule. Consulte le rapport de validation.</div>;
         const raw = point[definition.key];
         const numeric = typeof raw === "number" ? raw : null;
         const logical = typeof raw === "boolean" ? raw : null;
@@ -3749,7 +4205,7 @@ function App() {
       if (widget.kind === "numeric") {
         const definition = replayGaugeCatalog.find((candidate) => candidate.key === widget.key);
         if (!definition) return <div className="studio-widget-empty">Capteur inconnu.</div>;
-        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté sur cette Peugeot. Consulte le rapport de validation.</div>;
+        if (definition.rejected) return <div className="studio-widget-empty">Décodage rejeté pour ce véhicule. Consulte le rapport de validation.</div>;
         const raw = point[definition.key];
         const numeric = typeof raw === "number" ? raw : null;
         const logical = typeof raw === "boolean" ? raw : null;
@@ -4071,7 +4527,7 @@ function App() {
                 <h2>État de sécurité</h2>
               </div>
               <span className={`status-pill ${status?.read_only ? "good" : status ? "bad" : "neutral"}`}>
-                {status ? (status.read_only ? "Lecture seule" : "Écriture active") : "État inconnu"}
+                {status ? (status.read_only ? "Lecture seule" : "Maintenance contrôlée") : "État inconnu"}
               </span>
             </div>
             <div className="safety-list">
@@ -4083,7 +4539,7 @@ function App() {
             </div>
             <div className="safety-action">
               <div><strong>Commandes actives</strong><span>{status?.psa_actuator_enabled && !status?.read_only ? "Configurées · armement requis" : "Verrouillées par défaut"}</span></div>
-              <button className="ghost-button" onClick={() => { setPsaSection("actions"); setToolsOpen(true); setView("psa"); }}>Voir les autorisations</button>
+              <button className="ghost-button" onClick={() => setView("security")}>Voir le moteur de sécurité</button>
             </div>
             {!status && (
               <p className="inline-alert danger-alert">
@@ -4178,10 +4634,10 @@ function App() {
                 <div><span>Vitesse rotation</span><strong>{passiveSensors.steering.rate_degrees_s?.toFixed(0) ?? "—"}</strong><small>°/s</small></div>
                 <div><span>Couple conducteur</span><strong>{passiveSensors.steering.driver_torque?.toFixed(0) ?? "—"}</strong><small>valeur CAN</small></div>
               </div>
-              <div className="steering-sources">
+              {LAB_MODE && <div className="steering-sources">
                 <code>{passiveSensors.steering.angle_source ?? "Angle indisponible"}</code>
                 <code>{passiveSensors.steering.torque_source ?? "Couple indisponible"}</code>
-              </div>
+              </div>}
               {passiveSensors.steering.warning && <p className="inline-alert">{passiveSensors.steering.warning}</p>}
             </>
           ) : (
@@ -4198,9 +4654,10 @@ function App() {
                 ? `${passiveSensors.decoded_signal_count} signaux live · ${passiveSensors.observed_message_count} messages OpenDBC · ${passiveSensors.frame_count.toLocaleString("fr-FR")} trames`
                 : "En attente de la capture"}</p>
             </div>
-            <button className="secondary-button" onClick={() => refreshPassiveSensors()}>
-              Actualiser
-            </button>
+            <div className="section-actions">
+              <button className="ghost-button" onClick={createLiveSensor} disabled={!selectedDiagnosticVin || !passiveSensors?.signals.some((signal) => !signal.user_defined)}>Ajouter un capteur</button>
+              <button className="secondary-button" onClick={() => refreshPassiveSensors()}>Actualiser</button>
+            </div>
           </div>
 
           <div className="sensor-toolbar">
@@ -4233,20 +4690,20 @@ function App() {
                 {visiblePassiveSignals.map((signal) => (
                   <article className={`sensor-live-row ${signal.confidence} ${signal.customized ? "customized" : ""}`} key={signal.key}>
                     <div className="sensor-live-name">
-                      <span>{signal.category}{signal.essential ? " · essentiel" : ""}</span>
+                      <span>{signal.category}{signal.essential ? " · essentiel" : ""}{signal.user_defined ? " · local au véhicule" : ""}</span>
                       <strong>{signal.display_name}</strong>
                       <p>{signal.description}</p>
                     </div>
                     <div className="sensor-live-value">
                       <strong>{String(signal.value ?? "—")}</strong>
                       <span>{signal.unit || "sans unité"}</span>
-                      {signal.customized && <small>Brut : {String(signal.raw_value ?? "—")} {signal.source_unit ?? ""}</small>}
+                  {LAB_MODE && signal.customized && <small>Source : {String(signal.raw_value ?? "—")} {signal.source_unit ?? ""}</small>}
                     </div>
                     <div className="sensor-live-source">
-                      <code>{signal.source === "obd" ? `Mode 01 · PID 0x${(signal.pid ?? 0).toString(16).toUpperCase().padStart(2, "0")}` : `${hexadecimal(signal.arbitration_id)} · ${signal.message}.${signal.signal}`}</code>
-                      <span>{signal.confidence === "standardized" ? "OBD-II normalisé" : signal.confidence === "validated" ? "Validé sur le véhicule" : "Définition OpenDBC à confirmer"}</span>
+                      <code>{signal.user_defined ? "Capteur local dérivé" : signal.source === "obd" ? "Lecture OBD-II normalisée" : "CAN constructeur décodé"}</code>
+                      <span>{signal.user_defined ? "Définition utilisateur observée" : signal.confidence === "standardized" ? "OBD-II normalisé" : signal.confidence === "validated" ? "Validé sur le véhicule" : signal.confidence === "vehicle_observed_candidate" ? "Trame Fiat observée · décodage à confirmer" : "Définition OpenDBC à confirmer"}</span>
                     </div>
-                    {signal.source === "can" ? <button className="ghost-button" onClick={() => editPassiveSensor(signal)}>
+                    {signal.user_defined ? <button className="ghost-button" onClick={() => editLiveSensor(signal)}>Modifier</button> : signal.source === "can" ? <button className="ghost-button" onClick={() => editPassiveSensor(signal)}>
                       {signal.customized ? "Modifier" : "Corriger"}
                     </button> : <span className="source-badge measured">OBD</span>}
                   </article>
@@ -4269,7 +4726,7 @@ function App() {
           <div className="sensor-editor-backdrop" role="presentation" onMouseDown={() => setSensorEditor(null)}>
             <form className="sensor-editor" onSubmit={savePassiveSensorOverride} onMouseDown={(event) => event.stopPropagation()}>
               <div className="section-heading">
-                <div><span className="eyebrow">Correction locale persistante</span><h2>{sensorEditor.key}</h2></div>
+                <div><span className="eyebrow">Correction locale persistante</span><h2>Corriger un capteur</h2>{LAB_MODE && <code>{sensorEditor.key}</code>}</div>
                 <button type="button" className="ghost-button" onClick={() => setSensorEditor(null)}>Fermer</button>
               </div>
               <label>Nom lisible<input value={sensorEditor.label} onChange={(event) => setSensorEditor({ ...sensorEditor, label: event.target.value })} /></label>
@@ -4283,6 +4740,39 @@ function App() {
               <div className="sensor-editor-actions">
                 {sensorEditor.customized && <button type="button" className="stop-button" onClick={resetPassiveSensorOverride} disabled={sensorEditorBusy}>Réinitialiser</button>}
                 <button type="submit" className="primary-button" disabled={sensorEditorBusy}>{sensorEditorBusy ? "Enregistrement…" : "Enregistrer la correction"}</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {liveSensorEditor && (
+          <div className="sensor-editor-backdrop" role="presentation" onMouseDown={() => setLiveSensorEditor(null)}>
+            <form className="sensor-editor" onSubmit={saveLiveSensor} onMouseDown={(event) => event.stopPropagation()}>
+              <div className="section-heading">
+                <div><span className="eyebrow">Registre Live Data · portée VIN</span><h2>{liveSensorEditor.key ? "Modifier le capteur" : "Ajouter un capteur"}</h2></div>
+                <button type="button" className="ghost-button" onClick={() => setLiveSensorEditor(null)}>Fermer</button>
+              </div>
+              <label>Source physique<select value={liveSensorEditor.sourceKey} disabled={Boolean(liveSensorEditor.key)} onChange={(event) => {
+                const source = passiveSensors?.signals.find((signal) => signal.key === event.target.value);
+                setLiveSensorEditor({
+                  ...liveSensorEditor,
+                  sourceKey: event.target.value,
+                  category: source?.category ?? liveSensorEditor.category,
+                  unit: source?.unit ?? liveSensorEditor.unit,
+                });
+              }}>{passiveSensors?.signals.filter((signal) => !signal.user_defined).map((signal) => <option value={signal.key} key={signal.key}>{signal.display_name} · {signal.category}</option>)}</select></label>
+              <label>Nom lisible<input required value={liveSensorEditor.label} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, label: event.target.value })} /></label>
+              <label>Explication<textarea value={liveSensorEditor.description} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, description: event.target.value })} /></label>
+              <div className="sensor-editor-grid">
+                <label>Catégorie<input value={liveSensorEditor.category} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, category: event.target.value })} /></label>
+                <label>Unité<input value={liveSensorEditor.unit} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, unit: event.target.value })} /></label>
+                <label>Facteur<input type="number" step="any" value={liveSensorEditor.factor} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, factor: event.target.value })} /></label>
+                <label>Offset<input type="number" step="any" value={liveSensorEditor.offset} onChange={(event) => setLiveSensorEditor({ ...liveSensorEditor, offset: event.target.value })} /></label>
+              </div>
+              <p className="inline-alert">Ce capteur est rattaché au VIN {selectedDiagnosticVin}. La suppression l’archive pour préserver les anciennes captures.</p>
+              <div className="sensor-editor-actions">
+                {liveSensorEditor.key && <button type="button" className="stop-button" onClick={() => void archiveLiveSensor()} disabled={liveSensorEditorBusy}>Supprimer</button>}
+                <button type="submit" className="primary-button" disabled={liveSensorEditorBusy || !liveSensorEditor.label.trim()}>{liveSensorEditorBusy ? "Enregistrement…" : liveSensorEditor.key ? "Enregistrer" : "Ajouter au Live Data"}</button>
               </div>
             </form>
           </div>
@@ -4301,7 +4791,7 @@ function App() {
         return <button className={className} disabled={injectionBusy || !obdReadReady} onClick={() => { setValidationFocusId(row.id); void readInjectionParameters("inventory"); }}>{injectionBusy ? "Lecture…" : "Tester maintenant en OBD"}</button>;
       }
       if (row.status === "to_observe") {
-        return <button className={className} disabled={detectionBusy || detectionRemaining > 0} onClick={() => { setValidationFocusId(row.id); void startFullSensorDetection(false); }}>{detectionRemaining > 0 ? `${detectionRemaining} s` : "Observer le CAN 30 s"}</button>;
+        return <button className={className} disabled={detectionBusy || detectionRemaining > 0} onClick={() => { setValidationFocusId(row.id); void startFullSensorDetection(false, false); }}>{detectionRemaining > 0 ? `${detectionRemaining} s` : "Observer le CAN 30 s"}</button>;
       }
       if (row.status === "to_decode") {
         return <button className={className} onClick={() => { setValidationFocusId(row.id); setView("discovery"); }}>Créer une capture annotée</button>;
@@ -4318,26 +4808,26 @@ function App() {
     const validationMethod = focusedValidationRow?.status === "to_observe"
       ? { code: "CAN", title: "Observation passive", text: "Provoque uniquement la grandeur ciblée pendant la fenêtre de 30 secondes. La valeur doit évoluer dans le bon sens et revenir au repos." }
       : focusedValidationRow?.status === "to_decode"
-        ? { code: "PSA", title: "Découverte annotée", text: "Répète trois fois la même action avec le même marqueur. Le post-traitement comparera automatiquement les fenêtres avant et après." }
+        ? { code: activeIsFiat500 ? "FIAT" : "PSA", title: "Découverte annotée", text: "Répète trois fois la même action avec le même marqueur. Le post-traitement comparera automatiquement les fenêtres avant et après." }
         : { code: "OBD", title: "Lecture moteur normalisée", text: "Le calculateur indique d’abord les PID supportés, puis la valeur est lue et contrôlée avant d’être classée mesurée." };
 
     return (
       <div className="sensor-inventory-page">
         <section className="panel inventory-hero">
           <div className="inventory-hero-copy">
-            <span className="eyebrow">Couverture diagnostic de la Peugeot 308</span>
+            <span className="eyebrow">Couverture diagnostic de {activeVehicleLabel}</span>
             <h2>{coverage}% des informations applicables couvertes</h2>
-            <p>Le classement est recalculé à partir du dernier direct CAN et du dernier relevé OBD-II. Une ligne « à décoder » correspond à une donnée PSA plausible, pas à la preuve que le véhicule possède physiquement ce capteur.</p>
+            <p>Le classement est recalculé à partir du dernier direct CAN et du dernier relevé OBD-II. Une ligne « à décoder » correspond à une donnée {activeIsFiat500 ? "Fiat documentée ou plausible" : "PSA plausible"}, pas à la preuve que le véhicule expose déjà sa valeur.</p>
             <div className="inventory-progress"><i style={{ width: `${coverage}%` }} /></div>
           </div>
           <label className="powertrain-selector">
             <span>Motorisation</span>
-            <select value={powertrainProfile} onChange={(event) => setPowertrainProfile(event.target.value as PowertrainProfile)}>
+            <select value={effectivePowertrainProfile} disabled={activeIsFiat500} onChange={(event) => setPowertrainProfile(event.target.value as PowertrainProfile)}>
               <option value="unknown">Encore inconnue</option>
-              <option value="gasoline">Essence THP / PureTech</option>
+              <option value="gasoline">{activeIsFiat500 ? "Essence 1.2 8V" : "Essence THP / PureTech"}</option>
               <option value="diesel">Diesel BlueHDi</option>
             </select>
-            <small>{powertrainProfile === "unknown" ? "FAP, SCR et paramètres essence restent tous visibles." : "Les éléments incompatibles sont classés non applicables."}</small>
+            <small>{activeIsFiat500 ? "Profil confirmé pour la Fiat 500 2010." : powertrainProfile === "unknown" ? "FAP, SCR et paramètres essence restent tous visibles." : "Les éléments incompatibles sont classés non applicables."}</small>
           </label>
         </section>
 
@@ -4385,17 +4875,17 @@ function App() {
             <div><span className="eyebrow">Actualiser les preuves</span><h2>Tester la couverture réelle</h2><p>Les deux lectures sont séparées : le CAN passif n'émet rien; l'OBD-II envoie des requêtes de lecture au calculateur moteur.</p></div>
           </div>
           <div className="inventory-actions">
-            <button className="inventory-action" onClick={() => void startFullSensorDetection(false)} disabled={detectionBusy || detectionRemaining > 0}>
+            <button className="inventory-action" onClick={() => void startFullSensorDetection(false, false)} disabled={detectionBusy || detectionRemaining > 0}>
               <span>CAN</span><div><strong>{detectionRemaining > 0 ? `Observation · ${detectionRemaining} s` : "Observer le CAN pendant 30 s"}</strong><small>Recherche les signaux diffusés spontanément</small></div>
             </button>
             <button className="inventory-action" onClick={() => void readInjectionParameters("inventory")} disabled={injectionBusy || !obdReadReady}>
               <span>OBD</span><div><strong>{injectionBusy ? "Lecture moteur en cours…" : "Tester les PID moteur"}</strong><small>{obdReadReady ? "6/14 validé · OBD 01/09 uniquement" : "Firmware principal compatible requis"}</small></div>
             </button>
             <button className="inventory-action" onClick={() => setView("discovery")}>
-              <span>PSA</span><div><strong>Découvrir un paramètre constructeur</strong><small>Capture annotée et corrélation hors ligne</small></div>
+              <span>{activeIsFiat500 ? "FIAT" : "PSA"}</span><div><strong>Découvrir un paramètre constructeur</strong><small>Capture annotée et corrélation hors ligne</small></div>
             </button>
           </div>
-          {powertrainProfile === "unknown" && <p className="inline-alert">Sélectionne la motorisation exacte dès qu'elle est confirmée : cela évitera de compter l'AdBlue, le FAP diesel ou le cliquetis essence comme des manques.</p>}
+          {!activeIsFiat500 && powertrainProfile === "unknown" && <p className="inline-alert">Sélectionne la motorisation exacte dès qu'elle est confirmée : cela évitera de compter l'AdBlue, le FAP diesel ou le cliquetis essence comme des manques.</p>}
         </section>
 
         <section className="panel inventory-list-panel">
@@ -4521,7 +5011,7 @@ function App() {
                   <article className={attempt.success ? "success" : "failed"} key={attempt.key}>
                     <i />
                     <div><span>{attempt.protocol.toUpperCase()} · {hexadecimal(attempt.request_id)} → {hexadecimal(attempt.response_id)}</span><strong>{attempt.label}</strong><small>{attempt.success ? `VIN ${attempt.vin}` : attempt.error ?? "Aucune réponse valide"}</small></div>
-                    <div><code>{attempt.command_hex}</code><small>{attempt.confidence}</small>{attempt.source && <a href={attempt.source} target="_blank" rel="noreferrer">Source ↗</a>}</div>
+                    <div>{LAB_MODE && <code>{attempt.command_hex}</code>}<small>{attempt.confidence}</small>{attempt.source && <a href={attempt.source} target="_blank" rel="noreferrer">Source ↗</a>}</div>
                   </article>
                 ))}
               </div>
@@ -4532,7 +5022,7 @@ function App() {
               <div className="identity-field-grid">
                 {displayedIdentity.fields.map((field) => (
                   <article className={field.error ? "field-error" : ""} key={field.key}>
-                    <span>{field.protocol.toUpperCase()} · {field.command_hex}</span>
+                    <span>{field.protocol.toUpperCase()} · lecture d’identification</span>
                     <strong>{field.name}</strong>
                     <code>{field.error ?? field.value ?? "Réponse vide"}</code>
                     <small>{field.confidence}</small>
@@ -4578,7 +5068,7 @@ function App() {
           </div>
           <div className="diagnostic-preflight">
             <div><span>Liaison ESP32</span><strong>{diagnosticGatewayVerified ? "Validée" : "Connexion requise"}</strong></div>
-            <div><span>Calculateur interrogé</span><strong>{hexadecimal(injectionSnapshot?.request_id ?? 0x7E0)} → {hexadecimal(injectionSnapshot?.response_id ?? 0x7E8)}</strong></div>
+            <div><span>Calculateur interrogé</span><strong>Calculateur moteur principal</strong></div>
             <div><span>Mode diagnostic</span><strong>OBD-II 01 · lecture seule</strong></div>
             <div><span>Réseau utilisé</span><strong>{obdReadReady ? "6/14 · OBD 01/09 filtré" : "6/14 indisponible"}</strong></div>
           </div>
@@ -4623,7 +5113,7 @@ function App() {
                       {barValue && <small>{barValue}</small>}
                     </div>
                     <p>{sensor.description}</p>
-                    <footer><span>{available ? "Mesuré" : supported ? "Support déclaré" : "Indisponible"}</span>{value?.raw_hex && <code>{value.raw_hex}</code>}</footer>
+                    <footer><span>{available ? "Mesuré" : supported ? "Support déclaré" : "Indisponible"}</span>{LAB_MODE && value?.raw_hex && <code>{value.raw_hex}</code>}</footer>
                   </article>
                 );
               })}
@@ -4881,7 +5371,7 @@ function App() {
               <h2>Systèmes observés sur le CAN</h2>
               <p>Présence déduite des messages diffusés; ce n'est pas encore une identification UDS du calculateur.</p>
             </div>
-            <button className="secondary-button" onClick={() => startFullSensorDetection(false)} disabled={detectionBusy || detectionRemaining > 0}>
+            <button className="secondary-button" onClick={() => startFullSensorDetection(false, false)} disabled={detectionBusy || detectionRemaining > 0}>
               {detectionRemaining > 0 ? `Observation · ${detectionRemaining} s` : "Relancer l'observation"}
             </button>
           </div>
@@ -4902,7 +5392,7 @@ function App() {
             <div>
               <span className="eyebrow">Diagnostic actif en lecture seule</span>
               <h2>Identifier tous les ECU et lire leurs défauts</h2>
-              <p>Cette étape envoie des requêtes UDS 0x10/0x19/0x22, sans effacement ni télécodage.</p>
+              <p>Cette étape ouvre une session de lecture, identifie les systèmes et relève leurs défauts, sans effacement ni télécodage.</p>
             </div>
             <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? (dualCanOperational ? "Double CAN prêt" : "Prêt") : capture?.active ? "Capture active" : status?.can_tx_enabled ? "ESP32 à valider" : "Verrouillé"}</span>
           </div>
@@ -4929,7 +5419,8 @@ function App() {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">{detectedEcus.length} détectés sur {report.ecus.length}</span>
-                <h2>Inventaire UDS des calculateurs</h2>
+                <h2>Diagnostic par calculateur</h2>
+                <p>Sélectionne un système pour retrouver son état, son identification, ses défauts et les fonctions qui lui sont rattachées.</p>
               </div>
               <div className="section-actions">
                 <button className="ghost-button" onClick={() => void verifyDiagnosticRegression()} disabled={!report.scan_id || diagnosticRegressionBusy}>{diagnosticRegressionBusy ? "Comparaison…" : "Vérifier la référence"}</button>
@@ -4941,7 +5432,61 @@ function App() {
               <span>{diagnosticRegression.connectivity_match ? "Les 8 calculateurs, leurs adresses et leurs réponses de session correspondent à la référence réelle." : `${diagnosticRegression.differences.filter((item) => item.scope === "connectivity").length} différence(s) de communication.`}</span>
               <small>{diagnosticRegression.dtc_match ? "Mémoire DTC brute identique à la référence." : "Les DTC ont évolué : ce résultat peut être normal après une réparation ou un effacement."}</small>
             </div>}
-            <div className="ecu-list">
+            <div className="ecu-selector" role="tablist" aria-label="Calculateurs détectés">
+              {detectedEcus.map((ecu) => <button
+                type="button"
+                role="tab"
+                aria-selected={selectedEcu?.key === ecu.key}
+                className={selectedEcu?.key === ecu.key ? "selected" : ""}
+                onClick={() => setSelectedEcuKey(ecu.key)}
+                key={ecu.key}
+              >
+                <i />
+                <span>{ecu.name}</span>
+                <small>{ecu.dtcs.filter((dtc) => dtc.state === "active").length || "OK"}</small>
+              </button>)}
+            </div>
+
+            {selectedEcu && <div className="ecu-workspace">
+              <header>
+                <div>
+                  <span className="eyebrow">{selectedEcu.family ?? selectedEcu.network}</span>
+                  <h3>{selectedEcu.name}</h3>
+                  <p>{selectedEcu.detected ? "Calculateur joignable lors du dernier diagnostic." : "Calculateur non joint lors du dernier diagnostic."}</p>
+                </div>
+                <span className={`status-pill ${selectedEcu.detected ? "good" : "neutral"}`}><i /> {selectedEcu.detected ? "Détecté" : "Absent"}</span>
+              </header>
+              <div className="ecu-workspace-summary">
+                <div><span>Identification</span><strong>{selectedEcu.identification.filter((item) => !item.error).length} information(s)</strong><small>Versions, références et numéros disponibles</small></div>
+                <div><span>Défauts actifs</span><strong>{selectedEcu.dtcs.filter((dtc) => dtc.state === "active").length}</strong><small>{selectedEcu.dtcs.length} entrée(s) lue(s) au total</small></div>
+                <div><span>Communication</span><strong>{selectedEcu.active_session ? "Session diagnostic" : "Présence confirmée"}</strong><small>{selectedEcu.probe_method ? `Méthode ${selectedEcu.probe_method}` : selectedEcu.network}</small></div>
+                <div><span>Tests fonctionnels</span><strong>Aucun test publié</strong><small>Une commande reste indisponible tant que son workflow n’est pas validé</small></div>
+              </div>
+              <div className="ecu-workspace-actions">
+                <button className="secondary-button" onClick={() => void openPassiveSensors()}>Live Data</button>
+                <button className="secondary-button" onClick={() => setView("dtcs")}>Défauts</button>
+                <button className="secondary-button" onClick={() => setView("garage")}>Historique</button>
+                <button className="secondary-button" onClick={() => setView("database")}>Documentation</button>
+                <button className="ghost-button" onClick={() => setView("maintenance")}>Fonctions disponibles</button>
+              </div>
+              {selectedEcu.identification.some((item) => !item.error) ? <div className="ecu-identification-list">
+                {selectedEcu.identification.filter((item) => !item.error).map((item) => <article key={item.did}>
+                  <span>{item.name}</span>
+                  <strong>{String(item.value ?? "—")}</strong>
+                  <small>{item.source ?? "Lecture véhicule"} · confiance {item.confidence}</small>
+                </article>)}
+              </div> : <p className="inline-alert">Aucune version ni référence n’a encore été obtenue pour ce calculateur.</p>}
+              {selectedEcu.identification.some((item) => item.error) && <p className="ecu-read-summary">{selectedEcu.identification.filter((item) => item.error).length} information(s) supplémentaire(s) non disponible(s) sur cette session.</p>}
+              {LAB_MODE && <details className="ecu-technical-details">
+                <summary>Preuves protocolaires · mode laboratoire</summary>
+                <div><code>{hexadecimal(selectedEcu.request_id)} → {hexadecimal(selectedEcu.response_id)}</code><span>Adressage diagnostic</span><small>{selectedEcu.network}</small></div>
+                {selectedEcu.probe_attempts?.map((attempt, index) => <div key={`${attempt.request_hex}-${index}`}><code>{attempt.request_hex}</code><span>{attempt.outcome}</span><small>{attempt.response_hex ?? attempt.error ?? "Aucune réponse"}</small></div>)}
+              </details>}
+            </div>}
+
+            <details className="ecu-inventory-details">
+              <summary>Voir l’inventaire complet ({report.ecus.length} calculateurs configurés)</summary>
+              <div className="ecu-list">
               {report.ecus.map((ecu) => (
                 <article className={`ecu-card ${ecu.detected ? "detected" : ""}`} key={ecu.key}>
                   <div className="ecu-state">
@@ -4951,7 +5496,7 @@ function App() {
                   <div className="ecu-content">
                     <div className="ecu-title-row">
                       <div><h3>{ecu.name}</h3><p>{ecu.family ?? ecu.network}</p></div>
-                      <code>{hexadecimal(ecu.request_id)} → {hexadecimal(ecu.response_id)}</code>
+                      <button className="ghost-button" disabled={!ecu.detected} onClick={() => { setSelectedEcuKey(ecu.key); document.querySelector(".ecu-selector")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>Ouvrir</button>
                     </div>
                     <div className="tag-row">
                       <span>{ecu.optional ? "Optionnel" : "Attendu"}</span>
@@ -4962,19 +5507,7 @@ function App() {
                       {ecu.probe_method && <span>Réponse via {ecu.probe_method}</span>}
                       {ecu.active_session !== null && ecu.active_session !== undefined && <span>Session {hexadecimal(ecu.active_session)}</span>}
                     </div>
-                    {ecu.identification.some((item) => !item.error) && (
-                      <div className="did-grid">
-                        {ecu.identification.filter((item) => !item.error).map((item) => (
-                          <div key={item.did}>
-                            <code>{hexadecimal(item.did)}</code>
-                            <span>{item.name}</span>
-                            <strong>{String(item.value ?? "—")}</strong>
-                            {item.raw_hex && <small>Brut {item.raw_hex}</small>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {ecu.identification.some((item) => item.error) && <details className="ecu-technical-details">
+                    {LAB_MODE && ecu.identification.some((item) => item.error) && <details className="ecu-technical-details">
                       <summary>{ecu.identification.filter((item) => item.error).length} DID refusé(s), absent(s) ou non décodable(s)</summary>
                       {ecu.identification.filter((item) => item.error).map((item) => <div key={item.did}>
                         <code>{item.request_hex ?? `22${item.did.toString(16).toUpperCase()}`}</code>
@@ -4982,7 +5515,7 @@ function App() {
                         <small>{item.response_hex ? `Réponse ${item.response_hex}` : "Aucune réponse"}</small>
                       </div>)}
                     </details>}
-                    {ecu.probe_attempts && ecu.probe_attempts.length > 0 && <details className="ecu-technical-details">
+                    {LAB_MODE && ecu.probe_attempts && ecu.probe_attempts.length > 0 && <details className="ecu-technical-details">
                       <summary>Preuve de présence et échanges bruts</summary>
                       {ecu.probe_attempts.map((attempt, index) => <div key={`${attempt.request_hex}-${index}`}>
                         <code>{attempt.request_hex}</code>
@@ -4995,36 +5528,13 @@ function App() {
                   </div>
                 </article>
               ))}
-            </div>
+              </div>
+            </details>
           </section>
         )}
 
-        <section className="panel trace-import-panel">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Analyse hors véhicule</span>
-              <h2>Importer une trace Diagbox</h2>
-              <p>Reconstitue les échanges ISO-TP, recense les DID lus et isole les services actifs pour revue. Aucune trame n’est envoyée à la voiture.</p>
-            </div>
-            <label className={`secondary-button file-button ${traceImportBusy ? "disabled" : ""}`}>
-              {traceImportBusy ? "Analyse…" : "Choisir une trace"}
-              <input type="file" accept=".log,.txt,.csv,.jsonl" disabled={traceImportBusy} onChange={(event) => { void importDiagnosticTrace(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-            </label>
-          </div>
-          {traceImportResult && <div className="trace-import-result">
-            <div className="diagnostic-preflight">
-              <div><span>Trames CAN</span><strong>{traceImportResult.frame_count}</strong></div>
-              <div><span>Échanges UDS</span><strong>{traceImportResult.exchange_count}</strong></div>
-              <div><span>DID observés</span><strong>{traceImportResult.observed_dids.length}</strong></div>
-              <div><span>Services actifs isolés</span><strong>{traceImportResult.observed_actions.length}</strong></div>
-            </div>
-            {traceImportResult.observed_actions.length > 0 && <p className="inline-alert">{traceImportResult.observed_actions.length} commande(s) repérée(s), conservée(s) comme preuve non exécutable jusqu’à validation manuelle.</p>}
-            <small>Import {traceImportResult.import_id} · {traceImportResult.unparsed_line_count} ligne(s) non interprétée(s)</small>
-          </div>}
-        </section>
-
         {report && <section className="panel dtc-clear-panel">
-          <div className="section-heading"><div><span className="eyebrow">Maintenance unitaire contrôlée</span><h2>Effacer la mémoire DTC d’un seul calculateur</h2><p>Le backend lit les défauts avant, exige la réponse positive 0x54, puis relit immédiatement le même ECU.</p></div><span className={`status-pill ${status?.dtc_clear_enabled ? "warning" : "neutral"}`}><i /> {status?.dtc_clear_enabled ? "Armé par configuration" : "Verrouillé"}</span></div>
+          <div className="section-heading"><div><span className="eyebrow">Maintenance unitaire contrôlée</span><h2>Effacer la mémoire DTC d’un seul calculateur</h2><p>Le backend lit les défauts avant, exige un acquittement positif, puis relit immédiatement le même ECU.</p></div><span className={`status-pill ${status?.dtc_clear_enabled ? "warning" : "neutral"}`}><i /> {status?.dtc_clear_enabled ? "Armé par configuration" : "Verrouillé"}</span></div>
           <div className="dtc-clear-form">
             <label>Calculateur<select value={dtcClearEcuKey} onChange={(event) => { setDtcClearEcuKey(event.target.value); setDtcClearConfirmation(""); setDtcClearResult(null); }}><option value="">Choisir un ECU</option>{report.ecus.filter((ecu) => ecu.detected).map((ecu) => <option value={ecu.key} key={ecu.key}>{ecu.name} · {ecu.dtcs.length} entrée(s)</option>)}</select></label>
             <div className="dtc-clear-checks">
@@ -5037,7 +5547,7 @@ function App() {
             <button className="danger-button" onClick={() => void clearSelectedEcuDtcs()} disabled={!status?.dtc_clear_enabled || !dtcClearEcuKey || dtcClearConfirmation !== `EFFACER ${dtcClearEcuKey.toUpperCase()}` || !Object.values(dtcClearChecks).every(Boolean) || dtcClearBusy}>{dtcClearBusy ? "Lecture, effacement, contrôle…" : "Effacer cet ECU et vérifier"}</button>
           </div>
           {!status?.dtc_clear_enabled && <p className="inline-alert">Verrou actif : `DTC_CLEAR_ENABLED=false`. Les ECU ABS, BSI, airbag, direction et caméra exigent en plus `SAFETY_ECU_CLEAR_ENABLED=true`.</p>}
-          {dtcClearResult && <div className={`regression-result ${dtcClearResult.verified ? "good" : "warning"}`}><strong>{dtcClearResult.verified ? "Effacement contrôlé" : "Effacement accepté, contrôle incomplet"}</strong><span>{dtcClearResult.message}</span><small>{dtcClearResult.before_dtcs.length} avant · {dtcClearResult.after_dtcs.length} après · TX {dtcClearResult.request_hex} / RX {dtcClearResult.response_hex ?? "—"}</small></div>}
+          {dtcClearResult && <div className={`regression-result ${dtcClearResult.verified ? "good" : "warning"}`}><strong>{dtcClearResult.verified ? "Effacement contrôlé" : "Effacement accepté, contrôle incomplet"}</strong><span>{dtcClearResult.message}</span><small>{dtcClearResult.before_dtcs.length} avant · {dtcClearResult.after_dtcs.length} après · preuve enregistrée dans le rapport</small>{LAB_MODE && <code>TX {dtcClearResult.request_hex} / RX {dtcClearResult.response_hex ?? "—"}</code>}</div>}
         </section>}
       </div>
     );
@@ -5169,7 +5679,7 @@ function App() {
               <div className="dtc-filter-tabs">
                 {filterLabels.map((filter) => <button className={dtcFilter === filter.key ? "active" : ""} onClick={() => setDtcFilter(filter.key)} key={filter.key}>{filter.label}<span>{filter.count}</span></button>)}
               </div>
-              {dtcFilter === "not_tested" && <p className="dtc-technical-note"><strong>Information technique, pas une panne :</strong> les bits UDS 0x40/0x50 indiquent que le moniteur n’a pas encore terminé ou exécuté son test depuis l’effacement ou le cycle courant.</p>}
+              {dtcFilter === "not_tested" && <p className="dtc-technical-note"><strong>Information technique, pas une panne :</strong> le calculateur indique que le moniteur n’a pas encore terminé ou exécuté son test depuis l’effacement ou le cycle courant.</p>}
               {visibleDtcs.length === 0 ? (
                 <EmptyState
                   title={dtcFilter === "active" ? "Aucun défaut actif" : `Aucun élément dans « ${filterLabels.find((item) => item.key === dtcFilter)?.label ?? dtcFilter} »`}
@@ -5185,7 +5695,8 @@ function App() {
                       <div className="tag-row"><span className={`dtc-state-tag ${dtc.state}`}>{dtc.state_label}</span>{dtc.status_labels.map((label) => <span key={label}>{label}</span>)}</div>
                     </div>
                     <div className="dtc-meta">
-                      <span>État UDS 0x{dtc.status_hex}</span>
+                      <span>{dtc.state_label}</span>
+                      {LAB_MODE && <code>Statut 0x{dtc.status_hex}</code>}
                       <small>{dtc.catalogs.join(", ") || "Catalogue inconnu"}</small>
                     </div>
                   </article>
@@ -5226,6 +5737,76 @@ function App() {
     if (candidate.byte_index !== null && candidate.byte_index !== undefined) parts.push(`octet ${candidate.byte_index}`);
     if (candidate.bit_index !== null && candidate.bit_index !== undefined) parts.push(`bit ${candidate.bit_index}`);
     return parts.join(" · ");
+  }
+
+  function renderDatabase() {
+    const documentedDids = report?.ecus.reduce(
+      (count, ecu) => count + ecu.identification.filter((item) => !item.error).length,
+      0,
+    ) ?? 0;
+    return (
+      <div className="database-page">
+        <section className="panel module-contract-panel">
+          <div className="section-heading"><div><span className="eyebrow">Référentiel partagé</span><h2>Connaissances OpenDiag</h2><p>Cette base décrit ce que l’outil sait, d’où vient l’information et avec quel niveau de confiance. Elle ne communique jamais directement avec le véhicule.</p></div><span className="status-pill good"><i /> Lecture documentaire</span></div>
+          <div className="diagnostic-preflight">
+            <div><span>Profils véhicule</span><strong>{vehicleProfiles.length}</strong></div>
+            <div><span>ECU observés Peugeot</span><strong>{detectedEcus.length}</strong></div>
+            <div><span>PID OBD catalogués</span><strong>{diagnosticSensorCatalog.length}</strong></div>
+            <div><span>Capteurs locaux actifs</span><strong>{liveSensorDefinitions.length}</strong></div>
+          </div>
+        </section>
+        <section className="module-card-grid">
+          <button onClick={() => setView("ecus")}><span>ECU</span><strong>Calculateurs et identifications</strong><p>{documentedDids} identifiant(s) actuellement lus sur le véhicule actif.</p><small>Adresses · familles · versions · séries</small></button>
+          <button onClick={() => void openPassiveSensors()}><span>DATA</span><strong>Registre des capteurs</strong><p>Sources CAN, OBD et définitions locales rattachées au VIN.</p><small>Unité · conversion · confiance · historique</small></button>
+          <button onClick={() => setView("dtcs")}><span>DTC</span><strong>Catalogue des défauts</strong><p>{report?.dtc_summary.total ?? 0} entrée(s) dans le dernier scan.</p><small>État · source · description</small></button>
+          <button onClick={() => setView("maintenance")}><span>WF</span><strong>Procédures métier</strong><p>{maintenanceCatalog?.service_count ?? 0} capacités classées, exécutables uniquement après validation.</p><small>Applicabilité · risque · maturité</small></button>
+        </section>
+        <section className="panel knowledge-lifecycle"><div className="section-heading"><div><span className="eyebrow">Cycle obligatoire</span><h2>Découvert → observé → validé → documenté → publié</h2><p>Une corrélation Learn ne devient jamais automatiquement un capteur officiel ni une commande exécutable.</p></div></div></section>
+      </div>
+    );
+  }
+
+  function renderSecurity() {
+    const currentMode = operatingMode?.mode ?? (status?.read_only === false ? "maintenance" : "read_only");
+    return (
+      <div className="security-page">
+        <section className="panel operating-mode-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Mode global temporaire</span><h2>Choisir le niveau d’autorisation</h2><p>Le mode limite toutes les opérations du backend. Chaque fonction conserve ensuite ses propres verrous et confirmations.</p></div>
+            <span className={`status-pill ${currentMode === "read_only" ? "good" : "bad"}`}><i /> {currentMode === "read_only" ? "Lecture seule" : "Maintenance contrôlée"}</span>
+          </div>
+          <div className="operating-mode-selector">
+            <button className={currentMode === "read_only" ? "selected safe" : ""} onClick={() => void activateReadOnlyMode()} disabled={modeSwitchBusy}>
+              <span>MODE 1</span><strong>Lecture seule</strong><p>Identification, paramètres, défauts et Live Data. Aucune opération de maintenance.</p><small>Toujours disponible · retour immédiat</small>
+            </button>
+            <button className={currentMode === "maintenance" ? "selected maintenance" : ""} onClick={openMaintenanceModeDialog} disabled={modeSwitchBusy || currentMode === "maintenance" || !operatingMode?.maintenance_available}>
+              <span>MODE 2</span><strong>Maintenance contrôlée</strong><p>Autorise uniquement les workflows métier déjà activés et validés par leurs propres allowlists.</p><small>{operatingMode?.maintenance_available ? "Préconditions et confirmation requises" : operatingMode?.blockers.join(" · ") || "Vérification du backend…"}</small>
+            </button>
+          </div>
+          {currentMode === "maintenance" && <p className="inline-alert danger-alert"><strong>Mode maintenance armé pour cette session backend.</strong> Reviens en lecture seule dès que l’opération est terminée.</p>}
+        </section>
+        <section className="panel module-contract-panel security-contract">
+          <div className="section-heading"><div><span className="eyebrow">Aucune commande directe</span><h2>Toutes les opérations actives passent par un workflow</h2><p>Le moteur vérifie les conditions, limite la commande à une allowlist nommée, journalise l’échange et contrôle le résultat.</p></div><span className={`status-pill ${status?.read_only ? "good" : "warning"}`}><i /> {status?.read_only ? "Lecture seule" : "Maintenance armée"}</span></div>
+          <div className="workflow-chain">
+            {[
+              ["01", "Demande métier", "Une fonction lisible, jamais un payload UDS"],
+              ["02", "Préconditions", "Vitesse, moteur, batterie et environnement"],
+              ["03", "Autorisation", "ECU, session, sécurité et firmware compatibles"],
+              ["04", "Exécution", "Commande exacte avec temporisation et arrêt"],
+              ["05", "Contrôle", "Relecture, comparaison et défauts persistants"],
+              ["06", "Rapport", "Trace horodatée rattachée au VIN"],
+            ].map(([step, title, text]) => <div key={step}><span>{step}</span><strong>{title}</strong><small>{text}</small></div>)}
+          </div>
+        </section>
+        <section className="security-state-grid">
+          <article><span>Émission CAN</span><strong>{status?.can_tx_enabled ? "Autorisée par configuration" : "Bloquée"}</strong><small>Une autorisation générale ne contourne jamais les allowlists.</small></article>
+          <article><span>Effacement DTC</span><strong>{status?.dtc_clear_enabled ? "Workflow armé" : "Verrouillé"}</strong><small>Lecture avant, acquittement positif et relecture après.</small></article>
+          <article><span>ECU de sécurité</span><strong>{status?.safety_ecu_clear_enabled ? "Autorisation spéciale active" : "Protection renforcée"}</strong><small>ABS, BSI, caméra, airbag et direction.</small></article>
+          <article><span>Actionneurs PSA</span><strong>{status?.psa_actuator_enabled ? "Profil laboratoire" : "Indisponibles"}</strong><small>Aucune routine inconnue ou commande arbitraire.</small></article>
+        </section>
+        {LAB_MODE && <section className="panel lab-entry"><div><span className="eyebrow">Mode laboratoire explicite</span><h2>Outils protocolaires</h2><p>Cette zone reste séparée de l’usage normal et n’est visible qu’avec `lab=1`.</p></div><button className="danger-button" onClick={() => setView("psa")}>Ouvrir le laboratoire PSA</button></section>}
+      </div>
+    );
   }
 
   function renderAnalysis() {
@@ -5336,6 +5917,30 @@ function App() {
           <article><span>04</span><strong>Valider</strong><p>Confirmer sur plusieurs sessions avant intégration.</p></article>
         </section>
 
+        <section className="panel trace-import-panel">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Import & analyse hors véhicule</span>
+              <h2>Importer une trace Diagbox</h2>
+              <p>Reconstitue les échanges, recense les informations lues et isole les services actifs pour revue. Learn n’émet aucune trame vers la voiture.</p>
+            </div>
+            <label className={`secondary-button file-button ${traceImportBusy ? "disabled" : ""}`}>
+              {traceImportBusy ? "Analyse…" : "Choisir une trace"}
+              <input type="file" accept=".log,.txt,.csv,.jsonl" disabled={traceImportBusy} onChange={(event) => { void importDiagnosticTrace(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            </label>
+          </div>
+          {traceImportResult && <div className="trace-import-result">
+            <div className="diagnostic-preflight">
+              <div><span>Trames CAN</span><strong>{traceImportResult.frame_count}</strong></div>
+              <div><span>Échanges reconstruits</span><strong>{traceImportResult.exchange_count}</strong></div>
+              <div><span>Informations observées</span><strong>{traceImportResult.observed_dids.length}</strong></div>
+              <div><span>Services actifs isolés</span><strong>{traceImportResult.observed_actions.length}</strong></div>
+            </div>
+            {traceImportResult.observed_actions.length > 0 && <p className="inline-alert">{traceImportResult.observed_actions.length} commande(s) repérée(s), conservée(s) comme preuve non exécutable jusqu’à validation manuelle.</p>}
+            <small>Import {traceImportResult.import_id} · {traceImportResult.unparsed_line_count} ligne(s) non interprétée(s)</small>
+          </div>}
+        </section>
+
         <section className="discovery-grid">
           <article className="panel capture-panel">
             <div className="section-heading">
@@ -5353,7 +5958,7 @@ function App() {
                   <input type="checkbox" checked={captureGpsEnabled} onChange={(event) => setCaptureGpsEnabled(event.target.checked)} />
                   <span><strong>Enregistrer le trajet GPS</strong><small>Position du navigateur, synchronisée avec le CAN</small></span>
                 </label>
-                <button className="primary-button record-button" onClick={startCapture}>Démarrer la capture</button>
+                <button className="primary-button record-button" onClick={() => void startCapture(false)}>Démarrer la capture passive</button>
               </div>
             ) : (
               <>
@@ -5455,24 +6060,30 @@ function App() {
       <aside className="sidebar">
         <div className="brand"><span>OD</span><div><strong>Diagbox++</strong><small>OpenDiag Auto</small></div></div>
         <nav>
-          <p>Atelier</p>
+          <p>OpenDiag</p>
           <NavButton active={view === "dashboard"} glyph="⌂" label="Accueil" onClick={() => setView("dashboard")} />
-          <NavButton active={view === "garage"} glyph="▣" label="Garage & historique" onClick={() => { setError(""); setView("garage"); }} count={diagnosticVehicles.length || undefined} />
-          <NavButton active={view === "studio"} glyph="◉" label="Direct personnalisé" onClick={() => setView("studio")} />
-          <NavButton active={view === "inventory"} glyph="✓" label="Valider les capteurs" onClick={() => { setError(""); setView("inventory"); }} count={validationQueue.length || undefined} />
-          <NavButton active={view === "ecus"} glyph="▦" label="Diagnostic véhicule" onClick={() => { setError(""); setView("ecus"); }} count={report ? detectedEcus.length : undefined} />
-          <NavButton active={view === "maintenance"} glyph="↻" label="Services maintenance" onClick={() => { setError(""); setView("maintenance"); }} count={maintenanceCatalog?.service_count} />
-          <NavButton active={view === "replay"} glyph="▷" label="Replays & trajets" onClick={() => setView("replay")} />
-          <p>Plus</p>
-          <button className={`nav-disclosure ${toolsOpen ? "open" : ""}`} onClick={() => setToolsOpen((open) => !open)} aria-expanded={toolsOpen}><span>•••</span><strong>Données & outils</strong><b>⌄</b></button>
-          {toolsOpen && <div className="nav-submenu">
-            <NavButton active={view === "sensors"} glyph="∿" label="Capteurs CAN live" onClick={openPassiveSensors} />
-            <NavButton active={view === "identity"} glyph="VIN" label="VIN & identité" onClick={() => { setError(""); setView("identity"); }} />
-            <NavButton active={view === "injection"} glyph="INJ" label="Injection & moteur" onClick={() => { setError(""); setView("injection"); }} />
-            <NavButton active={view === "dtcs"} glyph="!" label="Codes défaut" onClick={() => setView("dtcs")} count={dtcCount || undefined} />
-            <NavButton active={view === "psa"} glyph="PSA" label="Autorisations PSA" onClick={() => { setError(""); setView("psa"); }} />
-            <NavButton active={view === "discovery"} glyph="◎" label="Laboratoire découverte" onClick={() => setView("discovery")} />
+          <NavButton active={view === "garage"} glyph="▣" label="Garage" onClick={() => { setError(""); setView("garage"); }} count={diagnosticVehicles.length || undefined} />
+          <button className={`nav-disclosure ${openNavModule === "diagnostic" ? "open" : ""}`} onClick={() => setOpenNavModule((open) => open === "diagnostic" ? null : "diagnostic")} aria-expanded={openNavModule === "diagnostic"}><span>▦</span><strong>Diagnostic</strong><b>⌄</b></button>
+          {openNavModule === "diagnostic" && <div className="nav-submenu">
+            <NavButton active={view === "ecus"} glyph="ECU" label="Calculateurs" onClick={() => { setError(""); setView("ecus"); }} count={report ? detectedEcus.length : undefined} />
+            <NavButton active={view === "sensors"} glyph="∿" label="Live Data" onClick={openPassiveSensors} />
+            <NavButton active={view === "dtcs"} glyph="!" label="Défauts" onClick={() => setView("dtcs")} count={dtcCount || undefined} />
+            <NavButton active={view === "identity"} glyph="VIN" label="Identité" onClick={() => { setError(""); setView("identity"); }} />
           </div>}
+          <button className={`nav-disclosure ${openNavModule === "atelier" ? "open" : ""}`} onClick={() => setOpenNavModule((open) => open === "atelier" ? null : "atelier")} aria-expanded={openNavModule === "atelier"}><span>⌁</span><strong>Atelier</strong><b>⌄</b></button>
+          {openNavModule === "atelier" && <div className="nav-submenu">
+            <NavButton active={view === "injection"} glyph="INJ" label="Moteur / injection" onClick={() => { setError(""); setView("injection"); }} />
+            <NavButton active={view === "maintenance"} glyph="WF" label="Procédures métier" onClick={() => { setError(""); setView("maintenance"); }} count={maintenanceCatalog?.service_count} />
+            <NavButton active={view === "studio"} glyph="◉" label="Tableaux de bord" onClick={() => setView("studio")} />
+          </div>}
+          <button className={`nav-disclosure ${openNavModule === "learn" ? "open" : ""}`} onClick={() => setOpenNavModule((open) => open === "learn" ? null : "learn")} aria-expanded={openNavModule === "learn"}><span>◎</span><strong>Learn</strong><b>⌄</b></button>
+          {openNavModule === "learn" && <div className="nav-submenu">
+            <NavButton active={view === "discovery"} glyph="REC" label="Capturer & corréler" onClick={() => setView("discovery")} />
+            <NavButton active={view === "inventory"} glyph="✓" label="Valider les capteurs" onClick={() => { setError(""); setView("inventory"); }} count={validationQueue.length || undefined} />
+            <NavButton active={view === "replay"} glyph="▷" label="Replays" onClick={() => setView("replay")} />
+          </div>}
+          <NavButton active={view === "database"} glyph="DB" label="Database" onClick={() => setView("database")} />
+          <NavButton active={view === "security" || view === "psa"} glyph="◆" label="Security & Workflow" onClick={() => setView("security")} />
         </nav>
         <div className="sidebar-footer">
           <div className={`connection-dot ${status ? "connected" : ""}`} />
@@ -5493,9 +6104,9 @@ function App() {
               </select>
               <button aria-label="Ouvrir le garage" title="Ouvrir le garage" onClick={() => setView("garage")}>▣</button>
             </div>
-            <span className={`status-pill ${status?.read_only ? "good" : status ? "bad" : "neutral"}`}>
-              <i /> {status ? (status.read_only ? "Lecture seule" : "Écriture active") : "État inconnu"}
-            </span>
+            <button className={`status-pill mode-status-button ${status?.read_only ? "good" : status ? "bad" : "neutral"}`} onClick={() => { setView("security"); if (status?.read_only) openMaintenanceModeDialog(); }}>
+              <i /> {status ? (status.read_only ? "Lecture seule · changer" : "Maintenance · gérer") : "État inconnu"}
+            </button>
           </div>
         </header>
 
@@ -5509,12 +6120,40 @@ function App() {
           {view === "identity" && renderVehicleIdentity()}
           {view === "injection" && renderInjection()}
           {view === "maintenance" && renderMaintenance()}
-          {view === "psa" && renderPsaAdvanced()}
           {view === "ecus" && renderEcus()}
           {view === "dtcs" && renderDtcs()}
           {view === "discovery" && renderDiscovery()}
+          {view === "database" && renderDatabase()}
+          {view === "security" && renderSecurity()}
+          {view === "psa" && (LAB_MODE ? renderPsaAdvanced() : renderSecurity())}
         </main>
       </div>
+      {modeDialogOpen && <div className="sensor-editor-backdrop" role="presentation" onMouseDown={() => !modeSwitchBusy && setModeDialogOpen(false)}>
+        <form className="sensor-editor mode-switch-modal" onSubmit={activateMaintenanceMode} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="section-heading">
+            <div><span className="eyebrow">Security & Workflow</span><h2>Activer la maintenance contrôlée</h2><p>Cette autorisation reste en mémoire uniquement jusqu’au redémarrage du backend ou au retour manuel en lecture seule.</p></div>
+            <button type="button" className="ghost-button" onClick={() => setModeDialogOpen(false)} disabled={modeSwitchBusy}>Fermer</button>
+          </div>
+          <div className="mode-readiness-grid">
+            <div className={operatingMode?.can_tx_enabled ? "ready" : "blocked"}><span>Émission CAN</span><strong>{operatingMode?.can_tx_enabled ? "Configurée" : "Désactivée"}</strong></div>
+            <div className={operatingMode?.gateway_ready ? "ready" : "blocked"}><span>Passerelle</span><strong>{operatingMode?.gateway_ready ? "Validée" : "Non validée"}</strong></div>
+            <div className={selectedDiagnosticVin ? "ready" : "blocked"}><span>Véhicule</span><strong>{selectedDiagnosticVin || "VIN requis"}</strong></div>
+          </div>
+          {!operatingMode?.maintenance_available && <p className="inline-alert danger-alert">Mode actuellement indisponible : {operatingMode?.blockers.join(" · ") || "état serveur inconnu"}.</p>}
+          <div className="mode-preconditions">
+            <label><input type="checkbox" checked={modeChecks.vehicle_stationary} onChange={(event) => setModeChecks((current) => ({ ...current, vehicle_stationary: event.target.checked }))} /><span><strong>Véhicule immobilisé</strong><small>Frein de stationnement appliqué</small></span></label>
+            <label><input type="checkbox" checked={modeChecks.ignition_on_engine_off} onChange={(event) => setModeChecks((current) => ({ ...current, ignition_on_engine_off: event.target.checked }))} /><span><strong>Contact mis, moteur arrêté</strong><small>Sauf instruction contraire du workflow métier</small></span></label>
+            <label><input type="checkbox" checked={modeChecks.stable_battery_voltage} onChange={(event) => setModeChecks((current) => ({ ...current, stable_battery_voltage: event.target.checked }))} /><span><strong>Tension batterie stable</strong><small>Alimentation adaptée aux opérations prévues</small></span></label>
+            <label><input type="checkbox" checked={modeChecks.workshop_or_private_site} onChange={(event) => setModeChecks((current) => ({ ...current, workshop_or_private_site: event.target.checked }))} /><span><strong>Atelier ou site privé</strong><small>Aucun usage sur route ouverte</small></span></label>
+          </div>
+          <label>Confirmation exacte<input value={modeConfirmation} onChange={(event) => setModeConfirmation(event.target.value)} placeholder="ACTIVER MAINTENANCE" /><small>Saisis ACTIVER MAINTENANCE</small></label>
+          <p className="inline-alert">Ce changement n’active pas automatiquement l’effacement DTC, SecurityAccess ou les actionneurs. Chaque fonction garde son workflow dédié.</p>
+          <div className="sensor-editor-actions">
+            <button type="button" className="ghost-button" onClick={() => setModeDialogOpen(false)} disabled={modeSwitchBusy}>Annuler</button>
+            <button type="submit" className="danger-button" disabled={modeSwitchBusy || !operatingMode?.maintenance_available || !selectedDiagnosticVin || modeConfirmation !== "ACTIVER MAINTENANCE" || !Object.values(modeChecks).every(Boolean)}>{modeSwitchBusy ? "Armement…" : "Activer la maintenance"}</button>
+          </div>
+        </form>
+      </div>}
     </div>
   );
 }

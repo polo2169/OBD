@@ -39,6 +39,18 @@ def _signed_percent(data: bytes) -> float:
     return round(data[0] * 100 / 128 - 100, 2)
 
 
+def _oxygen_voltage(data: bytes) -> float:
+    return round(data[0] / 200, 3)
+
+
+def _absolute_load(data: bytes) -> float:
+    return round(_word(data) * 100 / 255, 2)
+
+
+def _fuel_injection_timing(data: bytes) -> float:
+    return round(_word(data) / 128 - 210, 2)
+
+
 PID_DEFINITIONS = (
     PidDefinition("engine_load", 0x04, "Charge moteur calculée", "%", 1, _percent, "Combustion", "Charge moteur normalisée calculée par l'ECU."),
     PidDefinition("coolant_temperature", 0x05, "Température liquide de refroidissement", "°C", 1, _temperature, "Températures", "Température moteur utilisée par la stratégie d'injection."),
@@ -54,20 +66,35 @@ PID_DEFINITIONS = (
     PidDefinition("intake_air_temperature", 0x0F, "Température d'air d'admission", "°C", 1, _temperature, "Air", "Température d'air prise en compte pour la masse injectée."),
     PidDefinition("maf", 0x10, "Débit d'air massique", "g/s", 2, lambda data: round(_word(data) / 100, 2), "Air", "Masse d'air mesurée par le débitmètre."),
     PidDefinition("throttle_position", 0x11, "Position papillon", "%", 1, _percent, "Air", "Position absolue du papillon ou doseur d'air."),
+    PidDefinition("oxygen_sensor_b1s1_voltage", 0x14, "Sonde lambda amont B1S1", "V", 2, _oxygen_voltage, "Dépollution", "Tension normalisée de la sonde à oxygène amont; le second octet de correction n'est pas affiché ici."),
+    PidDefinition("oxygen_sensor_b1s2_voltage", 0x15, "Sonde lambda aval B1S2", "V", 2, _oxygen_voltage, "Dépollution", "Tension normalisée de la sonde à oxygène aval; le second octet de correction n'est pas affiché ici."),
     PidDefinition("engine_runtime", 0x1F, "Temps depuis démarrage moteur", "s", 2, _word, "Contexte", "Durée de fonctionnement depuis le dernier démarrage."),
     PidDefinition("distance_with_mil", 0x21, "Distance avec voyant moteur allumé", "km", 2, _word, "Contexte", "Distance parcourue depuis l'allumage du voyant moteur."),
     PidDefinition("fuel_rail_gauge_pressure", 0x23, "Pression de rampe carburant", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression de rampe relative normalisée, typique de l'injection directe/diesel."),
     PidDefinition("commanded_egr", 0x2C, "Commande EGR", "%", 1, _percent, "Dépollution", "Consigne d'ouverture EGR demandée par le calculateur."),
     PidDefinition("egr_error", 0x2D, "Écart EGR", "%", 1, _signed_percent, "Dépollution", "Écart entre la consigne et le retour EGR."),
+    PidDefinition("commanded_evap_purge", 0x2E, "Commande purge canister", "%", 1, _percent, "Dépollution", "Commande normalisée de purge des vapeurs de carburant."),
     PidDefinition("fuel_level", 0x2F, "Niveau carburant", "%", 1, _percent, "Carburant", "Niveau de carburant déclaré au diagnostic OBD."),
+    PidDefinition("warmups_since_clear", 0x30, "Cycles de chauffe depuis effacement DTC", "cycles", 1, lambda data: data[0], "Contexte", "Nombre de cycles de chauffe moteur depuis le dernier effacement des défauts."),
+    PidDefinition("distance_since_clear", 0x31, "Distance depuis effacement DTC", "km", 2, _word, "Contexte", "Distance parcourue depuis le dernier effacement des défauts."),
     PidDefinition("barometric_pressure", 0x33, "Pression barométrique", "kPa abs", 1, lambda data: data[0], "Air", "Pression atmosphérique de référence utilisée par le calculateur."),
     PidDefinition("control_module_voltage", 0x42, "Tension calculateur", "V", 2, lambda data: round(_word(data) / 1000, 3), "Électrique", "Tension d'alimentation du calculateur d'injection."),
+    PidDefinition("absolute_engine_load", 0x43, "Charge moteur absolue", "%", 2, _absolute_load, "Combustion", "Charge absolue normalisée, complémentaire à la charge calculée PID 04."),
     PidDefinition("commanded_equivalence_ratio", 0x44, "Richesse commandée (lambda)", "λ", 2, lambda data: round(_word(data) * 2 / 65536, 4), "Combustion", "Rapport d'équivalence commandé; 1 correspond au mélange stœchiométrique."),
+    PidDefinition("relative_throttle_position", 0x45, "Position relative papillon", "%", 1, _percent, "Air", "Position relative normalisée du papillon motorisé."),
     PidDefinition("ambient_temperature", 0x46, "Température ambiante", "°C", 1, _temperature, "Températures", "Température extérieure utilisée comme contexte moteur."),
+    PidDefinition("absolute_throttle_position_b", 0x47, "Position papillon voie B", "%", 1, _percent, "Air", "Seconde voie normalisée de position du papillon motorisé."),
+    PidDefinition("absolute_throttle_position_c", 0x48, "Position papillon voie C", "%", 1, _percent, "Air", "Troisième voie normalisée de position du papillon lorsqu'elle existe."),
     PidDefinition("accelerator_pedal_d", 0x49, "Position pédale accélérateur D", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie D de la pédale d'accélérateur."),
     PidDefinition("accelerator_pedal_e", 0x4A, "Position pédale accélérateur E", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie E de la pédale d'accélérateur."),
+    PidDefinition("commanded_throttle_actuator", 0x4C, "Commande actionneur papillon", "%", 1, _percent, "Air", "Commande normalisée envoyée à l'actionneur du papillon."),
+    PidDefinition("time_with_mil", 0x4D, "Temps avec voyant moteur allumé", "min", 2, _word, "Contexte", "Durée cumulée de fonctionnement avec le voyant moteur allumé."),
+    PidDefinition("time_since_clear", 0x4E, "Temps depuis effacement DTC", "min", 2, _word, "Contexte", "Temps écoulé depuis le dernier effacement des défauts."),
+    PidDefinition("fuel_type", 0x51, "Type de carburant OBD", "code", 1, lambda data: data[0], "Carburant", "Code normalisé du type de carburant déclaré par le calculateur."),
     PidDefinition("absolute_fuel_rail_pressure", 0x59, "Pression absolue de rampe", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression absolue de rampe carburant lorsqu'elle est exposée par l'ECU."),
+    PidDefinition("relative_accelerator_position", 0x5A, "Position relative accélérateur", "%", 1, _percent, "Commande conducteur", "Demande relative normalisée de la pédale d'accélérateur."),
     PidDefinition("engine_oil_temperature", 0x5C, "Température huile moteur", "°C", 1, _temperature, "Températures", "Température d'huile utilisée pour la protection moteur."),
+    PidDefinition("fuel_injection_timing", 0x5D, "Avance d'injection", "°", 2, _fuel_injection_timing, "Combustion", "Calage normalisé de l'injection par rapport au point mort haut."),
     PidDefinition("fuel_rate", 0x5E, "Débit carburant", "L/h", 2, lambda data: round(_word(data) / 20, 2), "Carburant", "Débit total de carburant consommé par le moteur."),
 )
 

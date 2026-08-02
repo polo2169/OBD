@@ -265,6 +265,21 @@ class TransportConnectRequest(BaseModel):
     baud: int | None = Field(default=None, ge=9_600, le=4_000_000)
 
 
+class OperatingModeRequest(BaseModel):
+    mode: Literal["read_only", "maintenance"]
+    confirmation: str = ""
+    vin: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
+    )
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+
+
 class PsaSeedKeyRequest(BaseModel):
     seed_hex: str = Field(pattern=r"^[0-9A-Fa-f]{8}$")
     application_key_hex: str = Field(pattern=r"^[0-9A-Fa-f]{4}$")

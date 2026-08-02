@@ -1,0 +1,912 @@
+{
+  "version": 3,
+  "session_id": "learn-20260801T150545Z-a8c55068",
+  "generated_at": "2026-08-02T19:02:53+00:00",
+  "signal_count": 71,
+  "validated_count": 12,
+  "plausible_count": 18,
+  "suspicious_count": 1,
+  "signals": [
+    {
+      "key": "fuel_consumption_candidate_mm3",
+      "label": "Consommation carburant passive candidate",
+      "status": "suspicious",
+      "sample_count": 75,
+      "minimum": 17920.0,
+      "maximum": 19760.0,
+      "transitions": 23,
+      "evidence": [
+        "Décodage rejeté sur cette Peugeot : la dynamique observée ne correspond pas à la grandeur annoncée.",
+        "23 transition(s) observée(s) pendant l’essai.",
+        "Le champ parcourt 24 valeurs et ne suit ni le régime, ni la pédale, ni le couple : ce n'est pas une consommation exploitable sur cette 308."
+      ]
+    },
+    {
+      "key": "abs_intervention",
+      "label": "Abs intervention",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "acc_mode",
+      "label": "Acc mode",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "acc_requested",
+      "label": "Acc requested",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "brake_fault",
+      "label": "Brake fault",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "gear_shift_active",
+      "label": "Changement de rapport",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "turn_signal",
+      "label": "Clignotants",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "driver_door",
+      "label": "Driver door",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "driver_seatbelt_state",
+      "label": "Driver seatbelt state",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 2.0,
+      "maximum": 2.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "drivetrain_engaged_state",
+      "label": "Drivetrain engaged state",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "esp_fault_state",
+      "label": "Esp fault state",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "esp_intervention",
+      "label": "Esp intervention",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "low_beam",
+      "label": "Feux de croisement",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "high_beam",
+      "label": "Feux de route",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "parking_brake",
+      "label": "Frein de stationnement",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "front_wiper_status",
+      "label": "Front wiper status",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "fuel_level_fault_state",
+      "label": "Fuel level fault state",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "gearbox_fault",
+      "label": "Gearbox fault",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "generic_warning_requested",
+      "label": "Generic warning requested",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "headlamp_fault",
+      "label": "Headlamp fault",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "lane_assist_status",
+      "label": "Lane assist status",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 5.0,
+      "maximum": 5.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "lane_departure",
+      "label": "Lane departure",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "lka_active",
+      "label": "Lka active",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "low_fuel_warning",
+      "label": "Low fuel warning",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "reverse",
+      "label": "Marche arrière",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "mil_blinking",
+      "label": "Mil blinking",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "mil_on",
+      "label": "Mil on",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "obd_error",
+      "label": "Obd error",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "passenger_door",
+      "label": "Passenger door",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "passenger_seatbelt_state",
+      "label": "Passenger seatbelt state",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 1.0,
+      "maximum": 1.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "brake_pressure_raw",
+      "label": "Pression de freinage relative",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 550.0,
+      "maximum": 550.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "brake_active",
+      "label": "Pédale de frein",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "brake_system_state",
+      "label": "État du système de freinage",
+      "status": "candidate",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 3.0,
+      "transitions": 40,
+      "evidence": [
+        "40 transition(s) observée(s) pendant l’essai."
+      ]
+    },
+    {
+      "key": "longitudinal_accel_ms2",
+      "label": "Accélération longitudinale",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -15…15.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "battery_charge_pct",
+      "label": "Charge batterie",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 86.0,
+      "maximum": 86.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…100.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "engine_torque_nm",
+      "label": "Couple moteur",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 3.0,
+      "maximum": 6.0,
+      "transitions": 8,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -600…800.",
+        "8 transition(s) observée(s) pendant l’essai."
+      ]
+    },
+    {
+      "key": "fuel_liters_raw",
+      "label": "Niveau de carburant brut",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 33.0,
+      "maximum": 33.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…75.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Variation brute maximale 0.0 L en 100 ms : ne pas utiliser directement comme quantité de carburant."
+      ]
+    },
+    {
+      "key": "fuel_liters",
+      "label": "Niveau de carburant filtré",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 33.0,
+      "maximum": 33.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…75.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Filtre exponentiel causal de 120 s appliqué au flotteur pour amortir les accélérations et les virages."
+      ]
+    },
+    {
+      "key": "atmospheric_pressure_hpa",
+      "label": "Pression atmosphérique",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 1000.0,
+      "maximum": 1000.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 750…1200.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "accelerator_pct",
+      "label": "Pédale d’accélérateur",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…100.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "accelerator_secondary_pct",
+      "label": "Pédale d’accélérateur (voie redondante)",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…100.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "target_gear",
+      "label": "Rapport cible",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Codes observés : 0."
+      ]
+    },
+    {
+      "key": "current_gear",
+      "label": "Rapport engagé",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Codes observés : 0."
+      ]
+    },
+    {
+      "key": "speed_setpoint_kph",
+      "label": "Speed setpoint kph",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…250.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "battery_temperature_c",
+      "label": "Température batterie",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 38.0,
+      "maximum": 38.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -40…100.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "intake_air_temperature_c",
+      "label": "Température d’air admission",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 49.0,
+      "maximum": 49.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -50…120.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "oil_temperature_c",
+      "label": "Température d’huile",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 82.0,
+      "maximum": 82.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -40…180.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "ambient_temperature_c",
+      "label": "Température extérieure",
+      "status": "plausible",
+      "sample_count": 71,
+      "minimum": 33.0,
+      "maximum": 33.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -50…70.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "coolant_temperature_c",
+      "label": "Température liquide de refroidissement",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 79.0,
+      "maximum": 80.0,
+      "transitions": 1,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible -40…140.",
+        "1 transition(s) observée(s) pendant l’essai."
+      ]
+    },
+    {
+      "key": "battery_voltage_v",
+      "label": "Tension batterie",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 14.01,
+      "maximum": 14.05,
+      "transitions": 30,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 8…16.5.",
+        "30 transition(s) observée(s) pendant l’essai."
+      ]
+    },
+    {
+      "key": "speed_kph",
+      "label": "Vitesse véhicule",
+      "status": "plausible",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…260.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "lateral_accel_ms2",
+      "label": "Accélération latérale",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": -0.1,
+      "maximum": 0.05,
+      "transitions": 44,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "44 transition(s) observée(s) pendant l’essai."
+      ]
+    },
+    {
+      "key": "steering_angle_deg",
+      "label": "Angle du volant",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": -45.8,
+      "maximum": -45.8,
+      "transitions": 0,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "idle_setpoint_rpm",
+      "label": "Consigne de ralenti",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 848.0,
+      "maximum": 848.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 600…1200.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Régime réel comparé à la consigne sur 75 points de ralenti : écart moyen 5.2 tr/min (médianes 850/848)."
+      ]
+    },
+    {
+      "key": "oil_pressure_switch",
+      "label": "Contacteur de pression d’huile",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "Signal logique seulement : aucune pression en bar ne peut être déduite.",
+        "Contacteur actif moteur arrêté et inactif moteur tournant sur 100.00% de 75 points."
+      ]
+    },
+    {
+      "key": "driver_torque",
+      "label": "Effort conducteur",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 1.0,
+      "maximum": 1.0,
+      "transitions": 0,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "engine_rpm",
+      "label": "Régime moteur",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 832.0,
+      "maximum": 860.875,
+      "transitions": 67,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…8000.",
+        "67 transition(s) observée(s) pendant l’essai.",
+        "Régime réel comparé à la consigne sur 75 points de ralenti : écart moyen 5.2 tr/min (médianes 850/848)."
+      ]
+    },
+    {
+      "key": "yaw_rate_deg_s",
+      "label": "Vitesse de lacet",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "steering_rate_deg_s",
+      "label": "Vitesse du volant",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": -0.0,
+      "maximum": -0.0,
+      "transitions": 0,
+      "evidence": [
+        "Décodage et sens validés directement sur cette Peugeot.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer."
+      ]
+    },
+    {
+      "key": "wheel_rear_right_kph",
+      "label": "Vitesse roue arrière droite",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…260.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "4 roues comparées sur 75 échantillons : écart moyen 0.00 km/h, 95e percentile en ligne droite 0.00 km/h (0.00 km/h tous virages compris), 0 perte(s) en roulage."
+      ]
+    },
+    {
+      "key": "wheel_rear_left_kph",
+      "label": "Vitesse roue arrière gauche",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…260.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "4 roues comparées sur 75 échantillons : écart moyen 0.00 km/h, 95e percentile en ligne droite 0.00 km/h (0.00 km/h tous virages compris), 0 perte(s) en roulage."
+      ]
+    },
+    {
+      "key": "wheel_front_right_kph",
+      "label": "Vitesse roue avant droite",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…260.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "4 roues comparées sur 75 échantillons : écart moyen 0.00 km/h, 95e percentile en ligne droite 0.00 km/h (0.00 km/h tous virages compris), 0 perte(s) en roulage."
+      ]
+    },
+    {
+      "key": "wheel_front_left_kph",
+      "label": "Vitesse roue avant gauche",
+      "status": "validated",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Toutes les valeurs restent dans la plage plausible 0…260.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "4 roues comparées sur 75 échantillons : écart moyen 0.00 km/h, 95e percentile en ligne droite 0.00 km/h (0.00 km/h tous virages compris), 0 perte(s) en roulage."
+      ]
+    },
+    {
+      "key": "virtual_fuel_consumption_candidate_mm3",
+      "label": "Consommation carburant virtuelle candidate",
+      "status": "unavailable",
+      "sample_count": 75,
+      "minimum": 0.0,
+      "maximum": 0.0,
+      "transitions": 0,
+      "evidence": [
+        "Décodage rejeté sur cette Peugeot : la dynamique observée ne correspond pas à la grandeur annoncée.",
+        "Signal stable pendant cette capture ; sa réaction reste à provoquer et confirmer.",
+        "Champ constamment nul pendant tout l’essai : aucune information de consommation disponible."
+      ]
+    },
+    {
+      "key": "instant_fuel_consumption_lph",
+      "label": "Consommation instantanée",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Aucun débit carburant passif fiable : les deux candidats PSA sont rejetés sur cette capture. Lire le PID OBD 01-5E ou un DID moteur confirmé."
+      ]
+    },
+    {
+      "key": "average_fuel_consumption_l_100km",
+      "label": "Consommation moyenne",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Impossible à calculer sans débit carburant ou quantité injectée validée."
+      ]
+    },
+    {
+      "key": "injector_correction",
+      "label": "Corrections injecteurs",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Aucun DID constructeur confirmé pour cette capture."
+      ]
+    },
+    {
+      "key": "mass_air_flow_g_s",
+      "label": "Débit d’air MAF",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Non diffusé dans les trames passives décodées ; lecture OBD moteur nécessaire."
+      ]
+    },
+    {
+      "key": "intake_manifold_pressure_kpa",
+      "label": "Pression admission / suralimentation",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Non diffusée dans les trames passives décodées ; lecture OBD/DID moteur nécessaire."
+      ]
+    },
+    {
+      "key": "fuel_rail_pressure_kpa",
+      "label": "Pression de rampe d’injection",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Non diffusée dans les trames passives décodées ; lecture OBD/DID moteur nécessaire."
+      ]
+    },
+    {
+      "key": "oil_pressure_bar",
+      "label": "Pression d’huile en bar",
+      "status": "unavailable",
+      "sample_count": 0,
+      "minimum": null,
+      "maximum": null,
+      "transitions": 0,
+      "evidence": [
+        "Non disponible sur le CAN passif observé : seul le contacteur d’alerte logique est présent."
+      ]
+    }
+  ],
+  "warnings": [
+    "Validé signifie cohérent avec une seconde information indépendante dans cette capture, ou déjà confirmé physiquement sur le véhicule.",
+    "Plausible ne remplace pas une mesure étalon ni la documentation constructeur.",
+    "Le contacteur d’huile est validé comme alerte logique, mais ne fournit aucune pression en bar.",
+    "Le niveau carburant 0x612 est affiché après filtrage du ballottement ; les champs de consommation passive restent rejetés."
+  ]
+}

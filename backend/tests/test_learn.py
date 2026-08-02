@@ -264,6 +264,151 @@ def test_gps_positions_are_saved_and_drive_replay_route(tmp_path, monkeypatch):
     assert feature["properties"]["accuracy_m"] == [4.5, 4.5, 4.5]
 
 
+def test_fiat_replay_keeps_extended_obd_fields_for_live_display(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    session_id = "learn-20260802T210000Z-fiat-obd"
+    path = tmp_path / f"{session_id}.jsonl"
+    events = [
+        {
+            "type": "meta",
+            "timestamp_us": 1_000_000,
+            "session_id": session_id,
+            "name": "Fiat EOBD",
+            "source": "fixture",
+            "vehicle_profile": "fiat_500_generic",
+            "vehicle_label": "Fiat 500 1.2 8V",
+        },
+        {
+            "type": "obd_sensor_snapshot",
+            "timestamp_us": 1_000_000,
+            "values": [
+                {"key": "vehicle_speed", "value": 24},
+                {"key": "engine_rpm", "value": 1850},
+                {"key": "engine_load", "value": 37.5},
+                {"key": "fuel_pressure", "value": 330},
+                {"key": "intake_manifold_pressure", "value": 54},
+                {"key": "maf", "value": 4.25},
+                {"key": "throttle_position", "value": 11.2},
+                {"key": "relative_throttle_position", "value": 8.4},
+                {"key": "absolute_throttle_position_b", "value": 12.1},
+                {"key": "absolute_throttle_position_c", "value": 12.5},
+                {"key": "commanded_throttle_actuator", "value": 10.8},
+                {"key": "short_fuel_trim_bank_1", "value": -1.56},
+                {"key": "oxygen_sensor_b1s1_voltage", "value": 0.72},
+                {"key": "control_module_voltage", "value": 13.94},
+                {"key": "fuel_level", "value": 62.4},
+                {"key": "accelerator_pedal_d", "value": 9.1},
+                {"key": "accelerator_pedal_e", "value": 9.4},
+                {"key": "relative_accelerator_position", "value": 7.8},
+                {"key": "fuel_injection_timing", "value": 2.5},
+            ],
+        },
+        {
+            "type": "obd_sensor_snapshot",
+            "timestamp_us": 1_301_000,
+            "values": [
+                {"key": "vehicle_speed", "value": 26},
+                {"key": "engine_rpm", "value": 1920},
+                {"key": "engine_load", "value": 41.2},
+                {"key": "fuel_pressure", "value": 336},
+                {"key": "intake_manifold_pressure", "value": 58},
+                {"key": "maf", "value": 5.18},
+                {"key": "throttle_position", "value": 14.6},
+                {"key": "relative_throttle_position", "value": 11.7},
+                {"key": "absolute_throttle_position_b", "value": 15.1},
+                {"key": "absolute_throttle_position_c", "value": 15.5},
+                {"key": "commanded_throttle_actuator", "value": 14.2},
+                {"key": "short_fuel_trim_bank_1", "value": 0.78},
+                {"key": "oxygen_sensor_b1s1_voltage", "value": 0.18},
+                {"key": "control_module_voltage", "value": 14.01},
+                {"key": "fuel_level", "value": 62.4},
+                {"key": "accelerator_pedal_d", "value": 13.4},
+                {"key": "accelerator_pedal_e", "value": 13.7},
+                {"key": "relative_accelerator_position", "value": 12.9},
+                {"key": "fuel_injection_timing", "value": 4.5},
+            ],
+        },
+    ]
+    path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+
+    replay = prepare_replay(session_id)
+
+    assert replay.vehicle_profile == "fiat_500_generic"
+    assert {
+        "engine_load_pct", "fuel_pressure_kpa", "manifold_pressure_kpa",
+        "mass_air_flow_g_s", "throttle_position_pct", "relative_throttle_position_pct",
+        "throttle_position_b_pct", "throttle_position_c_pct",
+        "commanded_throttle_actuator_pct", "accelerator_pct",
+        "accelerator_secondary_pct", "relative_accelerator_position_pct",
+        "fuel_injection_timing_deg", "oxygen_sensor_b1s1_v", "fuel_level_pct",
+    } <= set(replay.available_fields)
+    assert replay.points[-1].engine_rpm == 1920
+    assert replay.points[-1].engine_load_pct == 41.2
+    assert replay.points[-1].manifold_pressure_kpa == 58
+    assert replay.points[-1].mass_air_flow_g_s == 5.18
+    assert replay.points[-1].throttle_position_pct == 14.6
+    assert replay.points[-1].throttle_position_b_pct == 15.1
+    assert replay.points[-1].commanded_throttle_actuator_pct == 14.2
+    assert replay.points[-1].accelerator_pct == 13.4
+    assert replay.points[-1].accelerator_secondary_pct == 13.7
+    assert replay.points[-1].relative_accelerator_position_pct == 12.9
+    assert replay.points[-1].fuel_injection_timing_deg == 4.5
+    assert replay.points[-1].oxygen_sensor_b1s1_v == 0.18
+    assert replay.points[-1].battery_voltage_v == 14.01
+    assert replay.points[-1].fuel_level_pct == 62.4
+
+
+def test_fiat_replay_decodes_observed_wheels_brake_and_body_without_psa(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    session_id = "learn-20260802T213000Z-fiat-can"
+    path = tmp_path / f"{session_id}.jsonl"
+    events = [{
+        "type": "meta",
+        "timestamp_us": 1_000_000,
+        "session_id": session_id,
+        "name": "Fiat CAN observé",
+        "source": "fixture",
+        "vehicle_profile": "fiat_500_generic",
+        "vehicle_label": "Fiat 500 1.2 8V",
+    }]
+    for timestamp_us, arbitration_id, data_hex in (
+        (1_000_000, 0x0618A001, "001702BA161B7D00"),
+        (1_010_000, 0x0218A006, "0160016001600160"),
+        (1_020_000, 0x0810A000, "00007000"),
+        (1_030_000, 0x0A18A000, "2009480008002000"),
+        (1_301_000, 0x0618A001, "00170320161B7D00"),
+    ):
+        events.append({
+            "type": "can_frame",
+            "timestamp_us": timestamp_us,
+            "arbitration_id": arbitration_id,
+            "extended": True,
+            "data_hex": data_hex,
+            "direction": "rx",
+            "bus": "live",
+        })
+    path.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
+
+    replay = prepare_replay(session_id)
+
+    assert replay.points[-1].engine_rpm == 800
+    assert replay.points[-1].fiat_throttle_candidate_pct == 0
+    assert replay.points[-1].fiat_air_load_candidate_raw == 0x16
+    assert replay.points[-1].speed_kph == 22
+    assert replay.points[-1].wheel_front_left_kph == 22
+    assert replay.points[-1].wheel_rear_right_kph == 22
+    assert replay.points[-1].brake_active is True
+    assert replay.points[-1].brake_pressure_raw == 0x70
+    assert replay.points[-1].parking_brake is True
+    assert replay.points[-1].driver_door is True
+    assert replay.field_quality["engine_rpm"] == "validated_on_fiat_500_vin"
+    assert replay.field_quality["fiat_throttle_candidate_pct"] == "fiat_500_vehicle_observed_candidate"
+    assert replay.field_quality["wheel_front_left_kph"] == "fiat_500_vehicle_observed_candidate"
+    assert replay.field_quality["brake_active"] == "validated_on_fiat_500_vin"
+    assert replay.field_quality["driver_door"] == "validated_on_fiat_500_vin"
+    assert replay.field_quality["brake_pressure_raw"] == "fiat_500_vehicle_observed_candidate"
+
+
 def test_sparse_gps_is_fused_with_can_route_to_preserve_turns():
     points = [
         ReplaySample(t_ms=0, x_m=0, y_m=0),
@@ -430,14 +575,96 @@ def test_passive_sensor_snapshot_uses_fiat_profile_without_psa_decoding(tmp_path
     ])
 
     snapshot = passive_sensor_snapshot()
+    by_key = {signal.key: signal for signal in snapshot.signals}
 
     assert snapshot.observed_message_count == 1
-    assert snapshot.decoded_signal_count == 1
+    assert snapshot.decoded_signal_count == 3
     assert snapshot.unknown_can_ids == [0x0210A006]
-    assert snapshot.signals[0].key == "FIAT_ENGINE.ENGINE_RPM"
-    assert snapshot.signals[0].value == 695
-    assert snapshot.signals[0].confidence == "validated"
+    assert by_key["FIAT_ENGINE.ENGINE_RPM"].value == 695
+    assert by_key["FIAT_ENGINE.ENGINE_RPM"].confidence == "validated"
+    assert by_key["FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE"].value == 0
+    assert by_key["FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE"].confidence == "vehicle_observed_candidate"
+    assert by_key["FIAT_ENGINE.AIR_LOAD_CANDIDATE_RAW"].value == 0x1F
     assert any("aucun décodeur Peugeot" in warning for warning in snapshot.warnings)
+
+
+def test_fiat_passive_snapshot_distinguishes_validated_and_candidate_fields(monkeypatch):
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-fiat-candidates",
+        active=True,
+        source="fixture",
+        frame_count=6,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=True,
+        vehicle_profile="fiat_500_generic",
+        vehicle_label="Fiat 500",
+    ))
+    monkeypatch.setattr(capture_manager, "latest_obd_values", lambda: [])
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [
+        {
+            "timestamp_us": 2_000_000,
+            "arbitration_id": 0x0218A006,
+            "extended": True,
+            "data": bytes.fromhex("016701680169016A"),
+            "raw_hex": "016701680169016A",
+        },
+        {
+            "timestamp_us": 2_000_100,
+            "arbitration_id": 0x0628A001,
+            "extended": True,
+            "data": bytes.fromhex("0000000000200000"),
+            "raw_hex": "0000000000200000",
+        },
+        {
+            "timestamp_us": 2_000_200,
+            "arbitration_id": 0x0810A000,
+            "extended": True,
+            "data": bytes.fromhex("00007000"),
+            "raw_hex": "00007000",
+        },
+        {
+            "timestamp_us": 2_000_300,
+            "arbitration_id": 0x0A18A000,
+            "extended": True,
+            "data": bytes.fromhex("2009480008003000"),
+            "raw_hex": "2009480008003000",
+        },
+        {
+            "timestamp_us": 2_000_400,
+            "arbitration_id": 0x0C1CA000,
+            "extended": True,
+            "data": bytes.fromhex("0000E00000000000"),
+            "raw_hex": "0000E00000000000",
+        },
+        {
+            "timestamp_us": 2_000_500,
+            "arbitration_id": 0x0C28A000,
+            "extended": True,
+            "data": bytes.fromhex("182602082026"),
+            "raw_hex": "182602082026",
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+    by_key = {signal.key: signal for signal in snapshot.signals}
+
+    assert snapshot.observed_message_count == 6
+    assert snapshot.unknown_can_ids == []
+    assert by_key["FIAT_ABS.WHEEL_FRONT_LEFT_SPEED"].value == 22.44
+    assert by_key["FIAT_DRIVER.CLUTCH_PEDAL_PRESSED"].value is True
+    assert by_key["FIAT_ABS.BRAKE_PEDAL_ACTIVE"].value is True
+    assert by_key["FIAT_ABS.BRAKE_PEDAL_ACTIVE"].confidence == "validated"
+    assert by_key["FIAT_BODY.PARKING_BRAKE"].value is True
+    assert by_key["FIAT_BODY.DRIVER_DOOR_OPEN"].value is True
+    assert by_key["FIAT_BODY.DRIVER_DOOR_OPEN"].confidence == "validated"
+    assert by_key["FIAT_BODY.CITY_MODE"].value is True
+    assert by_key["FIAT_BODY.REAR_WINDOW_HEATER"].value is True
+    assert by_key["FIAT_BODY.START_STOP_AVAILABLE"].value is True
+    assert by_key["FIAT_CLOCK.DATE_TIME"].value == "2026-08-02 18:26"
+    assert by_key["FIAT_ABS.BRAKE_PEDAL_STATE_RAW"].confidence == "vehicle_observed_candidate"
+    assert by_key["FIAT_BODY.PARKING_BRAKE"].confidence == "vehicle_observed_candidate"
+    assert snapshot.source_url and "talking-with-cars" in snapshot.source_url
 
 
 def test_hybrid_obd_values_complete_fiat_passive_sensors(monkeypatch):

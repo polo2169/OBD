@@ -4,6 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.main import app
+from app.api import learn_routes, routes
+from app import operating_mode
+from app.learn.models import CaptureStart
 from app.transports import selection
 
 
@@ -17,6 +20,50 @@ def test_system_status_exposes_wifi_gateway(monkeypatch):
     response = client.get("/api/system/status")
     assert response.status_code == 200
     assert response.json()["gateway_endpoint"] == "192.168.4.1:35000"
+
+
+def test_operating_mode_switch_requires_checks_and_audits_vin(tmp_path, monkeypatch):
+    vin = "VF3LPHNYWJS141966"
+
+    class IdleCapture:
+        @staticmethod
+        def status():
+            return type("Status", (), {"active": False})()
+
+    monkeypatch.setattr(settings, "transport", "virtual")
+    monkeypatch.setattr(settings, "can_tx_enabled", True)
+    monkeypatch.setattr(settings, "read_only", True)
+    monkeypatch.setattr(settings, "runtime_mode_switch_enabled", True)
+    monkeypatch.setattr(settings, "security_audit_file", tmp_path / "security-audit.jsonl")
+    monkeypatch.setattr(operating_mode, "capture_manager", IdleCapture())
+    monkeypatch.setattr(operating_mode, "active_vehicle", lambda: {"vin": vin})
+
+    refused = client.post("/api/system/operating-mode", json={
+        "mode": "maintenance",
+        "confirmation": "ACTIVER MAINTENANCE",
+        "vin": vin,
+    })
+    assert refused.status_code == 403
+    assert settings.read_only is True
+
+    armed = client.post("/api/system/operating-mode", json={
+        "mode": "maintenance",
+        "confirmation": "ACTIVER MAINTENANCE",
+        "vin": vin,
+        "vehicle_stationary": True,
+        "ignition_on_engine_off": True,
+        "stable_battery_voltage": True,
+        "workshop_or_private_site": True,
+    })
+    assert armed.status_code == 200
+    assert armed.json()["mode"] == "maintenance"
+    assert settings.read_only is False
+    assert vin in (tmp_path / "security-audit.jsonl").read_text(encoding="utf-8")
+
+    safe = client.post("/api/system/operating-mode", json={"mode": "read_only", "vin": vin})
+    assert safe.status_code == 200
+    assert safe.json()["mode"] == "read_only"
+    assert settings.read_only is True
 
 
 def test_system_transports_lists_esp32_choices():
@@ -73,6 +120,101 @@ def test_sensor_snapshot_endpoint():
     payload = response.json()
     assert any(item["key"] == "engine_rpm" for item in payload["values"])
     assert payload["debug"]["session_id"]
+
+
+def test_live_sensor_registry_crud_is_vin_scoped_and_archived():
+    vin = "VF3LPHNYWJS141966"
+    created = client.post("/api/live-data/sensors", json={
+        "source_key": "OBD01.engine_rpm",
+        "vin": vin,
+        "label": "Régime atelier",
+        "description": "Vue locale du régime.",
+        "category": "Injection",
+        "unit": "tr/min",
+        "factor": 1,
+        "offset": 0,
+    })
+    assert created.status_code == 200
+    key = created.json()["key"]
+    assert key.startswith("CUSTOM.REGIME_ATELIER_")
+
+    listed = client.get(f"/api/live-data/sensors?vin={vin}")
+    assert [item["key"] for item in listed.json()] == [key]
+    assert client.get("/api/live-data/sensors?vin=ZFA31200000504700").json() == []
+
+    updated = client.put(f"/api/live-data/sensors/{key}", json={
+        "label": "Régime corrigé",
+        "description": "Capteur local modifié.",
+        "category": "Moteur",
+        "unit": "tr/min",
+        "factor": 0.5,
+        "offset": 10,
+        "archived": False,
+    })
+    assert updated.status_code == 200
+    assert updated.json()["factor"] == 0.5
+
+    archived = client.delete(f"/api/live-data/sensors/{key}")
+    assert archived.status_code == 200
+    assert archived.json()["archived"] is True
+    assert client.get(f"/api/live-data/sensors?vin={vin}").json() == []
+    assert len(client.get(f"/api/live-data/sensors?vin={vin}&include_archived=true").json()) == 1
+
+
+def test_learn_capture_is_passive_and_live_data_reads_are_explicit(monkeypatch):
+    class FakeCaptureManager:
+        def __init__(self):
+            self.active = False
+            self.starts = []
+            self.mode = None
+
+        def status(self):
+            return type("Status", (), {"active": self.active, "vin": None, "mode": self.mode})()
+
+        def start(self, *args):
+            self.starts.append(args)
+            self.active = True
+            self.mode = "live_data" if args[-1] is True else "learn_passive"
+
+        def reset_latest_frames(self):
+            return None
+
+    learn_manager = FakeCaptureManager()
+    live_manager = FakeCaptureManager()
+    monkeypatch.setattr(learn_routes, "capture_manager", learn_manager)
+    monkeypatch.setattr(routes, "capture_manager", live_manager)
+    monkeypatch.setattr(learn_routes, "passive_sensor_snapshot", lambda **kwargs: kwargs)
+    monkeypatch.setattr(routes, "passive_sensor_snapshot", lambda **kwargs: kwargs)
+
+    learn_routes.detect_passive_sensors(vin=None)
+    routes.live_data_detect(vin=None)
+
+    assert learn_manager.starts[0][-1] is False
+    assert live_manager.starts[0][-1] is True
+
+
+def test_capture_start_routes_keep_learn_and_live_data_modes_separate(monkeypatch):
+    class FakeCaptureManager:
+        def __init__(self):
+            self.starts = []
+
+        def status(self):
+            return type("Status", (), {"active": False, "vin": None, "mode": None})()
+
+        def start(self, *args):
+            self.starts.append(args)
+            return type("Started", (), {})()
+
+    learn_manager = FakeCaptureManager()
+    live_manager = FakeCaptureManager()
+    monkeypatch.setattr(learn_routes, "capture_manager", learn_manager)
+    monkeypatch.setattr(routes, "capture_manager", live_manager)
+
+    learn_routes.start_capture(CaptureStart(name="Corrélation passive"))
+    routes.live_data_start(CaptureStart(name="Direct atelier"))
+
+    assert learn_manager.starts[0][-1] is False
+    assert live_manager.starts[0][-1] is True
 
 
 def test_opendbc_catalog_endpoint():

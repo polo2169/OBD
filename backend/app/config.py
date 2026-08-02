@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     can_interface: str = "socketcan"
     can_tx_enabled: bool = False
     read_only: bool = True
+    runtime_mode_switch_enabled: bool = False
     diagnostic_timeout: float = 1.0
     read_dtcs: bool = True
     debug_sessions_enabled: bool = True
@@ -32,10 +33,12 @@ class Settings(BaseSettings):
     database_dir: Path = Path("../database")
     session_dir: Path = Path("../data/sessions")
     sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
+    live_sensor_registry_file: Path = Path("../data/live_sensor_registry.json")
     observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
     diagnostic_history_dir: Path = Path("../data/diagnostics")
     diagnostic_trace_import_dir: Path = Path("../data/diagbox_imports")
     transport_selection_file: Path = Path("../data/transport_selection.json")
+    security_audit_file: Path = Path("../data/security_audit.jsonl")
     vehicle_profile: str = "peugeot_308_t9_2018"
     opendbc_enabled: bool = True
 

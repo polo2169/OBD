@@ -39,6 +39,12 @@ router = APIRouter(prefix="/api/learn", tags=["OpenDiag Learn"])
 @router.post("/capture/start", response_model=CaptureStatus)
 def start_capture(capture: CaptureStart | None = None) -> CaptureStatus:
     capture = capture or CaptureStart()
+    current = capture_manager.status()
+    if current.active and current.mode != "learn_passive":
+        raise HTTPException(
+            status_code=409,
+            detail="Arrête la session en cours avant de changer entre Live Data et Learn passif.",
+        )
     if capture.vin:
         vehicle = next((item for item in list_vehicles() if item.get("vin") == capture.vin), None)
         if vehicle is None:
@@ -58,6 +64,7 @@ def start_capture(capture: CaptureStart | None = None) -> CaptureStatus:
         capture.vin,
         capture.vehicle_profile,
         capture.vehicle_label,
+        False,
     )
 
 
@@ -148,27 +155,46 @@ def opendbc_catalog() -> OpendbcCatalog:
 
 
 @router.get("/sensors/passive", response_model=PassiveSensorSnapshot)
-def passive_sensors() -> PassiveSensorSnapshot:
-    return passive_sensor_snapshot()
+def passive_sensors(vin: str | None = Query(default=None)) -> PassiveSensorSnapshot:
+    return passive_sensor_snapshot(vin=vin)
 
 
 @router.get("/sensors/passive/updates", response_model=PassiveSensorSnapshot)
 def passive_sensor_updates(
     since_us: int = Query(default=0, ge=0),
+    vin: str | None = Query(default=None),
 ) -> PassiveSensorSnapshot:
-    return passive_sensor_snapshot(since_us=since_us)
+    return passive_sensor_snapshot(since_us=since_us, vin=vin)
 
 
 @router.post("/sensors/passive/detect", response_model=PassiveSensorSnapshot)
-def detect_passive_sensors() -> PassiveSensorSnapshot:
+def detect_passive_sensors(vin: str | None = Query(default=None)) -> PassiveSensorSnapshot:
     """Reset the passive inventory and ensure a receive-only capture is running."""
-    if not capture_manager.status().active:
+    status = capture_manager.status()
+    if status.active and status.mode != "learn_passive":
+        raise HTTPException(
+            status_code=409,
+            detail="Arrête la session Live Data avant cette observation Learn strictement passive.",
+        )
+    if status.active and vin and status.vin != vin:
+        raise HTTPException(
+            status_code=409,
+            detail="La capture active n’appartient pas à ce VIN. Arrête-la avant de changer de véhicule.",
+        )
+    if not status.active:
+        vehicle = next((item for item in list_vehicles() if item.get("vin") == vin), None) if vin else None
+        if vin and vehicle is None:
+            raise HTTPException(status_code=422, detail="VIN inconnu du Garage : lis d’abord l’identité du véhicule.")
         capture_manager.start(
             "Détection complète des capteurs",
             "Inventaire CAN passif; aucune requête diagnostic émise.",
+            vin,
+            vehicle.get("vehicle_profile") if vehicle else None,
+            " ".join(filter(None, [vehicle.get("manufacturer"), vehicle.get("model")])) if vehicle else None,
+            False,
         )
     capture_manager.reset_latest_frames()
-    return passive_sensor_snapshot()
+    return passive_sensor_snapshot(vin=vin or capture_manager.status().vin)
 
 
 @router.put("/sensors/passive/override", response_model=PassiveSensorOverride)

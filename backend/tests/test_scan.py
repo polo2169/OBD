@@ -1,6 +1,6 @@
 from app.config import settings
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
-from app.diagnostic.obd import snapshot_sensors
+from app.diagnostic.obd import PID_BY_ID, live_pid_definitions, snapshot_sensors
 from app.diagnostic.isotp import UdsSession
 from app.diagnostic.uds import decode_dtc_status, format_sae_dtc
 from app.models import ClearDtcRequest
@@ -105,6 +105,20 @@ def test_virtual_sensor_only_snapshot():
     assert 0x0C in snapshot.supported_pids
     assert 0x23 in snapshot.supported_pids
     assert snapshot.debug.event_types["obd_request"] > 0
+
+
+def test_fiat_live_profile_exposes_extended_gasoline_obd_sensors():
+    definitions = {item.pid: item for item in live_pid_definitions("fiat_500_generic")}
+
+    assert {
+        0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10, 0x11, 0x14, 0x15,
+        0x2E, 0x42, 0x44, 0x45, 0x47, 0x48, 0x49, 0x4A, 0x4C, 0x5A, 0x5D,
+    } <= definitions.keys()
+    assert PID_BY_ID[0x14].decoder(bytes.fromhex("80FF")) == 0.64
+    assert PID_BY_ID[0x10].decoder(bytes.fromhex("0208")) == 5.2
+    assert PID_BY_ID[0x47].decoder(bytes.fromhex("80")) == 50.2
+    assert PID_BY_ID[0x43].decoder(bytes.fromhex("00FF")) == 100
+    assert PID_BY_ID[0x5D].decoder(bytes.fromhex("6900")) == 0
 
 
 def test_obd_session_routes_requests_to_live_bus():

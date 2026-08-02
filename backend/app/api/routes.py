@@ -29,6 +29,10 @@ from app.diagnostic.regression import compare_with_baseline
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
 from app.diagnostic.trace_import import import_diagnostic_trace
 from app.learn.capture import capture_manager
+from app.learn.models import CaptureStart, CaptureStatus, PassiveSensorSnapshot
+from app.learn.passive_sensors import passive_sensor_snapshot
+from app.live_data.models import LiveSensorCreate, LiveSensorDefinition, LiveSensorUpdate
+from app.live_data.registry import archive_definition, create_definition, list_definitions, update_definition
 from app.models import (
     ClearDtcRequest,
     ClearDtcResult,
@@ -36,6 +40,7 @@ from app.models import (
     DidReadResult,
     ObservedDtcInput,
     ObservedDtcResult,
+    OperatingModeRequest,
     PsaActionRequest,
     PsaActionResult,
     PsaSeedKeyRequest,
@@ -50,6 +55,7 @@ from app.models import (
     VehicleIdentityResult,
     VehicleSelectionRequest,
 )
+from app.operating_mode import change_operating_mode, operating_mode_state
 from app.transports.selection import (
     available_transport_options,
     connection_probe_status,
@@ -67,6 +73,7 @@ def status() -> dict:
     elif settings.transport == "esp32_serial":
         gateway_endpoint = settings.serial_port
     connection = connection_probe_status()
+    mode = operating_mode_state()
     return {
         "application": settings.app_name,
         "transport": settings.transport,
@@ -85,7 +92,22 @@ def status() -> dict:
         "gateway_verified": connection["verified"],
         "gateway_hello": connection["hello"],
         "gateway_error": connection["error"],
+        "operating_mode": mode["mode"],
+        "runtime_mode_switch_enabled": mode["runtime_switch_enabled"],
     }
+
+
+@router.get("/system/operating-mode")
+def system_operating_mode() -> dict:
+    return operating_mode_state()
+
+
+@router.post("/system/operating-mode")
+def system_change_operating_mode(request: OperatingModeRequest) -> dict:
+    try:
+        return change_operating_mode(request)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/system/transports")
@@ -178,6 +200,108 @@ def record_observed_dtc(entry: ObservedDtcInput) -> ObservedDtcResult:
 @router.get("/sensors/catalog")
 def diagnostic_sensor_catalog() -> list[dict]:
     return sensor_catalog()
+
+
+@router.get("/live-data/sensors", response_model=list[LiveSensorDefinition])
+def live_data_sensor_definitions(
+    vin: str | None = Query(default=None),
+    include_archived: bool = Query(default=False),
+) -> list[LiveSensorDefinition]:
+    return list_definitions(vin=vin, include_archived=include_archived)
+
+
+@router.get("/live-data/snapshot", response_model=PassiveSensorSnapshot)
+def live_data_snapshot(
+    since_us: int = Query(default=0, ge=0),
+    vin: str | None = Query(default=None),
+) -> PassiveSensorSnapshot:
+    return passive_sensor_snapshot(since_us=since_us or None, vin=vin)
+
+
+@router.post("/live-data/start", response_model=CaptureStatus)
+def live_data_start(capture: CaptureStart | None = None) -> CaptureStatus:
+    capture = capture or CaptureStart(name="Live Data")
+    current = capture_manager.status()
+    if current.active and current.mode != "live_data":
+        raise HTTPException(
+            status_code=409,
+            detail="Arrête la capture Learn avant de démarrer Live Data.",
+        )
+    if capture.vin:
+        vehicle = next((item for item in list_vehicles() if item.get("vin") == capture.vin), None)
+        if vehicle is None:
+            raise HTTPException(status_code=422, detail="VIN inconnu du Garage : lis d’abord l’identité du véhicule.")
+        capture.vehicle_profile = vehicle["vehicle_profile"]
+        capture.vehicle_label = " ".join(filter(None, [vehicle.get("manufacturer"), vehicle.get("model")]))
+    if capture.vehicle_profile:
+        profiles = {item["key"]: item for item in KnowledgeBase().vehicle_profiles()}
+        profile = profiles.get(capture.vehicle_profile)
+        if profile is None:
+            raise HTTPException(status_code=422, detail="Profil de communication véhicule inconnu.")
+        if not capture.vehicle_label:
+            capture.vehicle_label = " ".join(filter(None, [profile.get("manufacturer"), profile.get("model")]))
+    return capture_manager.start(
+        capture.name,
+        capture.note,
+        capture.vin,
+        capture.vehicle_profile,
+        capture.vehicle_label,
+        True,
+    )
+
+
+@router.post("/live-data/detect", response_model=PassiveSensorSnapshot)
+def live_data_detect(vin: str | None = Query(default=None)) -> PassiveSensorSnapshot:
+    """Start Live Data reception and only the profile's allowlisted reads."""
+    status = capture_manager.status()
+    if status.active and status.mode != "live_data":
+        raise HTTPException(
+            status_code=409,
+            detail="Arrête la capture Learn avant de démarrer Live Data.",
+        )
+    if status.active and vin and status.vin != vin:
+        raise HTTPException(
+            status_code=409,
+            detail="La capture active n’appartient pas à ce VIN. Arrête-la avant de changer de véhicule.",
+        )
+    if not status.active:
+        vehicle = next((item for item in list_vehicles() if item.get("vin") == vin), None) if vin else None
+        if vin and vehicle is None:
+            raise HTTPException(status_code=422, detail="VIN inconnu du Garage : lis d’abord l’identité du véhicule.")
+        capture_manager.start(
+            "Live Data",
+            "Réception CAN et lectures normalisées autorisées par le profil.",
+            vin,
+            vehicle.get("vehicle_profile") if vehicle else None,
+            " ".join(filter(None, [vehicle.get("manufacturer"), vehicle.get("model")])) if vehicle else None,
+            True,
+        )
+    capture_manager.reset_latest_frames()
+    return passive_sensor_snapshot(vin=vin or capture_manager.status().vin)
+
+
+@router.post("/live-data/sensors", response_model=LiveSensorDefinition)
+def live_data_create_sensor(request: LiveSensorCreate) -> LiveSensorDefinition:
+    try:
+        return create_definition(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/live-data/sensors/{key}", response_model=LiveSensorDefinition)
+def live_data_update_sensor(key: str, request: LiveSensorUpdate) -> LiveSensorDefinition:
+    try:
+        return update_definition(key, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+
+
+@router.delete("/live-data/sensors/{key}", response_model=LiveSensorDefinition)
+def live_data_archive_sensor(key: str) -> LiveSensorDefinition:
+    try:
+        return archive_definition(key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
 
 
 @router.post("/sensors/snapshot", response_model=SensorSnapshot)

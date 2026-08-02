@@ -12,11 +12,28 @@ sources:
   obd_vehicle_information:
     url: https://github.com/OBDb/SAEJ1979
     license: CC-BY-SA-4.0
+  fiat_500_2010_handbook:
+    url: https://aftersales.fiat.com/eLumData/EN/00/150_500/00_150_500_603.81.684_EN_01_02.10_L_LG/00_150_500_603.81.684_EN_01_02.10_L_LG.pdf
+    publisher: Fiat Group Automobiles
+  fiat_iaw5sf_service_information:
+    url: https://aftersales.fiat.com/elearnsections/frmMainPage.aspx?langDesc=English&languageID=2&markID=1&modelID=199000000&modelName=Fiat+-+199+-+Grande+Punto&nodeID=199928991&prodID=199000000&sectionName=Service+News&valID=199000000&validityName=1.2+8v
+    publisher: Fiat Group Automobiles
+  fiat_500_can_reverse_engineering:
+    url: https://github.com/P1kachu/talking-with-cars/blob/master/notes/fiat-500.txt
+    vehicle: Fiat 500C 1.2 8V 69 ch 2010
+    confidence: community_candidate_cross_checked_with_vehicle_capture
+  fiat_engine_broadcast_reverse_engineering:
+    url: https://fiatpunto.com.pl/topic59422-50.html
+    vehicle_family: Fiat 29-bit CAN / Grande Punto
+    confidence: community_candidate_cross_checked_with_vehicle_capture
 notes:
   - Profil initial consacré à l'identification en lecture seule, pas encore à un scan complet des ECU Fiat.
   - "L'année, la motorisation et le marché doivent être renseignés avant d'étendre le catalogue : 500 type 312, 500X et 500e n'ont pas la même architecture."
   - Le VIN est demandé d'abord par le service OBD-II normalisé Mode 09 PID 02 sur les broches OBD 6/14.
   - La Fiat 500 type 312 testée répond en EOBD CAN 29 bits sur la paire moteur 18DA10F1/18DAF110.
+  - "Les trames 0218A006, 0628A001, 0810A000, 0A18A000, 0C1CA000 et 0C28A000 de la source ouverte sont aussi présentes dans la capture du VIN ZFA31200000504700. Leur décodage reste candidat jusqu'à une action annotée ou un recoupement indépendant."
+  - "Confirmations conducteur pour ZFA31200000504700 : régime moteur 0618A001, pédale de frein 0810A000 et témoin de porte conducteur 0A18A000. Le niveau brut de freinage, le frein de stationnement et les autres bits de ces trames restent candidats."
+  - "Sur 0618A001, l'octet 7 est conservé comme position de papillon candidate (0..255 vers 0..100 %) et l'octet 4 comme charge/pression d'air brute candidate. Ils doivent être comparés respectivement aux PID EOBD 01/11 et 01/0B avant validation."
   - Les paires 7B0/7C0 et 7B0/7C3 viennent d'un catalogue communautaire ; elles restent désactivées tant que leur routage 6/14 n'est pas validé sur véhicule.
 
 maintenance:
@@ -77,18 +94,36 @@ diagnostic:
     pids:
       - 0x04  # charge moteur
       - 0x05  # température liquide de refroidissement
+      - 0x06  # correction richesse court terme B1
+      - 0x07  # correction richesse long terme B1
+      - 0x0A  # pression carburant basse pression si exposée
       - 0x0B  # pression collecteur
       - 0x0C  # régime
       - 0x0D  # vitesse
+      - 0x0E  # avance à l'allumage
       - 0x0F  # température air admission
+      - 0x10  # débit d'air massique si exposé
       - 0x11  # papillon
+      - 0x14  # tension lambda amont B1S1 si exposée
+      - 0x15  # tension lambda aval B1S2 si exposée
+      - 0x1F  # temps depuis démarrage
+      - 0x2E  # commande purge canister
       - 0x2F  # niveau carburant si exposé
       - 0x33  # pression barométrique
       - 0x42  # tension calculateur / batterie
+      - 0x43  # charge moteur absolue
+      - 0x44  # richesse commandée lambda
+      - 0x45  # position relative papillon
       - 0x46  # température ambiante si exposée
+      - 0x47  # position papillon voie B
+      - 0x48  # position papillon voie C
       - 0x49  # pédale accélérateur D
       - 0x4A  # pédale accélérateur E
+      - 0x4C  # commande actionneur papillon
+      - 0x5A  # position relative accélérateur
       - 0x5C  # température huile si exposée
+      - 0x5D  # calage injection si exposé
+      - 0x5E  # débit carburant si exposé
   vin_strategies:
     - key: obd_mode09_vin
       label: OBD-II moteur · Mode 09 PID 02

@@ -49,6 +49,12 @@ Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compacte
 - sessions JSONL détaillées : CAN, passerelle, ISO-TP, UDS/OBD, NRC et durées ;
 - API FastAPI ;
 - interface React ;
+- navigation stabilisée autour de six modules : Garage, Diagnostic, Atelier,
+  Learn, Database et Security & Workflow ;
+- sélecteur de mode global Lecture seule / Maintenance contrôlée, avec
+  préconditions, confirmation, retour immédiat au mode sûr et audit par VIN ;
+- Live Data transversal avec ajout, modification et archivage de capteurs locaux
+  au VIN, sans modifier la capture CAN d'origine ;
 - garage multi-véhicules avec sélection persistante du VIN actif et chronologie
   consolidée des diagnostics, trajets et identifications ;
 - replay temporel des captures CAN avec Peugeot vue du dessus, instruments, commandes et états ADAS ;
@@ -66,6 +72,9 @@ Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compacte
 
 
 ## Architecture
+
+Le contrat fonctionnel et les règles de sécurité sont décrits dans
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```text
 OBD-II

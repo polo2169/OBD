@@ -14,12 +14,26 @@ from app.learn.models import (
 )
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.sensor_metadata import load_overrides, metadata_for
+from app.live_data.registry import list_definitions
 
 
 VALIDATED_SIGNALS = {
     ("STEERING_ALT", "ANGLE"),
     ("STEERING_ALT", "RATE"),
     ("STEERING", "DRIVER_TORQUE"),
+}
+
+FIAT_500_CAN_NOTES_URL = (
+    "https://github.com/P1kachu/talking-with-cars/blob/master/notes/fiat-500.txt"
+)
+FIAT_ENGINE_CAN_NOTES_URL = "https://fiatpunto.com.pl/topic59422-50.html"
+FIAT_500_CANDIDATE_IDS = {
+    0x0218A006,  # quatre vitesses de roue
+    0x0628A001,  # états combinés accélérateur / embrayage
+    0x0810A000,  # pédale de frein
+    0x0A18A000,  # frein à main, porte conducteur, City, dégivrage
+    0x0C1CA000,  # Start&Stop
+    0x0C28A000,  # horloge véhicule
 }
 
 
@@ -108,6 +122,183 @@ def _display_value(value: Any, factor: float, offset: float) -> Any:
     return round(converted, 6)
 
 
+def _fiat_wheel_speed(raw: int) -> float:
+    # La Fiat diffuse 0x002C à l'arrêt et sous environ 4 km/h.
+    return 0.0 if raw <= 0x002C else round(raw / 16.0, 2)
+
+
+def _bcd_byte(value: int) -> int | None:
+    high, low = value >> 4, value & 0x0F
+    return high * 10 + low if high <= 9 and low <= 9 else None
+
+
+def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]:
+    """Decode only Fiat 500 fields both documented publicly and seen on this VIN.
+
+    These remain candidates until an annotated action or an independent sensor
+    confirms their physical meaning. Keeping that confidence separate prevents
+    a community map from being presented as vehicle-validated data.
+    """
+
+    arbitration_id = int(frame["arbitration_id"])
+    data = bytes(frame["data"])
+    updated_at_us = int(frame["timestamp_us"])
+    raw_hex = str(frame["raw_hex"])
+    signals: list[PassiveCanSignal] = []
+
+    def add(
+        key: str,
+        message: str,
+        signal: str,
+        label: str,
+        description: str,
+        category: str,
+        value: str | int | float | bool,
+        unit: str | None = None,
+        essential: bool = False,
+        confidence: str = "vehicle_observed_candidate",
+    ) -> None:
+        validation_note = (
+            "Fonction confirmée physiquement par le conducteur sur le VIN courant."
+            if confidence == "validated"
+            else "Décodage à confirmer par capture annotée."
+        )
+        signals.append(PassiveCanSignal(
+            key=key,
+            arbitration_id=arbitration_id,
+            message=message,
+            signal=signal,
+            display_name=label,
+            description=(
+                f"{description} Trame observée sur le VIN courant. {validation_note} "
+                f"Source ouverte : {FIAT_500_CAN_NOTES_URL}"
+            ),
+            category=category,
+            value=value,
+            raw_value=value,
+            unit=unit,
+            source_unit=unit,
+            essential=essential,
+            updated_at_us=updated_at_us,
+            raw_hex=raw_hex,
+            confidence=confidence,
+        ))
+
+    if arbitration_id == 0x0218A006 and len(data) >= 8:
+        names = (
+            ("FRONT_LEFT", "Roue avant gauche"),
+            ("FRONT_RIGHT", "Roue avant droite"),
+            ("REAR_LEFT", "Roue arrière gauche"),
+            ("REAR_RIGHT", "Roue arrière droite"),
+        )
+        for index, (signal, label) in enumerate(names):
+            raw = int.from_bytes(data[index * 2:index * 2 + 2], "big")
+            add(
+                f"FIAT_ABS.WHEEL_{signal}_SPEED",
+                "FIAT_ABS",
+                f"WHEEL_{signal}_SPEED",
+                f"Vitesse {label.lower()}",
+                "Vitesse individuelle ABS candidate, résolution 1/16 km/h.",
+                "Freinage / ABS",
+                _fiat_wheel_speed(raw),
+                "km/h",
+                True,
+            )
+    elif arbitration_id == 0x0628A001 and len(data) >= 6:
+        add(
+            "FIAT_DRIVER.CLUTCH_PEDAL_PRESSED",
+            "FIAT_DRIVER",
+            "CLUTCH_PEDAL_PRESSED",
+            "Pédale d'embrayage enfoncée",
+            "Bit candidat de l'état combiné embrayage/accélération (octet 5, bit 5).",
+            "Commandes conducteur",
+            bool(data[5] & 0x20),
+        )
+    elif arbitration_id == 0x0810A000 and len(data) >= 3:
+        brake_state = data[2] & 0xF0
+        add(
+            "FIAT_ABS.BRAKE_PEDAL_ACTIVE",
+            "FIAT_ABS",
+            "BRAKE_PEDAL_ACTIVE",
+            "Pédale de frein active",
+            "Le nibble 0x1 indique le repos; 0x3 et au-delà indiquent un appui.",
+            "Freinage / ABS",
+            brake_state >= 0x30,
+            essential=True,
+            confidence="validated",
+        )
+        add(
+            "FIAT_ABS.BRAKE_PEDAL_STATE_RAW",
+            "FIAT_ABS",
+            "BRAKE_PEDAL_STATE_RAW",
+            "Niveau brut de freinage",
+            "État non étalonné de la pédale; il ne s'agit pas encore d'une pression en bar.",
+            "Freinage / ABS",
+            brake_state,
+        )
+    elif arbitration_id == 0x0A18A000 and len(data) >= 7:
+        body_values = (
+            ("PARKING_BRAKE", "Frein de stationnement", bool(data[0] & 0x20), "vehicle_observed_candidate"),
+            ("DRIVER_DOOR_OPEN", "Porte conducteur ouverte", bool(data[2] & 0x08), "validated"),
+            ("KEY_CONTACT_ON", "Contact établi", bool(data[2] & 0x40), "vehicle_observed_candidate"),
+            ("IGNITION_ACTIVE", "Phase démarrage active", bool(data[2] & 0x80), "vehicle_observed_candidate"),
+            ("CITY_MODE", "Mode City", bool(data[4] & 0x08), "vehicle_observed_candidate"),
+            ("REAR_WINDOW_HEATER", "Dégivrage arrière", bool(data[6] & 0x10), "vehicle_observed_candidate"),
+        )
+        for signal, label, value, confidence in body_values:
+            add(
+                f"FIAT_BODY.{signal}",
+                "FIAT_BODY",
+                signal,
+                label,
+                "État logique candidat diffusé par le Body Computer.",
+                "Habitacle / Body Computer",
+                value,
+                confidence=confidence,
+            )
+    elif arbitration_id == 0x0C1CA000 and len(data) >= 3:
+        add(
+            "FIAT_BODY.START_STOP_ACTIVE",
+            "FIAT_BODY",
+            "START_STOP_ACTIVE",
+            "Start&Stop activé",
+            "Bit candidat d'activation du Start&Stop.",
+            "Habitacle / Body Computer",
+            bool(data[2] & 0x20),
+        )
+        add(
+            "FIAT_BODY.START_STOP_AVAILABLE",
+            "FIAT_BODY",
+            "START_STOP_AVAILABLE",
+            "Start&Stop disponible",
+            "Paire de bits candidate indiquant la disponibilité du Start&Stop.",
+            "Habitacle / Body Computer",
+            (data[2] & 0xC0) == 0xC0,
+        )
+    elif arbitration_id == 0x0C28A000 and len(data) >= 6:
+        parts = [_bcd_byte(value) for value in data[:6]]
+        hour, minute, day, month, year_high, year_low = parts
+        if (
+            all(value is not None for value in parts)
+            and hour is not None and 0 <= hour <= 23
+            and minute is not None and 0 <= minute <= 59
+            and day is not None and 1 <= day <= 31
+            and month is not None and 1 <= month <= 12
+            and year_high is not None and year_low is not None
+        ):
+            add(
+                "FIAT_CLOCK.DATE_TIME",
+                "FIAT_CLOCK",
+                "DATE_TIME",
+                "Date et heure véhicule",
+                "Horloge BCD candidate diffusée sur le réseau Fiat.",
+                "Combiné d'instruments",
+                f"{year_high:02d}{year_low:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}",
+            )
+
+    return signals
+
+
 def _hybrid_obd_signals(
     since_us: int | None,
 ) -> tuple[list[PassiveCanSignal], int, list[int]]:
@@ -165,7 +356,47 @@ def _append_hybrid_warning(status, warnings: list[str], obd_signal_count: int) -
         warnings.append(f"Complément OBD direct indisponible : {status.obd_error}")
 
 
-def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapshot:
+def _custom_signals(signals: list[PassiveCanSignal], vin: str | None) -> list[PassiveCanSignal]:
+    """Materialize VIN-scoped aliases without changing their physical source."""
+
+    sources = {signal.key: signal for signal in signals if not signal.user_defined}
+    custom: list[PassiveCanSignal] = []
+    for definition in list_definitions(vin=vin):
+        source = sources.get(definition.source_key)
+        if source is None:
+            continue
+        custom.append(PassiveCanSignal(
+            key=definition.key,
+            arbitration_id=source.arbitration_id,
+            message="CUSTOM",
+            signal=definition.key.split(".", 1)[-1],
+            display_name=definition.label,
+            description=definition.description or f"Capteur local dérivé de {definition.source_key}.",
+            category=definition.category,
+            value=_display_value(source.raw_value, definition.factor, definition.offset),
+            raw_value=source.raw_value,
+            unit=definition.unit if definition.unit is not None else source.unit,
+            source_unit=source.source_unit,
+            factor=definition.factor,
+            offset=definition.offset,
+            customized=True,
+            essential=False,
+            updated_at_us=source.updated_at_us,
+            raw_hex=source.raw_hex,
+            source=source.source,
+            pid=source.pid,
+            confidence=source.confidence,
+            user_defined=True,
+            definition_key=definition.key,
+            derived_from=definition.source_key,
+        ))
+    return custom
+
+
+def passive_sensor_snapshot(
+    since_us: int | None = None,
+    vin: str | None = None,
+) -> PassiveSensorSnapshot:
     status = capture_manager.status()
     frames = capture_manager.latest_frames()
     profile_key = status.vehicle_profile or settings.vehicle_profile
@@ -175,7 +406,7 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
         signals: list[PassiveCanSignal] = []
         unknown_can_ids: list[int] = []
         selected_timestamps: list[int] = []
-        fiat_rpm_observed = False
+        observed_fiat_messages: set[int] = set()
         for frame in frames:
             arbitration_id = int(frame["arbitration_id"])
             frame_timestamp = int(frame["timestamp_us"])
@@ -188,15 +419,30 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
                 and arbitration_id == 0x0618A001
                 and len(frame["data"]) >= 4
             )
-            if not is_validated_fiat_rpm:
+            is_fiat_candidate = (
+                profile_key == "fiat_500_generic"
+                and bool(frame["extended"])
+                and arbitration_id in FIAT_500_CANDIDATE_IDS
+            )
+            if not is_validated_fiat_rpm and not is_fiat_candidate:
                 unknown_can_ids.append(arbitration_id)
+                continue
+
+            if is_fiat_candidate:
+                candidate_signals = _fiat_500_candidate_signals(frame)
+                if candidate_signals:
+                    observed_fiat_messages.add(arbitration_id)
+                    if is_selected:
+                        signals.extend(candidate_signals)
+                else:
+                    unknown_can_ids.append(arbitration_id)
                 continue
 
             rpm = int.from_bytes(bytes(frame["data"])[2:4], "big")
             if not 0 <= rpm <= 8_000:
                 unknown_can_ids.append(arbitration_id)
                 continue
-            fiat_rpm_observed = True
+            observed_fiat_messages.add(arbitration_id)
             if not is_selected:
                 continue
             signals.append(PassiveCanSignal(
@@ -219,9 +465,57 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
                 raw_hex=str(frame["raw_hex"]),
                 confidence="validated",
             ))
+            data = bytes(frame["data"])
+            if len(data) >= 8:
+                throttle_pct = round(data[7] * 100 / 255, 2)
+                signals.append(PassiveCanSignal(
+                    key="FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE",
+                    arbitration_id=arbitration_id,
+                    message="FIAT_ENGINE",
+                    signal="THROTTLE_POSITION_CANDIDATE",
+                    display_name="Position papillon candidate",
+                    description=(
+                        "Octet 7 identifié comme papillon sur une implémentation ouverte "
+                        "Fiat et corrélé aux accélérations de cette 500. À comparer au PID "
+                        f"EOBD 01/11 avant validation. Source : {FIAT_ENGINE_CAN_NOTES_URL}"
+                    ),
+                    category="Moteur",
+                    value=throttle_pct,
+                    raw_value=data[7],
+                    unit="%",
+                    source_unit="octet brut",
+                    factor=round(100 / 255, 8),
+                    essential=False,
+                    updated_at_us=frame_timestamp,
+                    raw_hex=str(frame["raw_hex"]),
+                    confidence="vehicle_observed_candidate",
+                ))
+                signals.append(PassiveCanSignal(
+                    key="FIAT_ENGINE.AIR_LOAD_CANDIDATE_RAW",
+                    arbitration_id=arbitration_id,
+                    message="FIAT_ENGINE",
+                    signal="AIR_LOAD_CANDIDATE_RAW",
+                    display_name="Charge / pression d'air candidate",
+                    description=(
+                        "Octet 4 réactif à l'accélération. Une source Fiat proche le nomme "
+                        "boost, mais aucune unité MAP n'est retenue sur ce moteur atmosphérique "
+                        "avant comparaison au PID EOBD 01/0B."
+                    ),
+                    category="Moteur",
+                    value=data[4],
+                    raw_value=data[4],
+                    unit="brut",
+                    source_unit="octet brut",
+                    essential=False,
+                    updated_at_us=frame_timestamp,
+                    raw_hex=str(frame["raw_hex"]),
+                    confidence="vehicle_observed_candidate",
+                ))
 
         obd_signals, obd_signal_count, obd_timestamps = _hybrid_obd_signals(since_us)
         signals.extend(obd_signals)
+        custom_signals = _custom_signals(signals, vin or status.vin)
+        signals.extend(custom_signals)
         selected_timestamps.extend(obd_timestamps)
 
         warnings = []
@@ -229,8 +523,10 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
             warnings.append("Démarre une capture passive pour actualiser les capteurs.")
         if profile_key == "fiat_500_generic":
             warnings.append(
-                "Profil Fiat actif : le régime CAN 0x0618A001 est validé et les PIDs "
-                "OBD normalisés complètent le direct; aucun décodeur Peugeot n'est appliqué."
+                "Profil Fiat actif : le régime CAN 0x0618A001 est validé, les PIDs "
+                "OBD normalisés complètent le direct; le papillon et la charge d'air de "
+                "0x0618A001 ainsi que les autres trames Fiat affichées "
+                "restent marquées candidates; aucun décodeur Peugeot n'est appliqué."
             )
         else:
             warnings.append(
@@ -244,15 +540,16 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
             strict_passive=status.strict_passive,
             frame_count=status.frame_count,
             observed_can_id_count=len(frames),
-            observed_message_count=1 if fiat_rpm_observed else 0,
+            observed_message_count=len(observed_fiat_messages),
             unknown_can_id_count=len(set(unknown_can_ids)),
             unknown_can_ids=sorted(set(unknown_can_ids)),
-            decoded_signal_count=(1 if fiat_rpm_observed else 0) + obd_signal_count,
+            decoded_signal_count=len(signals),
             generated_at_us=time.time_ns() // 1000,
             cursor_us=max(selected_timestamps, default=since_us or 0),
             steering=PassiveSteeringSnapshot(),
             signals=signals,
             warnings=warnings,
+            source_url=FIAT_500_CAN_NOTES_URL if profile_key == "fiat_500_generic" else None,
             hybrid_obd_enabled=status.hybrid_obd_enabled,
             hybrid_obd_ready=status.hybrid_obd_ready,
             obd_sample_count=status.obd_sample_count,
@@ -359,6 +656,8 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
 
     obd_signals, obd_signal_count, obd_timestamps = _hybrid_obd_signals(since_us)
     signals.extend(obd_signals)
+    custom_signals = _custom_signals(signals, vin or status.vin)
+    signals.extend(custom_signals)
     selected_timestamps.extend(obd_timestamps)
     _append_hybrid_warning(status, warnings, obd_signal_count)
 
@@ -372,7 +671,7 @@ def passive_sensor_snapshot(since_us: int | None = None) -> PassiveSensorSnapsho
         observed_message_count=len(observed_messages),
         unknown_can_id_count=len(unknown_can_ids),
         unknown_can_ids=sorted(unknown_can_ids),
-        decoded_signal_count=total_signal_count + obd_signal_count,
+        decoded_signal_count=total_signal_count + obd_signal_count + len(custom_signals),
         generated_at_us=time.time_ns() // 1000,
         cursor_us=max(selected_timestamps, default=since_us or 0),
         steering=_steering_from_messages(decoded_by_message),

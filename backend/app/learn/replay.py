@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 13
+CACHE_VERSION = 17
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -330,13 +330,43 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
 OBD_REPLAY_FIELDS: dict[str, tuple[str, float]] = {
     "engine_rpm": ("engine_rpm", 1.0),
     "vehicle_speed": ("speed_kph", 1.0),
+    "engine_load": ("engine_load_pct", 1.0),
+    "absolute_engine_load": ("absolute_engine_load_pct", 1.0),
+    "fuel_pressure": ("fuel_pressure_kpa", 1.0),
+    "intake_manifold_pressure": ("manifold_pressure_kpa", 1.0),
+    "maf": ("mass_air_flow_g_s", 1.0),
+    "throttle_position": ("throttle_position_pct", 1.0),
+    "relative_throttle_position": ("relative_throttle_position_pct", 1.0),
+    "absolute_throttle_position_b": ("throttle_position_b_pct", 1.0),
+    "absolute_throttle_position_c": ("throttle_position_c_pct", 1.0),
+    "commanded_throttle_actuator": ("commanded_throttle_actuator_pct", 1.0),
+    "timing_advance": ("ignition_advance_deg", 1.0),
+    "fuel_injection_timing": ("fuel_injection_timing_deg", 1.0),
+    "short_fuel_trim_bank_1": ("short_fuel_trim_pct", 1.0),
+    "long_fuel_trim_bank_1": ("long_fuel_trim_pct", 1.0),
+    "oxygen_sensor_b1s1_voltage": ("oxygen_sensor_b1s1_v", 1.0),
+    "oxygen_sensor_b1s2_voltage": ("oxygen_sensor_b1s2_v", 1.0),
+    "commanded_equivalence_ratio": ("commanded_equivalence_ratio", 1.0),
+    "commanded_evap_purge": ("evap_purge_pct", 1.0),
+    "engine_runtime": ("engine_runtime_s", 1.0),
+    "fuel_level": ("fuel_level_pct", 1.0),
+    "fuel_rate": ("fuel_rate_lph", 1.0),
     "coolant_temperature": ("coolant_temperature_c", 1.0),
     "intake_air_temperature": ("intake_air_temperature_c", 1.0),
     "engine_oil_temperature": ("oil_temperature_c", 1.0),
     "control_module_voltage": ("battery_voltage_v", 1.0),
     "ambient_temperature": ("ambient_temperature_c", 1.0),
     "accelerator_pedal_d": ("accelerator_pct", 1.0),
+    "accelerator_pedal_e": ("accelerator_secondary_pct", 1.0),
+    "relative_accelerator_position": ("relative_accelerator_position_pct", 1.0),
     "barometric_pressure": ("atmospheric_pressure_hpa", 10.0),
+}
+
+FIAT_500_REPLAY_IDS = {
+    0x0218A006,
+    0x0618A001,
+    0x0810A000,
+    0x0A18A000,
 }
 
 
@@ -353,6 +383,58 @@ def _update_obd_state(values: list[dict[str, Any]], state: dict[str, Any]) -> se
         field, factor = mapping
         state[field] = number * factor
         updated.add(field)
+    return updated
+
+
+def _fiat_wheel_speed(raw: int) -> float:
+    return 0.0 if raw <= 0x002C else round(raw / 16.0, 2)
+
+
+def _update_fiat_500_state(
+    arbitration_id: int,
+    data: bytes,
+    state: dict[str, Any],
+) -> set[str]:
+    """Apply only Fiat fields observed on this VIN and documented independently."""
+
+    updated: set[str] = set()
+    if arbitration_id == 0x0618A001 and len(data) >= 4:
+        rpm = int.from_bytes(data[2:4], "big")
+        if 0 <= rpm <= 8_000:
+            state["engine_rpm"] = rpm
+            updated.add("engine_rpm")
+        if len(data) >= 8:
+            state["fiat_throttle_candidate_pct"] = round(data[7] * 100 / 255, 2)
+            state["fiat_air_load_candidate_raw"] = data[4]
+            updated.update({
+                "fiat_throttle_candidate_pct",
+                "fiat_air_load_candidate_raw",
+            })
+    elif arbitration_id == 0x0218A006 and len(data) >= 8:
+        fields = (
+            "wheel_front_left_kph",
+            "wheel_front_right_kph",
+            "wheel_rear_left_kph",
+            "wheel_rear_right_kph",
+        )
+        values = [
+            _fiat_wheel_speed(int.from_bytes(data[index:index + 2], "big"))
+            for index in range(0, 8, 2)
+        ]
+        for field, value in zip(fields, values, strict=True):
+            state[field] = value
+            updated.add(field)
+        state["speed_kph"] = round(sum(values) / len(values), 2)
+        updated.add("speed_kph")
+    elif arbitration_id == 0x0810A000 and len(data) >= 3:
+        brake_state = data[2] & 0xF0
+        state["brake_active"] = brake_state >= 0x30
+        state["brake_pressure_raw"] = brake_state
+        updated.update({"brake_active", "brake_pressure_raw"})
+    elif arbitration_id == 0x0A18A000 and len(data) >= 3:
+        state["parking_brake"] = bool(data[0] & 0x20)
+        state["driver_door"] = bool(data[2] & 0x08)
+        updated.update({"parking_brake", "driver_door"})
     return updated
 
 
@@ -823,6 +905,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     frame_count = 0
     decoded_frame_count = 0
     obd_standardized_fields: set[str] = set()
+    fiat_observed_fields: set[str] = set()
     gps_events: list[dict[str, Any]] = []
     source = ""
     name = session_id
@@ -890,18 +973,17 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             if (
                 vehicle_profile == "fiat_500_generic"
                 and bool(event.get("extended", arbitration_id > 0x7FF))
-                and arbitration_id == 0x0618A001
+                and arbitration_id in FIAT_500_REPLAY_IDS
             ):
                 try:
                     data = bytes.fromhex(str(event.get("data_hex") or ""))
                 except ValueError:
                     data = b""
-                if len(data) >= 4:
-                    rpm = int.from_bytes(data[2:4], "big")
-                    if 0 <= rpm <= 8_000:
-                        state["engine_rpm"] = rpm
-                        available_fields.add("engine_rpm")
-                        decoded_frame_count += 1
+                updated = _update_fiat_500_state(arbitration_id, data, state)
+                if updated:
+                    available_fields.update(updated)
+                    fiat_observed_fields.update(updated)
+                    decoded_frame_count += 1
                 continue
 
             if arbitration_id not in TARGET_IDS:
@@ -971,6 +1053,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     if vehicle_profile == "fiat_500_generic":
         warnings[:0] = [
             "Le régime CAN Fiat est validé sur cette 500; les autres mesures moteur marquées OBD sont normalisées Mode 01.",
+            "Les vitesses de roue, le frein et les états Body Fiat observés restent des candidats à confirmer par captures annotées.",
             "Les identifiants CAN Fiat non cartographiés restent exclus du replay plutôt que d'être interprétés comme des signaux Peugeot.",
         ]
     else:
@@ -1019,6 +1102,11 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     }
     for field in obd_standardized_fields:
         field_quality[field] = "standardized_obd_mode_01"
+    fiat_validated_fields = {"engine_rpm", "brake_active", "driver_door"}
+    for field in fiat_observed_fields - fiat_validated_fields:
+        field_quality[field] = "fiat_500_vehicle_observed_candidate"
+    for field in fiat_observed_fields & fiat_validated_fields:
+        field_quality[field] = "validated_on_fiat_500_vin"
     if route_method == "driver_confirmed_osrm":
         field_quality.update({
             "latitude": "driver_confirmed_osrm_route",

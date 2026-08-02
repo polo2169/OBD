@@ -53,6 +53,7 @@ class PassiveCaptureManager:
         self._vin: str | None = None
         self._vehicle_profile: str | None = None
         self._vehicle_label: str | None = None
+        self._mode: str | None = None
         self._started_at_us: int | None = None
         self._strict_passive: bool | None = None
         self._dual_can = False
@@ -81,6 +82,7 @@ class PassiveCaptureManager:
         vin: str | None = None,
         vehicle_profile: str | None = None,
         vehicle_label: str | None = None,
+        enable_live_data_reads: bool = False,
     ) -> CaptureStatus:
         with self._lock:
             if self._active:
@@ -112,12 +114,17 @@ class PassiveCaptureManager:
             self._vin = vin
             self._vehicle_profile = vehicle_profile
             self._vehicle_label = vehicle_label
+            self._mode = "live_data" if enable_live_data_reads else "learn_passive"
             self._started_at_us = time.time_ns() // 1000
             self._strict_passive = None
             self._dual_can = False
             self._live_can_ready = None
             self._diagnostic_can_ready = None
-            self._hybrid_obd_enabled = self._live_obd_configured(vehicle_profile)
+            # Learn captures remain strictly passive. Normalized OBD polling is
+            # enabled only when the caller is the cross-cutting Live Data view.
+            self._hybrid_obd_enabled = (
+                enable_live_data_reads and self._live_obd_configured(vehicle_profile)
+            )
             self._hybrid_obd_ready = False
             self._obd_sample_count = 0
             self._obd_supported_pids = []
@@ -145,6 +152,7 @@ class PassiveCaptureManager:
                 "vin": self._vin,
                 "vehicle_profile": self._vehicle_profile,
                 "vehicle_label": self._vehicle_label,
+                "mode": self._mode,
             })
 
             self._thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -256,6 +264,7 @@ class PassiveCaptureManager:
             vin=self._vin,
             vehicle_profile=self._vehicle_profile,
             vehicle_label=self._vehicle_label,
+            mode=self._mode,
         )
 
     def latest_frames(self) -> list[dict]:
