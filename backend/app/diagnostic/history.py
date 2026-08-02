@@ -51,6 +51,7 @@ def _registry() -> dict:
     if not isinstance(payload, dict):
         payload = {}
     payload.setdefault("active_by_profile", {})
+    payload.setdefault("active_vehicle_vin", None)
     payload.setdefault("vehicles", {})
     return payload
 
@@ -78,6 +79,37 @@ def active_identity(vehicle_profile: str) -> dict | None:
         return dict(item) if isinstance(item, dict) else None
 
 
+def active_vehicle() -> dict | None:
+    with _LOCK:
+        registry = _registry()
+        vin = registry.get("active_vehicle_vin")
+        item = registry["vehicles"].get(vin) if vin else None
+        if not isinstance(item, dict):
+            vehicles = sorted(
+                registry["vehicles"].values(),
+                key=lambda candidate: candidate.get("last_seen") or "",
+                reverse=True,
+            )
+            item = vehicles[0] if vehicles else None
+        return dict(item) if isinstance(item, dict) else None
+
+
+def select_vehicle(vin: str) -> dict:
+    if not _VIN.fullmatch(vin):
+        raise ValueError("VIN invalide.")
+    with _LOCK:
+        registry = _registry()
+        item = registry["vehicles"].get(vin)
+        if not isinstance(item, dict):
+            raise KeyError("Véhicule inconnu : lis d’abord son identité.")
+        registry["active_vehicle_vin"] = vin
+        registry["active_by_profile"][item["vehicle_profile"]] = vin
+        item["last_selected_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        registry["vehicles"][vin] = item
+        _atomic_json(_registry_path(), registry)
+        return dict(item)
+
+
 def save_identity(result: VehicleIdentityResult) -> None:
     if not result.found or not result.vin or not _VIN.fullmatch(result.vin):
         return
@@ -100,6 +132,7 @@ def save_identity(result: VehicleIdentityResult) -> None:
         }
         registry["vehicles"][result.vin] = record
         registry["active_by_profile"][result.vehicle_profile] = result.vin
+        registry["active_vehicle_vin"] = result.vin
         _atomic_json(_registry_path(), registry)
 
         vehicle_dir = _vehicle_dir(result.vin, record["manufacturer"])
@@ -251,6 +284,7 @@ def finalize_scan(
         item["scan_count"] = int(item.get("scan_count") or 0) + 1
         registry["vehicles"][report.vin] = item
         registry["active_by_profile"][report.vehicle_profile] = report.vin
+        registry["active_vehicle_vin"] = report.vin
         _atomic_json(_registry_path(), registry)
         path = _vehicle_dir(report.vin, item.get("manufacturer")) / "scans" / f"{report.scan_id}.json"
         _atomic_json(path, report.model_dump(mode="json"))
@@ -260,7 +294,8 @@ def finalize_scan(
 def list_vehicles() -> list[dict]:
     with _LOCK:
         registry = _registry()
-        vehicles = [dict(item) for item in registry["vehicles"].values()]
+        active_vin = registry.get("active_vehicle_vin")
+        vehicles = [{**dict(item), "is_active": item.get("vin") == active_vin} for item in registry["vehicles"].values()]
     vehicles.sort(key=lambda item: item.get("last_seen") or "", reverse=True)
     return vehicles
 

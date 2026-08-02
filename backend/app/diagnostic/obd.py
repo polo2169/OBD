@@ -55,17 +55,23 @@ PID_DEFINITIONS = (
     PidDefinition("maf", 0x10, "Débit d'air massique", "g/s", 2, lambda data: round(_word(data) / 100, 2), "Air", "Masse d'air mesurée par le débitmètre."),
     PidDefinition("throttle_position", 0x11, "Position papillon", "%", 1, _percent, "Air", "Position absolue du papillon ou doseur d'air."),
     PidDefinition("engine_runtime", 0x1F, "Temps depuis démarrage moteur", "s", 2, _word, "Contexte", "Durée de fonctionnement depuis le dernier démarrage."),
+    PidDefinition("distance_with_mil", 0x21, "Distance avec voyant moteur allumé", "km", 2, _word, "Contexte", "Distance parcourue depuis l'allumage du voyant moteur."),
     PidDefinition("fuel_rail_gauge_pressure", 0x23, "Pression de rampe carburant", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression de rampe relative normalisée, typique de l'injection directe/diesel."),
     PidDefinition("commanded_egr", 0x2C, "Commande EGR", "%", 1, _percent, "Dépollution", "Consigne d'ouverture EGR demandée par le calculateur."),
     PidDefinition("egr_error", 0x2D, "Écart EGR", "%", 1, _signed_percent, "Dépollution", "Écart entre la consigne et le retour EGR."),
     PidDefinition("fuel_level", 0x2F, "Niveau carburant", "%", 1, _percent, "Carburant", "Niveau de carburant déclaré au diagnostic OBD."),
+    PidDefinition("barometric_pressure", 0x33, "Pression barométrique", "kPa abs", 1, lambda data: data[0], "Air", "Pression atmosphérique de référence utilisée par le calculateur."),
     PidDefinition("control_module_voltage", 0x42, "Tension calculateur", "V", 2, lambda data: round(_word(data) / 1000, 3), "Électrique", "Tension d'alimentation du calculateur d'injection."),
     PidDefinition("commanded_equivalence_ratio", 0x44, "Richesse commandée (lambda)", "λ", 2, lambda data: round(_word(data) * 2 / 65536, 4), "Combustion", "Rapport d'équivalence commandé; 1 correspond au mélange stœchiométrique."),
     PidDefinition("ambient_temperature", 0x46, "Température ambiante", "°C", 1, _temperature, "Températures", "Température extérieure utilisée comme contexte moteur."),
+    PidDefinition("accelerator_pedal_d", 0x49, "Position pédale accélérateur D", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie D de la pédale d'accélérateur."),
+    PidDefinition("accelerator_pedal_e", 0x4A, "Position pédale accélérateur E", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie E de la pédale d'accélérateur."),
     PidDefinition("absolute_fuel_rail_pressure", 0x59, "Pression absolue de rampe", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression absolue de rampe carburant lorsqu'elle est exposée par l'ECU."),
     PidDefinition("engine_oil_temperature", 0x5C, "Température huile moteur", "°C", 1, _temperature, "Températures", "Température d'huile utilisée pour la protection moteur."),
     PidDefinition("fuel_rate", 0x5E, "Débit carburant", "L/h", 2, lambda data: round(_word(data) / 20, 2), "Carburant", "Débit total de carburant consommé par le moteur."),
 )
+
+PID_BY_ID = {definition.pid: definition for definition in PID_DEFINITIONS}
 
 
 def sensor_catalog() -> list[dict]:
@@ -77,12 +83,16 @@ def sensor_catalog() -> list[dict]:
             "unit": definition.unit,
             "group": definition.group,
             "description": definition.description,
+            "source": "SAE J1979 / ISO 15031-5",
+            "confidence": "standardized",
+            "access": "read_only",
+            "request_hex": f"01{definition.pid:02X}",
         }
         for definition in PID_DEFINITIONS
     ]
 
 
-def _supported_pids(session: UdsSession) -> list[int]:
+def supported_pids(session: UdsSession) -> list[int]:
     supported: set[int] = set()
     base = 0x00
     while base <= 0xE0:
@@ -103,15 +113,62 @@ def _supported_pids(session: UdsSession) -> list[int]:
     return sorted(supported)
 
 
-def snapshot_sensors() -> SensorSnapshot:
+def read_pid(session: UdsSession, definition: PidDefinition) -> SensorValue:
+    """Read and decode one standardized Mode 01 PID."""
+    response = session.request_obd(bytes([0x01, definition.pid]))
+    expected = bytes([0x41, definition.pid])
+    if not response.startswith(expected):
+        raise ValueError(f"Réponse inattendue : {response.hex().upper()}")
+    data = response[2:]
+    if len(data) < definition.length:
+        raise ValueError(
+            f"PID 0x{definition.pid:02X} tronqué : "
+            f"{len(data)} octets, {definition.length} attendus."
+        )
+    return SensorValue(
+        key=definition.key,
+        pid=definition.pid,
+        name=definition.name,
+        value=definition.decoder(data[:definition.length]),
+        unit=definition.unit,
+        group=definition.group,
+        description=definition.description,
+        source="SAE J1979 / ISO 15031-5",
+        confidence="standardized",
+        raw_hex=data.hex().upper(),
+    )
+
+
+def live_pid_definitions(profile_key: str) -> tuple[PidDefinition, ...]:
+    """Return the allowlisted live PIDs configured for a vehicle profile."""
+    diagnostic = KnowledgeBase().vehicle(profile_key).get("diagnostic", {})
+    live = diagnostic.get("live_obd", {})
+    configured = live.get("pids", []) if isinstance(live, dict) else []
+    definitions: list[PidDefinition] = []
+    for value in configured:
+        pid = int(str(value), 0)
+        definition = PID_BY_ID.get(pid)
+        if definition is not None and definition not in definitions:
+            definitions.append(definition)
+    return tuple(definitions)
+
+
+def snapshot_sensors(profile_key: str | None = None) -> SensorSnapshot:
     if settings.transport != "virtual" and not settings.can_tx_enabled:
         raise PermissionError(
             "Le mode capteurs envoie uniquement des lectures OBD, mais nécessite CAN_TX_ENABLED=true."
         )
 
-    diagnostic = KnowledgeBase().vehicle().get("diagnostic", {})
+    selected_profile = profile_key or settings.vehicle_profile
+    diagnostic = KnowledgeBase().vehicle(selected_profile).get("diagnostic", {})
     request_id = int(str(diagnostic.get("obd_request_id", 0x7E0)), 0)
     response_id = int(str(diagnostic.get("obd_response_id", 0x7E8)), 0)
+    flow_control_id = (
+        int(str(diagnostic["obd_flow_control_id"]), 0)
+        if diagnostic.get("obd_flow_control_id") is not None
+        else None
+    )
+    flow_control_blocksize = int(diagnostic.get("obd_flow_control_blocksize", 8))
     trace = SessionWriter()
 
     def sink(event: dict) -> None:
@@ -119,9 +176,15 @@ def snapshot_sensors() -> SensorSnapshot:
             return
         trace.write(event)
 
-    transport = build_transport(sink)
+    transport = build_transport(
+        sink,
+        receive_buses=("default", "live"),
+        require_diagnostic_can=False,
+        vehicle_profile=selected_profile,
+    )
     snapshot = SensorSnapshot(
         transport=transport.name,
+        vehicle_profile=selected_profile,
         request_id=request_id,
         response_id=response_id,
     )
@@ -141,37 +204,35 @@ def snapshot_sensors() -> SensorSnapshot:
             response_id,
             timeout=settings.diagnostic_timeout,
             read_only=True,
+            tx_bus="live",
+            flow_control_id=flow_control_id,
+            flow_control_blocksize=flow_control_blocksize,
         ) as session:
-            snapshot.supported_pids = _supported_pids(session)
+            snapshot.supported_pids = supported_pids(session)
             supported = set(snapshot.supported_pids)
+            if 0x01 in supported:
+                response = session.request_obd(bytes.fromhex("0101"))
+                if not response.startswith(bytes.fromhex("4101")) or len(response) < 6:
+                    raise ValueError(f"Statut OBD PID 01 inattendu : {response.hex().upper()}")
+                status = response[2]
+                snapshot.mil_on = bool(status & 0x80)
+                snapshot.emissions_dtc_count = status & 0x7F
+                snapshot.readiness_raw_hex = response[2:6].hex().upper()
             for definition in PID_DEFINITIONS:
                 if definition.pid not in supported:
                     continue
                 try:
-                    response = session.request_obd(bytes([0x01, definition.pid]))
-                    expected = bytes([0x41, definition.pid])
-                    if not response.startswith(expected):
-                        raise ValueError(f"Réponse inattendue : {response.hex().upper()}")
-                    data = response[2:]
-                    if len(data) < definition.length:
-                        raise ValueError(
-                            f"PID 0x{definition.pid:02X} tronqué : "
-                            f"{len(data)} octets, {definition.length} attendus."
-                        )
-                    snapshot.values.append(SensorValue(
-                        key=definition.key,
-                        pid=definition.pid,
-                        name=definition.name,
-                        value=definition.decoder(data[:definition.length]),
-                        unit=definition.unit,
-                        raw_hex=data.hex().upper(),
-                    ))
+                    snapshot.values.append(read_pid(session, definition))
                 except Exception as exc:
                     snapshot.values.append(SensorValue(
                         key=definition.key,
                         pid=definition.pid,
                         name=definition.name,
                         unit=definition.unit,
+                        group=definition.group,
+                        description=definition.description,
+                        source="SAE J1979 / ISO 15031-5",
+                        confidence="standardized",
                         error=str(exc),
                     ))
         trace.write({"type": "sensor_snapshot", "payload": snapshot.model_dump()})

@@ -12,9 +12,10 @@ import threading
 from app.config import settings
 from app.learn.models import ReplayData, ReplayEvent, ReplayGpsPoint, ReplaySample
 from app.learn.opendbc import get_opendbc_decoder
+from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 11
+CACHE_VERSION = 13
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -324,6 +325,35 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["lka_active"] = _boolean(values, "LXA_ACTIVATION")
     elif message == "DRIVER" and state.get("accelerator_pct") is None:
         state["accelerator_pct"] = _number(values, "GAS_PEDAL")
+
+
+OBD_REPLAY_FIELDS: dict[str, tuple[str, float]] = {
+    "engine_rpm": ("engine_rpm", 1.0),
+    "vehicle_speed": ("speed_kph", 1.0),
+    "coolant_temperature": ("coolant_temperature_c", 1.0),
+    "intake_air_temperature": ("intake_air_temperature_c", 1.0),
+    "engine_oil_temperature": ("oil_temperature_c", 1.0),
+    "control_module_voltage": ("battery_voltage_v", 1.0),
+    "ambient_temperature": ("ambient_temperature_c", 1.0),
+    "accelerator_pedal_d": ("accelerator_pct", 1.0),
+    "barometric_pressure": ("atmospheric_pressure_hpa", 10.0),
+}
+
+
+def _update_obd_state(values: list[dict[str, Any]], state: dict[str, Any]) -> set[str]:
+    updated: set[str] = set()
+    for item in values:
+        mapping = OBD_REPLAY_FIELDS.get(str(item.get("key") or ""))
+        value = item.get("value")
+        if mapping is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        number = float(value)
+        if not math.isfinite(number):
+            continue
+        field, factor = mapping
+        state[field] = number * factor
+        updated.add(field)
+    return updated
 
 
 def _reconstruct_route(points: list[ReplaySample]) -> tuple[float, float, dict[str, float]]:
@@ -792,9 +822,13 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     next_sample_us: int | None = None
     frame_count = 0
     decoded_frame_count = 0
+    obd_standardized_fields: set[str] = set()
     gps_events: list[dict[str, Any]] = []
     source = ""
     name = session_id
+    vin: str | None = None
+    vehicle_profile: str | None = None
+    vehicle_label: str | None = None
 
     with path.open(encoding="utf-8") as handle:
         for line in handle:
@@ -810,6 +844,29 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             if event.get("type") == "meta":
                 source = str(event.get("source") or source)
                 name = str(event.get("name") or name)
+                vin = str(event.get("vin") or vin or "") or None
+                vehicle_profile = str(event.get("vehicle_profile") or vehicle_profile or "") or None
+                vehicle_label = str(event.get("vehicle_label") or vehicle_label or "") or None
+                continue
+            if event.get("type") == "obd_sensor_snapshot":
+                try:
+                    timestamp_us = int(event["timestamp_us"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if first_frame_us is None:
+                    first_frame_us = timestamp_us
+                    next_sample_us = timestamp_us + SAMPLE_PERIOD_US
+                last_frame_us = timestamp_us
+                while next_sample_us is not None and timestamp_us >= next_sample_us:
+                    points.append(_snapshot(state, (next_sample_us - first_frame_us) // 1000))
+                    next_sample_us += SAMPLE_PERIOD_US
+                values = event.get("values")
+                if isinstance(values, list):
+                    updated = _update_obd_state(values, state)
+                    if updated:
+                        decoded_frame_count += 1
+                        obd_standardized_fields.update(updated)
+                        available_fields.update(updated)
                 continue
             if event.get("type") != "can_frame":
                 continue
@@ -830,6 +887,23 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
                 points.append(_snapshot(state, (next_sample_us - first_frame_us) // 1000))
                 next_sample_us += SAMPLE_PERIOD_US
 
+            if (
+                vehicle_profile == "fiat_500_generic"
+                and bool(event.get("extended", arbitration_id > 0x7FF))
+                and arbitration_id == 0x0618A001
+            ):
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 4:
+                    rpm = int.from_bytes(data[2:4], "big")
+                    if 0 <= rpm <= 8_000:
+                        state["engine_rpm"] = rpm
+                        available_fields.add("engine_rpm")
+                        decoded_frame_count += 1
+                continue
+
             if arbitration_id not in TARGET_IDS:
                 continue
             try:
@@ -848,7 +922,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             available_fields.update(key for key in STATE_FIELDS if state.get(key) is not None)
 
     if first_frame_us is None or last_frame_us is None:
-        raise ValueError(f"La session {session_id} ne contient aucune trame CAN lisible.")
+        raise ValueError(f"La session {session_id} ne contient aucune donnée directe lisible.")
     duration_ms = max(0, (last_frame_us - first_frame_us) // 1000)
     if not points:
         points.append(_snapshot(state, 0))
@@ -893,11 +967,17 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     moving_speeds = [point.speed_kph for point in points if point.speed_kph is not None and point.speed_kph > 1]
     max_speed = max((point.speed_kph or 0 for point in points), default=0)
     stat = path.stat()
-    warnings = [
-        "À l'exception de la direction validée sur ce véhicule, les libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
-        "La pression d'huile disponible est un contacteur logique, pas une mesure en bar.",
-        f"Replay préparé le {datetime.now(timezone.utc).isoformat(timespec='seconds')}.",
-    ]
+    warnings = [f"Replay préparé le {datetime.now(timezone.utc).isoformat(timespec='seconds')}."]
+    if vehicle_profile == "fiat_500_generic":
+        warnings[:0] = [
+            "Le régime CAN Fiat est validé sur cette 500; les autres mesures moteur marquées OBD sont normalisées Mode 01.",
+            "Les identifiants CAN Fiat non cartographiés restent exclus du replay plutôt que d'être interprétés comme des signaux Peugeot.",
+        ]
+    else:
+        warnings[:0] = [
+            "À l'exception de la direction validée sur ce véhicule, les libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
+            "La pression d'huile disponible est un contacteur logique, pas une mesure en bar.",
+        ]
     if route_method == "driver_confirmed_osrm":
         roads = ", ".join(route_override_metadata.get("road_refs", [])) if route_override_metadata else ""
         warnings[:0] = [
@@ -937,6 +1017,8 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         for key, value in FIELD_QUALITY.items()
         if key in available_fields or key in {"x_m", "y_m", "heading_deg", "distance_m"}
     }
+    for field in obd_standardized_fields:
+        field_quality[field] = "standardized_obd_mode_01"
     if route_method == "driver_confirmed_osrm":
         field_quality.update({
             "latitude": "driver_confirmed_osrm_route",
@@ -968,11 +1050,17 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "longitude": "gps_anchor_plus_dead_reckoning",
         })
 
+    assignment = load_session_vehicle(session_id)
+    vin = str(assignment.get("vin") or vin or "") or None
+    vehicle_profile = str(assignment.get("vehicle_profile") or vehicle_profile or "") or None
+    vehicle_label = str(assignment.get("vehicle_label") or vehicle_label or "") or None
     replay = ReplayData(
         version=CACHE_VERSION,
         session_id=session_id,
         name=name,
-        vehicle="Peugeot 308 T9 · 2018",
+        vehicle=vehicle_label or vehicle_profile or "Véhicule non attribué",
+        vin=vin,
+        vehicle_profile=vehicle_profile,
         source=source,
         source_size_bytes=stat.st_size,
         source_mtime_ns=stat.st_mtime_ns,
@@ -981,6 +1069,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             if _route_override_path(path).exists()
             else None
         ),
+        vehicle_assignment_mtime_ns=session_vehicle_mtime_ns(session_id),
         start_timestamp_us=first_frame_us,
         duration_ms=duration_ms,
         sample_period_ms=SAMPLE_PERIOD_US // 1000,
@@ -1010,6 +1099,7 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
     stat = path.stat()
     route_path = _route_override_path(path)
     route_override_mtime_ns = route_path.stat().st_mtime_ns if route_path.exists() else None
+    vehicle_assignment_mtime = session_vehicle_mtime_ns(session_id)
     if not force and cache_path.exists():
         try:
             cached = ReplayData.model_validate_json(cache_path.read_text(encoding="utf-8"))
@@ -1018,6 +1108,7 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
                 and cached.source_size_bytes == stat.st_size
                 and cached.source_mtime_ns == stat.st_mtime_ns
                 and cached.route_override_mtime_ns == route_override_mtime_ns
+                and cached.vehicle_assignment_mtime_ns == vehicle_assignment_mtime
             ):
                 return cached
         except (OSError, ValueError, json.JSONDecodeError):
@@ -1032,6 +1123,7 @@ def prepare_replay(session_id: str, force: bool = False) -> ReplayData:
                     and cached.source_size_bytes == stat.st_size
                     and cached.source_mtime_ns == stat.st_mtime_ns
                     and cached.route_override_mtime_ns == route_override_mtime_ns
+                    and cached.vehicle_assignment_mtime_ns == vehicle_assignment_mtime
                 ):
                     return cached
             except (OSError, ValueError, json.JSONDecodeError):

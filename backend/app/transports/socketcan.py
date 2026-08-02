@@ -56,6 +56,7 @@ class SocketCanTransport(Transport):
             frame.arbitration_id,
             frame.extended,
             frame.data,
+            frame.bus,
         )
         if not decision.allowed:
             raise PermissionError(decision.reason)

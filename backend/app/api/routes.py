@@ -7,13 +7,16 @@ from app.database import KnowledgeBase
 from app.diagnostic.obd import sensor_catalog, snapshot_sensors
 from app.diagnostic.identity import read_vehicle_identity
 from app.diagnostic.history import (
+    active_vehicle,
     active_identity,
     find_report,
     latest_report,
     list_reports,
     list_vehicles,
     report_html,
+    select_vehicle,
 )
+from app.diagnostic.maintenance import maintenance_catalog
 from app.diagnostic.observed_dtcs import list_observed_dtcs, save_observed_dtc
 from app.diagnostic.psa_advanced import (
     advanced_catalog,
@@ -22,11 +25,14 @@ from app.diagnostic.psa_advanced import (
     read_raw_did,
     unlock_configuration,
 )
+from app.diagnostic.regression import compare_with_baseline
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
+from app.diagnostic.trace_import import import_diagnostic_trace
 from app.learn.capture import capture_manager
 from app.models import (
     ClearDtcRequest,
     ClearDtcResult,
+    DiagnosticTraceImportRequest,
     DidReadResult,
     ObservedDtcInput,
     ObservedDtcResult,
@@ -42,6 +48,7 @@ from app.models import (
     TransportConnectRequest,
     VehicleIdentityRequest,
     VehicleIdentityResult,
+    VehicleSelectionRequest,
 )
 from app.transports.selection import (
     available_transport_options,
@@ -129,6 +136,16 @@ def vehicle_profiles() -> list[dict]:
     return KnowledgeBase().vehicle_profiles()
 
 
+@router.get("/maintenance/catalog")
+def vehicle_maintenance_catalog(
+    vehicle_profile: str | None = Query(default=None),
+) -> dict:
+    try:
+        return maintenance_catalog(vehicle_profile)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/database/dids")
 def did_catalog() -> list[dict]:
     return [
@@ -164,14 +181,18 @@ def diagnostic_sensor_catalog() -> list[dict]:
 
 
 @router.post("/sensors/snapshot", response_model=SensorSnapshot)
-def diagnostic_sensor_snapshot() -> SensorSnapshot:
+def diagnostic_sensor_snapshot(
+    vehicle_profile: str | None = Query(default=None),
+) -> SensorSnapshot:
     if settings.transport != "virtual" and not settings.can_tx_enabled:
         raise HTTPException(
             status_code=403,
             detail="PID OBD actifs indisponibles : l'ESP32 est en écoute passive stricte.",
         )
     try:
-        return snapshot_sensors()
+        return snapshot_sensors(vehicle_profile)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except TimeoutException as exc:
@@ -201,9 +222,39 @@ def diagnostic_scan(request: ScanRequest | None = None) -> ScanReport:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/diagnostic/traces/import")
+def diagnostic_trace_import(request: DiagnosticTraceImportRequest) -> dict:
+    """Normalize an exported diagnostic trace without transmitting to the vehicle."""
+
+    try:
+        return import_diagnostic_trace(request)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/diagnostic/vehicles")
 def diagnostic_vehicles() -> list[dict]:
     return list_vehicles()
+
+
+@router.get("/diagnostic/vehicles/active")
+def diagnostic_active_vehicle() -> dict:
+    vehicle = active_vehicle()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Aucun véhicule enregistré.")
+    return vehicle
+
+
+@router.post("/diagnostic/vehicles/active")
+def diagnostic_select_vehicle(request: VehicleSelectionRequest) -> dict:
+    try:
+        return select_vehicle(request.vin)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/diagnostic/identity/latest")
@@ -239,6 +290,17 @@ def diagnostic_report(scan_id: str) -> ScanReport:
     if found is None:
         raise HTTPException(status_code=404, detail="Rapport diagnostic introuvable.")
     return found[0]
+
+
+@router.get("/diagnostic/reports/{scan_id}/regression")
+def diagnostic_report_regression(scan_id: str) -> dict:
+    found = find_report(scan_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Rapport diagnostic introuvable.")
+    try:
+        return compare_with_baseline(found[0])
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/diagnostic/reports/{scan_id}/export")

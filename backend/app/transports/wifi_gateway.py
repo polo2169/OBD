@@ -93,11 +93,19 @@ class Esp32WifiTransport(Transport):
     def send(self, frame: CanFrame) -> None:
         if not self.tx_enabled:
             raise PermissionError("Émission ESP32 Wi-Fi désactivée par CAN_TX_ENABLED.")
+        if (
+            frame.bus == "live"
+            and (not self.hello or self.hello.get("live_obd_read_only") is not True)
+        ):
+            raise PermissionError(
+                "Le firmware ESP32 Wi-Fi n'annonce pas l'allowlist OBD lecture seule sur 6/14."
+            )
         decision = authorize_transport_can_frame(
             self.safety_profile,
             frame.arbitration_id,
             frame.extended,
             frame.data,
+            frame.bus,
         )
         if not decision.allowed:
             raise PermissionError(decision.reason)
@@ -175,7 +183,8 @@ class Esp32WifiTransport(Transport):
                 self._disconnect("gateway_psa_lab_rejected")
                 raise RuntimeError("Le firmware ESP32 Wi-Fi n'annonce pas la capacité PSA lab.")
             if (
-                self.safety_profile == "diagnostic_read_only"
+                self.require_diagnostic_can
+                and self.safety_profile == "diagnostic_read_only"
                 and hello.get("diagnostic_read_only") is not True
                 and not psa_lab
             ):

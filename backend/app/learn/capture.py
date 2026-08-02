@@ -27,12 +27,18 @@ class PassiveCaptureManager:
         "gateway_reported_error",
         "gateway_stats",
         "transport_close",
+        "obd_request",
+        "obd_response",
+        "obd_error",
+        "isotp_error",
     }
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
+        self._obd_thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._transport_ready = threading.Event()
         self._active = False
         self._session_id: str | None = None
         self._path: Path | None = None
@@ -44,11 +50,19 @@ class PassiveCaptureManager:
         self._gps_point_count = 0
         self._gps_last_accuracy_m: float | None = None
         self._name = ""
+        self._vin: str | None = None
+        self._vehicle_profile: str | None = None
+        self._vehicle_label: str | None = None
         self._started_at_us: int | None = None
         self._strict_passive: bool | None = None
         self._dual_can = False
         self._live_can_ready: bool | None = None
         self._diagnostic_can_ready: bool | None = None
+        self._hybrid_obd_enabled = False
+        self._hybrid_obd_ready = False
+        self._obd_sample_count = 0
+        self._obd_supported_pids: list[int] = []
+        self._obd_error: str | None = None
         self._last_error: str | None = None
         self._write_lock = threading.Lock()
         self._write_handle: TextIO | None = None
@@ -56,8 +70,18 @@ class PassiveCaptureManager:
         self._last_flush_monotonic = 0.0
         self._latest_frames_lock = threading.Lock()
         self._latest_frames: dict[tuple[int, bool], dict] = {}
+        self._latest_obd_lock = threading.Lock()
+        self._latest_obd_values: dict[str, dict] = {}
+        self._obd_diagnostic_ids: set[int] = set()
 
-    def start(self, name: str = "Nouvelle découverte", note: str | None = None) -> CaptureStatus:
+    def start(
+        self,
+        name: str = "Nouvelle découverte",
+        note: str | None = None,
+        vin: str | None = None,
+        vehicle_profile: str | None = None,
+        vehicle_label: str | None = None,
+    ) -> CaptureStatus:
         with self._lock:
             if self._active:
                 return self.status()
@@ -74,15 +98,38 @@ class PassiveCaptureManager:
             self._gps_point_count = 0
             self._gps_last_accuracy_m = None
             self._name = name
+            if vin is None:
+                try:
+                    from app.diagnostic.history import active_vehicle
+                    selected = active_vehicle() or {}
+                except Exception:
+                    selected = {}
+                selected_profile = selected.get("vehicle_profile")
+                if vehicle_profile is None or vehicle_profile == selected_profile:
+                    vin = selected.get("vin")
+                    vehicle_profile = vehicle_profile or selected_profile
+                    vehicle_label = vehicle_label or " ".join(filter(None, [selected.get("manufacturer"), selected.get("model")])) or None
+            self._vin = vin
+            self._vehicle_profile = vehicle_profile
+            self._vehicle_label = vehicle_label
             self._started_at_us = time.time_ns() // 1000
             self._strict_passive = None
             self._dual_can = False
             self._live_can_ready = None
             self._diagnostic_can_ready = None
+            self._hybrid_obd_enabled = self._live_obd_configured(vehicle_profile)
+            self._hybrid_obd_ready = False
+            self._obd_sample_count = 0
+            self._obd_supported_pids = []
+            self._obd_error = None
             self._last_error = None
             with self._latest_frames_lock:
                 self._latest_frames = {}
+            with self._latest_obd_lock:
+                self._latest_obd_values = {}
+            self._obd_diagnostic_ids = self._profile_obd_ids(vehicle_profile)
             self._stop.clear()
+            self._transport_ready.clear()
             self._active = True
             self._source = settings.transport
             self._open_writer()
@@ -95,16 +142,30 @@ class PassiveCaptureManager:
                 "readonly": True,
                 "name": name,
                 "note": note,
+                "vin": self._vin,
+                "vehicle_profile": self._vehicle_profile,
+                "vehicle_label": self._vehicle_label,
             })
 
             self._thread = threading.Thread(target=self._capture_loop, daemon=True)
             self._thread.start()
+            if self._hybrid_obd_enabled:
+                self._obd_thread = threading.Thread(
+                    target=self._obd_loop,
+                    name="opendiag-live-obd",
+                    daemon=True,
+                )
+                self._obd_thread.start()
+            else:
+                self._obd_thread = None
             return self.status()
 
     def stop(self) -> CaptureStatus:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=max(2.0, settings.esp32_handshake_timeout + 1.0))
+        if self._obd_thread:
+            self._obd_thread.join(timeout=max(3.0, settings.diagnostic_timeout + 2.0))
         with self._lock:
             self._active = False
             self._write({
@@ -186,13 +247,26 @@ class PassiveCaptureManager:
             dual_can=self._dual_can,
             live_can_ready=self._live_can_ready,
             diagnostic_can_ready=self._diagnostic_can_ready,
+            hybrid_obd_enabled=self._hybrid_obd_enabled,
+            hybrid_obd_ready=self._hybrid_obd_ready,
+            obd_sample_count=self._obd_sample_count,
+            obd_supported_pids=list(self._obd_supported_pids),
+            obd_error=self._obd_error,
             error=self._last_error,
+            vin=self._vin,
+            vehicle_profile=self._vehicle_profile,
+            vehicle_label=self._vehicle_label,
         )
 
     def latest_frames(self) -> list[dict]:
         """Return one immutable snapshot containing the newest frame per CAN ID."""
         with self._latest_frames_lock:
             return [dict(frame) for frame in self._latest_frames.values()]
+
+    def latest_obd_values(self) -> list[dict]:
+        """Return the newest standardized OBD values from the hybrid live loop."""
+        with self._latest_obd_lock:
+            return [dict(value) for value in self._latest_obd_values.values()]
 
     def reset_latest_frames(self) -> None:
         """Start a fresh passive inventory without interrupting the recording."""
@@ -204,6 +278,7 @@ class PassiveCaptureManager:
             debug_sink=self._transport_debug,
             receive_buses=("default", "live", "diagnostic"),
             require_diagnostic_can=False,
+            vehicle_profile=self._vehicle_profile,
         )
         try:
             transport.open()
@@ -229,6 +304,7 @@ class PassiveCaptureManager:
                 "live_can_ready": self._live_can_ready,
                 "diagnostic_can_ready": self._diagnostic_can_ready,
             })
+            self._transport_ready.set()
             while not self._stop.is_set():
                 frame = transport.receive(timeout=0.1)
                 if frame is None:
@@ -244,15 +320,16 @@ class PassiveCaptureManager:
                     "bus": frame.bus,
                 })
                 if frame.bus in {"default", "live"}:
-                    with self._latest_frames_lock:
-                        self._latest_frames[(frame.arbitration_id, frame.extended)] = {
-                            "timestamp_us": time.time_ns() // 1000,
-                            "arbitration_id": frame.arbitration_id,
-                            "extended": frame.extended,
-                            "data": bytes(frame.data),
-                            "raw_hex": frame.data.hex().upper(),
-                            "bus": frame.bus,
-                        }
+                    if frame.arbitration_id not in self._obd_diagnostic_ids:
+                        with self._latest_frames_lock:
+                            self._latest_frames[(frame.arbitration_id, frame.extended)] = {
+                                "timestamp_us": time.time_ns() // 1000,
+                                "arbitration_id": frame.arbitration_id,
+                                "extended": frame.extended,
+                                "data": bytes(frame.data),
+                                "raw_hex": frame.data.hex().upper(),
+                                "bus": frame.bus,
+                            }
                 self._frame_count += 1
                 if frame.bus == "diagnostic":
                     self._diagnostic_frame_count += 1
@@ -267,8 +344,150 @@ class PassiveCaptureManager:
                 "error": str(exc),
             })
         finally:
+            self._transport_ready.set()
             transport.close()
             self._active = False
+
+    def _obd_loop(self) -> None:
+        """Poll a small profile allowlist of Mode 01 PIDs beside passive CAN."""
+        from app.database import KnowledgeBase
+        from app.diagnostic.isotp import UdsSession
+        from app.diagnostic.obd import live_pid_definitions, read_pid, supported_pids
+
+        if not self._transport_ready.wait(timeout=settings.esp32_handshake_timeout + 1.0):
+            self._obd_error = "La passerelle CAN n'a pas confirmé son démarrage."
+            return
+        if self._stop.is_set() or not self._active:
+            return
+        if self._strict_passive:
+            self._obd_error = "Firmware en écoute passive stricte : polling OBD désactivé."
+            return
+
+        profile_key = self._vehicle_profile or settings.vehicle_profile
+        diagnostic = KnowledgeBase().vehicle(profile_key).get("diagnostic", {})
+        live_config = diagnostic.get("live_obd", {})
+        definitions = live_pid_definitions(profile_key)
+        if not definitions:
+            self._obd_error = "Aucun PID direct n'est configuré pour ce profil."
+            return
+        request_id = int(str(diagnostic.get("obd_request_id", 0x7E0)), 0)
+        response_id = int(str(diagnostic.get("obd_response_id", 0x7E8)), 0)
+        flow_control_id = (
+            int(str(diagnostic["obd_flow_control_id"]), 0)
+            if diagnostic.get("obd_flow_control_id") is not None
+            else None
+        )
+        flow_control_blocksize = int(diagnostic.get("obd_flow_control_blocksize", 8))
+        interval_seconds = max(0.25, min(10.0, float(live_config.get("interval_ms", 1000)) / 1000))
+        supported: set[int] | None = None
+        transport = build_transport(
+            debug_sink=self._transport_debug,
+            receive_buses=("default", "live"),
+            require_diagnostic_can=False,
+            vehicle_profile=profile_key,
+        )
+        try:
+            transport.open()
+            while not self._stop.is_set() and self._active:
+                cycle_started = time.monotonic()
+                values: dict[str, dict] = {}
+                pid_errors: list[str] = []
+                try:
+                    with UdsSession(
+                        transport,
+                        request_id,
+                        response_id,
+                        timeout=settings.diagnostic_timeout,
+                        read_only=True,
+                        tx_bus="live",
+                        flow_control_id=flow_control_id,
+                        flow_control_blocksize=flow_control_blocksize,
+                    ) as session:
+                        if supported is None:
+                            supported = set(supported_pids(session))
+                            self._obd_supported_pids = sorted(supported)
+                            self._write({
+                                "type": "obd_supported_pids",
+                                "timestamp_us": time.time_ns() // 1000,
+                                "request_id": request_id,
+                                "response_id": response_id,
+                                "supported_pids": self._obd_supported_pids,
+                            })
+                        for definition in definitions:
+                            if self._stop.is_set():
+                                break
+                            if definition.pid not in supported:
+                                continue
+                            try:
+                                value = read_pid(session, definition)
+                                timestamp_us = time.time_ns() // 1000
+                                values[value.key] = {
+                                    **value.model_dump(mode="json"),
+                                    "updated_at_us": timestamp_us,
+                                    "request_id": request_id,
+                                    "response_id": response_id,
+                                }
+                            except Exception as exc:
+                                pid_errors.append(f"PID 0x{definition.pid:02X}: {exc}")
+                    if values:
+                        with self._latest_obd_lock:
+                            self._latest_obd_values = values
+                        self._obd_sample_count += 1
+                        self._hybrid_obd_ready = True
+                        self._obd_error = "; ".join(pid_errors[:3]) or None
+                        self._write({
+                            "type": "obd_sensor_snapshot",
+                            "timestamp_us": max(value["updated_at_us"] for value in values.values()),
+                            "vehicle_profile": profile_key,
+                            "values": list(values.values()),
+                            "errors": pid_errors,
+                        })
+                    else:
+                        self._hybrid_obd_ready = False
+                        self._obd_error = "; ".join(pid_errors[:3]) or "Aucun PID OBD direct pris en charge."
+                        with self._latest_obd_lock:
+                            self._latest_obd_values = {}
+                except Exception as exc:
+                    self._hybrid_obd_ready = False
+                    self._obd_error = str(exc)
+                    with self._latest_obd_lock:
+                        self._latest_obd_values = {}
+                    self._write({
+                        "type": "obd_live_error",
+                        "timestamp_us": time.time_ns() // 1000,
+                        "error": str(exc),
+                    })
+                elapsed = time.monotonic() - cycle_started
+                self._stop.wait(max(0.05, interval_seconds - elapsed))
+        except Exception as exc:
+            self._hybrid_obd_ready = False
+            self._obd_error = str(exc)
+        finally:
+            transport.close()
+
+    @staticmethod
+    def _live_obd_configured(vehicle_profile: str | None) -> bool:
+        if not settings.live_obd_enabled or not settings.can_tx_enabled:
+            return False
+        try:
+            from app.database import KnowledgeBase
+            live = KnowledgeBase().vehicle(vehicle_profile).get("diagnostic", {}).get("live_obd", {})
+            return isinstance(live, dict) and live.get("enabled") is True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _profile_obd_ids(vehicle_profile: str | None) -> set[int]:
+        try:
+            from app.database import KnowledgeBase
+            diagnostic = KnowledgeBase().vehicle(vehicle_profile).get("diagnostic", {})
+            return {
+                int(str(value), 0)
+                for key in ("obd_request_id", "obd_response_id", "obd_flow_control_id")
+                if (value := diagnostic.get(key)) is not None
+            }
+        except Exception:
+            return set()
 
     def _transport_debug(self, event: dict) -> None:
         if event.get("type") not in self._RECORDED_TRANSPORT_EVENTS:

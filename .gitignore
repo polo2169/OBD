@@ -11,6 +11,7 @@ firmware/esp32-gateway/.pio/
 firmware/esp32-gateway/include/secrets.hpp
 
 data/sessions/*.jsonl
+data/sessions/*.vehicle.json
 !data/sessions/.gitkeep
 data/diagnostics/
 database/psa/proposals/*.yaml

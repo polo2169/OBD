@@ -65,6 +65,39 @@ def test_gateway_requires_firmware_diagnostic_lock_when_tx_is_enabled(monkeypatc
     assert device.closed
 
 
+def test_gateway_allows_live_obd_when_diagnostic_satellite_is_absent(monkeypatch):
+    from app.models import CanFrame
+
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "live_obd_read_only": True,
+        "diagnostic_can_ready": False,
+        "diagnostic_read_only": False,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport(
+        "/dev/fake",
+        921600,
+        tx_enabled=True,
+        require_diagnostic_can=False,
+    )
+
+    transport.open()
+    transport.send(CanFrame(
+        timestamp_us=1,
+        arbitration_id=0x7E0,
+        data=bytes.fromhex("0201000000000000"),
+        bus="live",
+    ))
+
+    assert device.written[-1].endswith(b'"bus":"live"}\n')
+
+
 def test_gateway_accepts_locked_firmware_and_blocks_raw_write(monkeypatch):
     from app.models import CanFrame
 
@@ -197,6 +230,70 @@ def test_dual_gateway_decodes_buses_and_routes_diagnostic_tx(monkeypatch):
         b'{"type":"can_tx","id":1874,"ext":false,'
         b'"data":"0322F19000000000","bus":"diagnostic"}\n'
     )
+
+
+def test_dual_gateway_routes_only_allowlisted_obd_reads_to_live_bus(monkeypatch):
+    from app.models import CanFrame
+
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "diagnostic_can_ready": True,
+        "diagnostic_read_only": True,
+        "live_obd_read_only": True,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+    transport.open()
+
+    transport.send(CanFrame(
+        timestamp_us=1,
+        arbitration_id=0x7E0,
+        data=bytes.fromhex("02010C0000000000"),
+        bus="live",
+    ))
+    with pytest.raises(PermissionError, match="verrouillé|autorisé"):
+        transport.send(CanFrame(
+            timestamp_us=2,
+            arbitration_id=0x752,
+            data=bytes.fromhex("0322F19000000000"),
+            bus="live",
+        ))
+
+    assert device.written[-1] == (
+        b'{"type":"can_tx","id":2016,"ext":false,'
+        b'"data":"02010C0000000000","bus":"live"}\n'
+    )
+
+
+def test_dual_gateway_refuses_live_tx_without_firmware_capability(monkeypatch):
+    from app.models import CanFrame
+
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "diagnostic_can_ready": True,
+        "diagnostic_read_only": True,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+    transport.open()
+
+    with pytest.raises(PermissionError, match="nouveau profil double-CAN"):
+        transport.send(CanFrame(
+            timestamp_us=1,
+            arbitration_id=0x7E0,
+            data=bytes.fromhex("02010C0000000000"),
+            bus="live",
+        ))
 
 
 def test_dual_gateway_rejects_missing_diagnostic_controller(monkeypatch):

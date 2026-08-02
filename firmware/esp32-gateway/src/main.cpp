@@ -23,6 +23,8 @@ static uint32_t rx_count = 0;
 static uint32_t tx_count = 0;
 static uint32_t tx_failed_count = 0;
 static uint32_t tx_policy_blocked_count = 0;
+static uint32_t live_tx_count = 0;
+static uint32_t live_tx_failed_count = 0;
 static uint32_t dropped_count = 0;
 static uint32_t filtered_count = 0;
 static uint32_t bus_off_count = 0;
@@ -40,6 +42,41 @@ static char interboard_rx_line[1536]{};
 static size_t interboard_rx_length = 0;
 static bool interboard_rx_discard = false;
 static uint32_t interboard_overflow_count = 0;
+#endif
+
+#if LIVE_OBD_READ_ONLY
+static const char *live_obd_tx_rejection(
+    uint32_t id,
+    bool extended,
+    const uint8_t *payload,
+    size_t length) {
+  const bool allowed_id = extended
+      ? (id == 0x18DB33F1 || id == 0x18DA10F1)
+      : (id == 0x7DF || id == 0x7E0);
+  if (!allowed_id) return "CAN identifier is outside the OBD Mode 01/09 allowlist on OBD 6/14";
+  if (length == 0 || length > 8) return "invalid ISO-TP frame length on OBD 6/14";
+
+  const uint8_t pci_type = payload[0] >> 4;
+  if (pci_type == 0x3) {
+    if (id != 0x7E0 && id != 0x18DA10F1) {
+      return "OBD flow control must use a physical engine identifier";
+    }
+    if (length < 3 || (payload[0] & 0x0F) > 0x02) {
+      return "invalid ISO-TP flow-control frame on OBD 6/14";
+    }
+    return nullptr;
+  }
+  if (pci_type != 0x0) return "multi-frame OBD requests are locked on OBD 6/14";
+
+  const uint8_t application_length = payload[0] & 0x0F;
+  if (application_length != 2 || length < 3) {
+    return "OBD 6/14 reads must contain exactly one mode and one PID";
+  }
+  const uint8_t mode = payload[1];
+  return (mode == 0x01 || mode == 0x09)
+      ? nullptr
+      : "only OBD Mode 01 and Mode 09 reads are allowed on OBD 6/14";
+}
 #endif
 
 #if UART_DUAL_CAN_MASTER
@@ -204,6 +241,13 @@ static const char *diagnostic_tx_rejection(
           ? nullptr
           : "invalid TesterPresent request";
 #if PSA_LAB
+    case 0x14:
+      return application_length == 4
+              && payload[2] == 0xFF
+              && payload[3] == 0xFF
+              && payload[4] == 0xFF
+          ? nullptr
+          : "only ClearDiagnosticInformation group FFFFFF is allowed";
     case 0x27:
       if (id != 0x752 && id != 0x764) return "security access is limited to BSI and telematics";
       if (application_length == 2 && payload[2] == 0x03) return nullptr;
@@ -330,7 +374,7 @@ static size_t format_hello(char *output, size_t capacity) {
 #if UART_DUAL_CAN_MASTER
   doc["live_can_ready"] = live_can_ready;
   doc["diagnostic_can_ready"] = diagnostic_can_ready;
-  doc["live_listen_only"] = true;
+  doc["live_listen_only"] = !cfg::LIVE_OBD_READ_ENABLED;
   doc["live_bus"] = "obd_6_14";
   doc["diagnostic_bus"] = "obd_3_8";
   doc["satellite_connected"] = satellite_connected;
@@ -348,7 +392,7 @@ static size_t format_hello(char *output, size_t capacity) {
 #if DUAL_CAN
   doc["live_can_ready"] = live_can_ready;
   doc["diagnostic_can_ready"] = diagnostic_can_ready;
-  doc["live_listen_only"] = true;
+  doc["live_listen_only"] = !cfg::LIVE_OBD_READ_ENABLED;
   doc["live_bus"] = "obd_6_14";
   doc["diagnostic_bus"] = "obd_3_8";
 #endif
@@ -356,14 +400,16 @@ static size_t format_hello(char *output, size_t capacity) {
   doc["diagnostic_read_only"] = DIAGNOSTIC_READ_ONLY != 0;
   doc["psa_lab"] = PSA_LAB != 0;
   doc["write_services_locked"] = (READ_ONLY != 0) || (DIAGNOSTIC_READ_ONLY != 0) || (PSA_LAB != 0);
+  doc["live_obd_read_only"] = cfg::LIVE_OBD_READ_ENABLED;
+  doc["live_tx_policy"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "strict_passive";
   doc["tx_policy"] = READ_ONLY
       ? "strict_passive"
       : (DIAGNOSTIC_READ_ONLY
           ? "read_only_diagnostics"
           : (PSA_LAB ? "psa_lab_named_actions" : "unrestricted"));
 #if UART_DUAL_CAN_MASTER
-  // The main board is passive on 6/14; the satellite's hardware-enforced
-  // policy is the capability exposed to the PC for diagnostic transmissions.
+  // The main board enforces the 6/14 OBD-read allowlist locally; the satellite
+  // exposes its independent policy for PSA diagnostics on 3/8.
   doc["readonly"] = false;
   doc["diagnostic_read_only"] = satellite_diagnostic_read_only;
   doc["psa_lab"] = satellite_psa_lab;
@@ -432,6 +478,8 @@ static void emit_stats() {
   doc["type"] = "stats";
   doc["rx"] = rx_count;
   doc["tx"] = tx_count;
+  doc["live_tx"] = live_tx_count;
+  doc["live_tx_failed"] = live_tx_failed_count;
   doc["tx_policy_blocked"] = tx_policy_blocked_count;
   doc["filtered"] = filtered_count;
   doc["bus_off"] = bus_off_count;
@@ -451,11 +499,12 @@ static void emit_stats() {
   doc["diagnostic_dropped"] = diagnostic_dropped_count;
   doc["diagnostic_tx"] = diagnostic_tx_count;
   doc["diagnostic_tx_failed"] = diagnostic_tx_failed_count;
-  doc["tx_failed"] = diagnostic_tx_failed_count;
+  doc["live_tx_failed"] = live_tx_failed_count + live_status.tx_failed_count;
+  doc["tx_failed"] = diagnostic_tx_failed_count + live_tx_failed_count + live_status.tx_failed_count;
   doc["dropped"] = doc["live_dropped"].as<uint32_t>() + diagnostic_dropped_count;
   doc["state"] = static_cast<int>(live_status.state);
   doc["rx_queue"] = live_status.msgs_to_rx;
-  doc["tx_queue"] = 0;
+  doc["tx_queue"] = live_status.msgs_to_tx;
   doc["rx_error_counter"] = live_status.rx_error_counter;
   doc["tx_error_counter"] = live_status.tx_error_counter;
   doc["bus_error_count"] = live_status.bus_error_count;
@@ -752,13 +801,24 @@ static void transmit_can(JsonDocument &doc) {
 #else
   const char *requested_bus = doc["bus"]
       | ((DUAL_CAN || cfg::NATIVE_CAN_IS_DIAGNOSTIC) ? "diagnostic" : "default");
+  const bool live_request = strcmp(requested_bus, "live") == 0;
 #if DUAL_CAN
-  if (strcmp(requested_bus, "diagnostic") != 0) {
+  const bool diagnostic_request = strcmp(requested_bus, "diagnostic") == 0;
+  if (!live_request && !diagnostic_request) {
     ++tx_policy_blocked_count;
-    emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 is permanently receive-only in dual-CAN mode");
+    emit_error("INVALID_BUS", "Dual-CAN transmission requires bus live or diagnostic");
     return;
   }
-  if (!diagnostic_can_ready) {
+  if (live_request && !cfg::LIVE_OBD_READ_ENABLED) {
+    ++tx_policy_blocked_count;
+    emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 read transmission is disabled in this build");
+    return;
+  }
+  if (live_request && !live_can_ready) {
+    emit_error("LIVE_CAN_NOT_READY", "TWAI OBD 6/14 controller is not initialized");
+    return;
+  }
+  if (diagnostic_request && !diagnostic_can_ready) {
     emit_error("DIAGNOSTIC_CAN_NOT_READY", "MCP2515 diagnostic controller is not initialized");
     return;
   }
@@ -768,6 +828,11 @@ static void transmit_can(JsonDocument &doc) {
       && strcmp(requested_bus, "diagnostic") != 0) {
     ++tx_policy_blocked_count;
     emit_error("LIVE_BUS_TX_LOCKED", "This ESP32 is dedicated to OBD 3/8 diagnostics");
+    return;
+  }
+  if (live_request && !cfg::LIVE_OBD_READ_ENABLED) {
+    ++tx_policy_blocked_count;
+    emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 read transmission is disabled in this build");
     return;
   }
   if (!can_ready) {
@@ -794,8 +859,14 @@ static void transmit_can(JsonDocument &doc) {
     return;
   }
 
+#if DIAGNOSTIC_READ_ONLY || PSA_LAB || LIVE_OBD_READ_ONLY
+  const char *rejection = nullptr;
+#if LIVE_OBD_READ_ONLY
+  if (live_request) rejection = live_obd_tx_rejection(id, extended, payload, length);
+#endif
 #if DIAGNOSTIC_READ_ONLY || PSA_LAB
-  const char *rejection = diagnostic_tx_rejection(id, extended, payload, length);
+  if (!live_request) rejection = diagnostic_tx_rejection(id, extended, payload, length);
+#endif
   if (rejection != nullptr) {
     ++tx_policy_blocked_count;
     JsonDocument error;
@@ -809,7 +880,48 @@ static void transmit_can(JsonDocument &doc) {
   }
 #endif
 
-#if USE_MCP2515 || DUAL_CAN
+#if DUAL_CAN
+  if (live_request) {
+    twai_message_t message{};
+    message.identifier = id;
+    message.extd = extended;
+    message.data_length_code = static_cast<uint8_t>(length);
+    memcpy(message.data, payload, length);
+    const esp_err_t result = twai_transmit(&message, pdMS_TO_TICKS(50));
+    if (result != ESP_OK) {
+      ++tx_failed_count;
+      ++live_tx_failed_count;
+      JsonDocument error;
+      error["type"] = "error";
+      error["code"] = "TX_FAILED";
+      error["message"] = "TWAI OBD 6/14 transmit failed";
+      error["esp_err"] = static_cast<int>(result);
+      error["id"] = id;
+      error["bus"] = "live";
+      emit_json(error);
+      return;
+    }
+  } else {
+    struct can_frame frame{};
+    frame.can_id = id | (extended ? CAN_EFF_FLAG : 0);
+    frame.can_dlc = static_cast<uint8_t>(length);
+    memcpy(frame.data, payload, length);
+    const MCP2515::ERROR result = mcp2515.sendMessage(&frame);
+    if (result != MCP2515::ERROR_OK) {
+      ++tx_failed_count;
+      ++diagnostic_tx_failed_count;
+      JsonDocument error;
+      error["type"] = "error";
+      error["code"] = "TX_FAILED";
+      error["message"] = "MCP2515 transmit failed";
+      error["driver_error"] = static_cast<int>(result);
+      error["id"] = id;
+      error["bus"] = "diagnostic";
+      emit_json(error);
+      return;
+    }
+  }
+#elif USE_MCP2515
   struct can_frame frame{};
   frame.can_id = id | (extended ? CAN_EFF_FLAG : 0);
   frame.can_dlc = static_cast<uint8_t>(length);
@@ -826,7 +938,7 @@ static void transmit_can(JsonDocument &doc) {
     error["message"] = "MCP2515 transmit failed";
     error["driver_error"] = static_cast<int>(result);
     error["id"] = id;
-    error["bus"] = DUAL_CAN ? "diagnostic" : requested_bus;
+    error["bus"] = requested_bus;
     emit_json(error);
     return;
   }
@@ -839,6 +951,7 @@ static void transmit_can(JsonDocument &doc) {
   const esp_err_t result = twai_transmit(&message, pdMS_TO_TICKS(50));
   if (result != ESP_OK) {
     ++tx_failed_count;
+    if (live_request) ++live_tx_failed_count;
     JsonDocument error;
     error["type"] = "error";
     error["code"] = "TX_FAILED";
@@ -850,21 +963,22 @@ static void transmit_can(JsonDocument &doc) {
   }
 #endif
   ++tx_count;
+  if (live_request) ++live_tx_count;
 #if DUAL_CAN
-  ++diagnostic_tx_count;
+  if (!live_request) ++diagnostic_tx_count;
 #endif
 
 #if PSA_LAB
-  psa_lab_update_deadman_after_host_tx(id, payload, length);
+  if (!live_request) psa_lab_update_deadman_after_host_tx(id, payload, length);
 #endif
 
   JsonDocument ack;
   ack["type"] = "ack";
   ack["command"] = "can_tx";
   ack["id"] = id;
-  ack["bus"] = (DUAL_CAN || cfg::NATIVE_CAN_IS_DIAGNOSTIC)
-      ? "diagnostic"
-      : requested_bus;
+  ack["bus"] = live_request
+      ? "live"
+      : ((DUAL_CAN || cfg::NATIVE_CAN_IS_DIAGNOSTIC) ? "diagnostic" : requested_bus);
   ack["ts_us"] = esp_timer_get_time();
   ack["tx_count"] = tx_count;
   emit_json(ack);
@@ -941,9 +1055,13 @@ static void parse_command(const String &line) {
   if (strcmp(type, "can_tx") == 0) {
 #if UART_DUAL_CAN_MASTER
     const char *requested_bus = doc["bus"] | "diagnostic";
+    if (strcmp(requested_bus, "live") == 0) {
+      transmit_can(doc);
+      return;
+    }
     if (strcmp(requested_bus, "diagnostic") != 0) {
       ++tx_policy_blocked_count;
-      emit_error("LIVE_BUS_TX_LOCKED", "OBD 6/14 is permanently receive-only");
+      emit_error("INVALID_BUS", "UART dual-CAN transmission requires bus live or diagnostic");
       return;
     }
     if (!satellite_connected || !diagnostic_can_ready) {
@@ -1252,9 +1370,9 @@ static bool start_twai(bool force_listen_only = false) {
 
 static bool start_can() {
 #if DUAL_CAN
-  // OBD 6/14 never transmits in this build. All approved diagnostic requests
-  // are routed exclusively through the MCP2515 on OBD 3/8.
-  live_can_ready = start_twai(true);
+  // OBD 6/14 only leaves listen-only mode in builds whose local firmware
+  // enforces the Mode 01/09 allowlist. PSA diagnostics remain on OBD 3/8.
+  live_can_ready = start_twai(!cfg::LIVE_OBD_READ_ENABLED);
   diagnostic_can_ready = start_mcp2515();
   can_ready = live_can_ready;
   return can_ready;
@@ -1263,9 +1381,9 @@ static bool start_can() {
   can_ready = diagnostic_can_ready;
   return can_ready;
 #else
-  // In the UART dual-CAN architecture the main ESP32 must never transmit on
-  // the live vehicle network, even though diagnostics are enabled globally.
-  live_can_ready = start_twai(cfg::UART_MASTER);
+  // The UART main may transmit only its locally filtered OBD Mode 01/09 reads.
+  // The satellite keeps the independent PSA diagnostic allowlist on 3/8.
+  live_can_ready = start_twai(cfg::UART_MASTER && !cfg::LIVE_OBD_READ_ENABLED);
   can_ready = live_can_ready;
   return can_ready;
 #endif
@@ -1316,10 +1434,10 @@ void setup() {
         : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
     status["bitrate"] = cfg::CAN_BITRATE;
 #if DUAL_CAN
-    status["live_bus"] = "listen_only";
+    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "listen_only";
     status["diagnostic_bus"] = diagnostic_can_ready ? "read_only_diagnostics" : "unavailable";
 #elif UART_DUAL_CAN_MASTER
-    status["live_bus"] = "listen_only";
+    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "listen_only";
     status["diagnostic_bus"] = diagnostic_can_ready ? "uart_read_only_diagnostics" : "unavailable";
 #endif
     emit_json(status);

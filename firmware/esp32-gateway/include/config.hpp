@@ -18,8 +18,8 @@
 #endif
 
 // Experimental PSA profile: read-only diagnostics plus an exact allowlist of
-// named NAC actions and PSA configuration security access. It never permits a
-// raw 0x2F/0x27 payload chosen by the host.
+// named NAC actions, PSA configuration security access and DTC clear FFFFFF.
+// It never permits a raw 0x2F/0x27/0x14 payload chosen by the host.
 #ifndef PSA_LAB
 #define PSA_LAB 0
 #endif
@@ -47,6 +47,22 @@
 // frame so two USB gateways can be merged safely by the PC backend.
 #ifndef CAN_BUS_ROLE_DIAGNOSTIC
 #define CAN_BUS_ROLE_DIAGNOSTIC 0
+#endif
+
+// Enables the native OBD 6/14 controller in normal mode while retaining a
+// firmware allowlist limited to standardized 11-bit and 29-bit functional and
+// engine-physical OBD Mode 01/09 reads. ISO-TP flow control remains physical.
+// All UDS, clear-DTC and actuator traffic remains locked there.
+#ifndef LIVE_OBD_READ_ONLY
+#define LIVE_OBD_READ_ONLY 0
+#endif
+
+#if LIVE_OBD_READ_ONLY && READ_ONLY
+#error "LIVE_OBD_READ_ONLY requires a TX-capable, firmware-filtered build"
+#endif
+
+#if LIVE_OBD_READ_ONLY && CAN_BUS_ROLE_DIAGNOSTIC
+#error "LIVE_OBD_READ_ONLY must only be enabled on the OBD 6/14 controller"
 #endif
 
 // Two native ESP32/TWAI controllers can form one logical dual-CAN gateway.
@@ -139,6 +155,7 @@ namespace cfg {
 constexpr gpio_num_t CAN_TX_PIN = static_cast<gpio_num_t>(CAN_TX_GPIO);
 constexpr gpio_num_t CAN_RX_PIN = static_cast<gpio_num_t>(CAN_RX_GPIO);
 constexpr bool NATIVE_CAN_IS_DIAGNOSTIC = CAN_BUS_ROLE_DIAGNOSTIC != 0;
+constexpr bool LIVE_OBD_READ_ENABLED = LIVE_OBD_READ_ONLY != 0;
 constexpr bool UART_MASTER = UART_DUAL_CAN_MASTER != 0;
 constexpr bool UART_SATELLITE = UART_DUAL_CAN_SATELLITE != 0;
 constexpr int8_t INTERBOARD_RX_PIN = INTERBOARD_UART_RX_GPIO;

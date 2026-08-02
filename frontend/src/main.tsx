@@ -57,6 +57,19 @@ type DidValue = {
   raw_hex?: string | null;
   source?: string | null;
   confidence: string;
+  request_hex?: string | null;
+  response_hex?: string | null;
+  nrc?: number | null;
+  nrc_name?: string | null;
+  error?: string | null;
+};
+
+type ProbeAttempt = {
+  request_hex: string;
+  response_hex?: string | null;
+  outcome: "positive" | "negative_response" | "timeout";
+  nrc?: number | null;
+  nrc_name?: string | null;
   error?: string | null;
 };
 
@@ -108,9 +121,14 @@ type Ecu = {
   dtcs: DtcValue[];
   dtc_status_availability_mask?: number | null;
   dtc_status_mask_used?: number | null;
+  dtc_request_hex?: string | null;
+  dtc_response_hex?: string | null;
   dtc_error?: string | null;
+  active_session?: number | null;
+  active_session_source?: string | null;
   probe_method?: string | null;
   probe_response_hex?: string | null;
+  probe_attempts?: ProbeAttempt[];
   error?: string | null;
 };
 
@@ -176,7 +194,22 @@ type DiagnosticVehicle = {
   first_seen?: string | null;
   last_seen?: string | null;
   latest_scan_id?: string | null;
+  latest_identity_session_id?: string | null;
+  last_selected_at?: string | null;
+  is_active?: boolean;
   scan_count: number;
+};
+
+type VehicleTimelineEntry = {
+  id: string;
+  kind: "diagnostic" | "capture" | "identity";
+  timestampMs: number;
+  title: string;
+  description: string;
+  badge: string;
+  scanId?: string;
+  sessionId?: string;
+  severity?: "good" | "warning" | "neutral";
 };
 
 type DiagnosticReportSummary = {
@@ -197,6 +230,10 @@ type DiagnosticSensorCatalogEntry = {
   unit: string;
   group: string;
   description: string;
+  source?: string;
+  confidence?: string;
+  access?: string;
+  request_hex?: string;
 };
 
 type DiagnosticSensorValue = {
@@ -205,14 +242,74 @@ type DiagnosticSensorValue = {
   name: string;
   value?: number | null;
   unit?: string | null;
+  group?: string | null;
+  description?: string | null;
+  source?: string | null;
+  confidence?: string;
   raw_hex?: string | null;
   error?: string | null;
 };
 
+type TraceImportResult = {
+  import_id: string;
+  name: string;
+  frame_count: number;
+  payload_count: number;
+  exchange_count: number;
+  unparsed_line_count: number;
+  observed_dids: Array<{ ecu_key?: string | null; did: number; value_hex: string }>;
+  observed_actions: Array<{
+    ecu_key?: string | null;
+    service: number;
+    service_name: string;
+    identifier?: number | null;
+    request_hex: string;
+    response_hex?: string | null;
+    status: string;
+    review_required: boolean;
+    executable: false;
+  }>;
+  warnings: string[];
+  saved_file: string;
+};
+
+type RegressionResult = {
+  baseline: string;
+  scan_id?: string | null;
+  connectivity_match: boolean;
+  dtc_match: boolean;
+  match: boolean;
+  differences: Array<{
+    scope: "connectivity" | "dtc";
+    ecu: string;
+    field: string;
+    expected: unknown;
+    actual: unknown;
+  }>;
+};
+
+type ClearDtcResult = {
+  ecu_key: string;
+  cleared: boolean;
+  request_hex: string;
+  response_hex?: string | null;
+  before_dtcs: DtcValue[];
+  after_dtcs: DtcValue[];
+  persistent_dtcs: DtcValue[];
+  verified: boolean;
+  verification_error?: string | null;
+  message: string;
+  session_id?: string | null;
+};
+
 type DiagnosticSensorSnapshot = {
   transport: string;
+  vehicle_profile?: string | null;
   request_id: number;
   response_id: number;
+  mil_on?: boolean | null;
+  emissions_dtc_count?: number | null;
+  readiness_raw_hex?: string | null;
   supported_pids: number[];
   values: DiagnosticSensorValue[];
   errors: string[];
@@ -332,6 +429,31 @@ type PsaActionResult = {
   message: string;
   session_id?: string | null;
 };
+
+type MaintenanceService = {
+  key: string;
+  name: string;
+  category: string;
+  description: string;
+  risk: "low" | "medium" | "high" | "restricted";
+  applicability: "applicable" | "if_equipped" | "not_applicable" | "unknown";
+  implementation_status: "vehicle_validated" | "procedure_required" | "equipment_confirmation_required" | "not_applicable" | "research_required";
+  execution_enabled: boolean;
+  reason: string;
+};
+
+type MaintenanceCatalog = {
+  vehicle_profile: string;
+  manufacturer: string;
+  model: string;
+  policy: string;
+  execution_enabled: boolean;
+  service_count: number;
+  counts: Record<string, number>;
+  services: MaintenanceService[];
+  notes: string[];
+  protocol_coverage: { key: string; name: string; supported: boolean; detail: string }[];
+};
 type PsaUnlockResult = {
   ecu_key: string;
   unlocked: boolean;
@@ -375,7 +497,9 @@ type PassiveCanSignal = {
   essential: boolean;
   updated_at_us: number;
   raw_hex: string;
-  confidence: "validated" | "dbc_candidate";
+  source: "can" | "obd";
+  pid?: number | null;
+  confidence: "validated" | "dbc_candidate" | "standardized";
 };
 
 type PassiveSteeringSnapshot = {
@@ -404,6 +528,10 @@ type PassiveSensorSnapshot = {
   signals: PassiveCanSignal[];
   warnings: string[];
   source_url?: string | null;
+  hybrid_obd_enabled: boolean;
+  hybrid_obd_ready: boolean;
+  obd_sample_count: number;
+  obd_error?: string | null;
 };
 
 type CaptureStatus = {
@@ -423,7 +551,15 @@ type CaptureStatus = {
   dual_can?: boolean;
   live_can_ready?: boolean | null;
   diagnostic_can_ready?: boolean | null;
+  hybrid_obd_enabled: boolean;
+  hybrid_obd_ready: boolean;
+  obd_sample_count: number;
+  obd_supported_pids: number[];
+  obd_error?: string | null;
   error?: string | null;
+  vin?: string | null;
+  vehicle_profile?: string | null;
+  vehicle_label?: string | null;
 };
 
 type DiscoverySession = {
@@ -441,6 +577,9 @@ type DiscoverySession = {
   size_bytes: number;
   analyzed: boolean;
   error?: string | null;
+  vin?: string | null;
+  vehicle_profile?: string | null;
+  vehicle_label?: string | null;
 };
 
 type ByteProfile = {
@@ -620,6 +759,8 @@ type ReplayData = {
   session_id: string;
   name: string;
   vehicle: string;
+  vin?: string | null;
+  vehicle_profile?: string | null;
   source: string;
   source_size_bytes: number;
   start_timestamp_us: number;
@@ -844,11 +985,13 @@ const defaultStudioWidgets: StudioWidget[] = [
   { id: "studio-engine-light", kind: "indicator", key: "engine", x: 6, y: 4, w: 2, h: 2 },
   { id: "studio-lane-fault", kind: "indicator", key: "lane_fault", x: 6, y: 6, w: 2, h: 2 },
   { id: "studio-capture", kind: "capture", x: 0, y: 7, w: 6, h: 2 },
+  { id: "studio-rpm", kind: "gauge", key: "engine_rpm", x: 6, y: 8, w: 3, h: 3 },
+  { id: "studio-battery", kind: "gauge", key: "battery_voltage_v", x: 9, y: 8, w: 3, h: 3 },
 ];
 
-type View = "dashboard" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "psa" | "ecus" | "dtcs" | "discovery";
+type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery";
 
-const views: View[] = ["dashboard", "studio", "replay", "sensors", "inventory", "identity", "injection", "psa", "ecus", "dtcs", "discovery"];
+const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery"];
 
 function initialView(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
@@ -864,6 +1007,11 @@ const viewTitles: Record<View, { eyebrow: string; title: string; description: st
     title: "Atelier diagnostic",
     description: "État du véhicule, sécurité et accès rapide aux opérations.",
   },
+  garage: {
+    eyebrow: "Dossier véhicule",
+    title: "Garage & suivi temporel",
+    description: "Charge le bon VIN et retrouve diagnostics, trajets et interventions dans une chronologie unique.",
+  },
   studio: {
     eyebrow: "Composition libre",
     title: "Dashboard libre",
@@ -875,14 +1023,14 @@ const viewTitles: Record<View, { eyebrow: string; title: string; description: st
     description: "Trajectoire reconstruite, commandes conducteur, instruments et aides à la conduite.",
   },
   sensors: {
-    eyebrow: "CAN passif temps réel",
+    eyebrow: "CAN passif + OBD temps réel",
     title: "Capteurs en direct",
-    description: "Inventaire global, valeurs décodées et signaux bruts sans aucune émission.",
+    description: "Trames constructeur passives et lectures Mode 01 normalisées, avec provenance explicite.",
   },
   inventory: {
-    eyebrow: "Couverture véhicule",
-    title: "Inventaire des capteurs",
-    description: "Ce qui est mesuré, disponible, à tester, à décoder ou absent de cette motorisation.",
+    eyebrow: "Validation guidée",
+    title: "Validation des capteurs",
+    description: "Une file de travail claire pour observer, tester et confirmer chaque information utile.",
   },
   identity: {
     eyebrow: "OBD-II / UDS · lecture seule",
@@ -894,15 +1042,20 @@ const viewTitles: Record<View, { eyebrow: string; title: string; description: st
     title: "Injection & moteur",
     description: "Air, carburant, pression de rampe, combustion, EGR et températures en lecture seule.",
   },
+  maintenance: {
+    eyebrow: "Capacités par véhicule",
+    title: "Services de maintenance",
+    description: "29 fonctions classées par applicabilité, équipement, risque et niveau de validation.",
+  },
   psa: {
-    eyebrow: "UDS constructeur · laboratoire protégé",
-    title: "Diagnostic PSA avancé",
-    description: "Zones brutes, seed/key, sessions BSI/NAC et actionneurs nommés avec allowlist matérielle.",
+    eyebrow: "UDS constructeur · accès protégé",
+    title: "Centre d’autorisation PSA",
+    description: "Lecture, commandes nommées et outils experts séparés par des niveaux d’autorisation explicites.",
   },
   ecus: {
-    eyebrow: "Architecture véhicule",
-    title: "Calculateurs",
-    description: "Détection, identification UDS et variantes d'équipement.",
+    eyebrow: "Architecture et défauts",
+    title: "Diagnostic véhicule",
+    description: "Identifier les calculateurs, lire les défauts et conserver un rapport par VIN.",
   },
   dtcs: {
     eyebrow: "Mémoire défauts",
@@ -1136,12 +1289,12 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     y_m: 0,
     heading_deg: 0,
     distance_m: 0,
-    speed_kph: numeric("HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES"),
-    engine_rpm: numeric("Dyn_CMM.P000_Com_nEng"),
+    speed_kph: numeric("HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES") ?? numeric("OBD01.vehicle_speed"),
+    engine_rpm: numeric("Dyn_CMM.P000_Com_nEng") ?? numeric("FIAT_ENGINE.ENGINE_RPM") ?? numeric("OBD01.engine_rpm"),
     steering_angle_deg: snapshot.steering.detected ? snapshot.steering.angle_degrees ?? null : null,
     steering_rate_deg_s: snapshot.steering.detected ? snapshot.steering.rate_degrees_s ?? null : null,
     driver_torque: snapshot.steering.detected ? snapshot.steering.driver_torque ?? null : null,
-    accelerator_pct: numeric("Dyn_CMM.P002_Com_rAPP") ?? numeric("Dyn5_CMM.P334_ACCPed_Position") ?? numeric("DRIVER.GAS_PEDAL"),
+    accelerator_pct: numeric("Dyn_CMM.P002_Com_rAPP") ?? numeric("Dyn5_CMM.P334_ACCPed_Position") ?? numeric("DRIVER.GAS_PEDAL") ?? numeric("OBD01.accelerator_pedal_d") ?? numeric("OBD01.throttle_position"),
     accelerator_secondary_pct: numeric("Dyn5_CMM.P334_ACCPed_Position"),
     engine_torque_nm: numeric("Dyn_CMM.P003_Com_trqActOut"),
     idle_setpoint_rpm: numeric("Dat_CMM.P022_Com_nSetPLo"),
@@ -1166,15 +1319,15 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     passenger_door: logical("Dat_BSI.PASSENGER_DOOR"),
     front_wiper_status: integer("HS2_DAT_MDD_CMD_452.FRONT_WIPER_STATUS"),
     fuel_liters_raw: numeric("HS2_DAT7_BSI_612.INFO_NIV_CARB"),
-    oil_temperature_c: numeric("Dat_CMM.P011_Oil_tSwmp"),
-    coolant_temperature_c: numeric("Dat_CMM.P005_CEngDst_tSens"),
-    intake_air_temperature_c: numeric("Dat_CMM.P158_Air_tAFS"),
+    oil_temperature_c: numeric("Dat_CMM.P011_Oil_tSwmp") ?? numeric("OBD01.engine_oil_temperature"),
+    coolant_temperature_c: numeric("Dat_CMM.P005_CEngDst_tSens") ?? numeric("OBD01.coolant_temperature"),
+    intake_air_temperature_c: numeric("Dat_CMM.P158_Air_tAFS") ?? numeric("OBD01.intake_air_temperature"),
     oil_pressure_switch: logical("Dat2_CMM.P278_Oil_stPSwmp"),
-    battery_voltage_v: bounded("Dat6_BSI.P418_Com_uBattRaw", 8, 16.5),
+    battery_voltage_v: bounded("Dat6_BSI.P418_Com_uBattRaw", 8, 16.5) ?? bounded("OBD01.control_module_voltage", 8, 16.5),
     battery_temperature_c: bounded("Dat6_BSI.P273_Com_tBatt", -40, 90),
     battery_charge_pct: bounded("Dat6_BSI.P272_Com_rBattCh", 0, 100),
-    ambient_temperature_c: numeric("Contexte1_5B2.P146_Com_tEnvT"),
-    atmospheric_pressure_hpa: numeric("Dat2_CMM.P338_EnvP_p"),
+    ambient_temperature_c: numeric("Contexte1_5B2.P146_Com_tEnvT") ?? numeric("OBD01.ambient_temperature"),
+    atmospheric_pressure_hpa: numeric("Dat2_CMM.P338_EnvP_p") ?? (() => { const value = numeric("OBD01.barometric_pressure"); return value === null ? null : value * 10; })(),
     obd_error: logical("Dyn2_CMM.P343_Com_bOBDErr"),
     mil_on: logical("Dyn2_CMM.P344_Com_bMILOn"),
     mil_blinking: logical("Dyn2_CMM.P345_Com_bMILBln"),
@@ -1393,6 +1546,7 @@ function EmptyState({ title, text, action }: { title: string; text: string; acti
 
 function App() {
   const [view, setView] = useState<View>(initialView);
+  const [toolsOpen, setToolsOpen] = useState(() => ["sensors", "identity", "injection", "psa", "dtcs", "discovery"].includes(initialView()));
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState("");
   const [transportCatalog, setTransportCatalog] = useState<TransportCatalog | null>(null);
@@ -1400,11 +1554,28 @@ function App() {
   const [transportConnectBusy, setTransportConnectBusy] = useState(false);
   const [transportMessage, setTransportMessage] = useState("");
   const [report, setReport] = useState<Report | null>(null);
+  const [diagnosticRegression, setDiagnosticRegression] = useState<RegressionResult | null>(null);
+  const [diagnosticRegressionBusy, setDiagnosticRegressionBusy] = useState(false);
+  const [traceImportResult, setTraceImportResult] = useState<TraceImportResult | null>(null);
+  const [traceImportBusy, setTraceImportBusy] = useState(false);
+  const [dtcClearEcuKey, setDtcClearEcuKey] = useState("");
+  const [dtcClearConfirmation, setDtcClearConfirmation] = useState("");
+  const [dtcClearChecks, setDtcClearChecks] = useState({
+    vehicle_stationary: false,
+    ignition_on_engine_off: false,
+    stable_battery_voltage: false,
+    report_saved: false,
+  });
+  const [dtcClearBusy, setDtcClearBusy] = useState(false);
+  const [dtcClearResult, setDtcClearResult] = useState<ClearDtcResult | null>(null);
   const [observedDtcs, setObservedDtcs] = useState<ObservedDtc[]>([]);
   const [diagnosticVehicles, setDiagnosticVehicles] = useState<DiagnosticVehicle[]>([]);
   const [selectedDiagnosticVin, setSelectedDiagnosticVin] = useState(
     () => window.localStorage.getItem("opendiag.diagnostic-vin") ?? "",
   );
+  const [vehicleSelectionBusy, setVehicleSelectionBusy] = useState(false);
+  const [sessionAssignmentBusy, setSessionAssignmentBusy] = useState("");
+  const [garageEventFilter, setGarageEventFilter] = useState<"all" | "diagnostic" | "capture" | "identity">("all");
   const [diagnosticReportHistory, setDiagnosticReportHistory] = useState<DiagnosticReportSummary[]>([]);
   const [dtcFilter, setDtcFilter] = useState<DtcValue["state"] | "all">("active");
   const [diagnosticSensorCatalog, setDiagnosticSensorCatalog] = useState<DiagnosticSensorCatalogEntry[]>([]);
@@ -1419,6 +1590,8 @@ function App() {
   const [vehicleIdentity, setVehicleIdentity] = useState<VehicleIdentityResult | null>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
   const [psaCatalog, setPsaCatalog] = useState<PsaAdvancedCatalog | null>(null);
+  const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalog | null>(null);
+  const [maintenanceCategory, setMaintenanceCategory] = useState("Toutes");
   const [psaEcuKey, setPsaEcuKey] = useState("bsi");
   const [psaDid, setPsaDid] = useState("F190");
   const [psaDidResult, setPsaDidResult] = useState<DidValue | null>(null);
@@ -1439,6 +1612,10 @@ function App() {
   });
   const [psaBusy, setPsaBusy] = useState("");
   const [psaFeedback, setPsaFeedback] = useState("");
+  const [psaSection, setPsaSection] = useState<"read" | "actions" | "expert">(() => {
+    const requested = new URLSearchParams(window.location.search).get("mode");
+    return requested === "actions" || requested === "expert" ? requested : "read";
+  });
   const [powertrainProfile, setPowertrainProfile] = useState<PowertrainProfile>(() => {
     const saved = window.localStorage.getItem("opendiag.powertrain-profile");
     return saved === "gasoline" || saved === "diesel" ? saved : "unknown";
@@ -1447,6 +1624,7 @@ function App() {
   const [inventorySystem, setInventorySystem] = useState("Tous");
   const [inventoryStatus, setInventoryStatus] = useState<"all" | "available" | "missing" | "excluded">("all");
   const [inventoryPriorityOnly, setInventoryPriorityOnly] = useState(false);
+  const [validationFocusId, setValidationFocusId] = useState("");
   const [passiveSensors, setPassiveSensors] = useState<PassiveSensorSnapshot | null>(null);
   const sensorCursorUs = useRef(0);
   const sensorRefreshBusy = useRef(false);
@@ -1469,7 +1647,7 @@ function App() {
   const [error, setError] = useState("");
 
   const [capture, setCapture] = useState<CaptureStatus | null>(null);
-  const [captureName, setCaptureName] = useState("Découverte 308 T9");
+  const [captureName, setCaptureName] = useState("Nouvelle session véhicule");
   const [captureNote, setCaptureNote] = useState("");
   const [captureGpsEnabled, setCaptureGpsEnabled] = useState(
     () => window.localStorage.getItem("opendiag.capture-gps") !== "false",
@@ -1574,8 +1752,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!capture?.active) return;
-    const timer = window.setInterval(refreshCapture, 800);
+    const timer = window.setInterval(refreshCapture, capture?.active ? 800 : 2500);
     return () => window.clearInterval(timer);
   }, [capture?.active]);
 
@@ -1586,7 +1763,7 @@ function App() {
   }, [capture?.active, capture?.session_id, captureGpsEnabled]);
 
   useEffect(() => {
-    if (!["sensors", "ecus", "studio"].includes(view) || !capture?.active) return;
+    if (!["sensors", "inventory", "ecus", "psa", "studio"].includes(view) || !capture?.active) return;
     const timer = window.setInterval(refreshPassiveSensors, 200);
     return () => window.clearInterval(timer);
   }, [view, capture?.active]);
@@ -1609,8 +1786,11 @@ function App() {
 
   useEffect(() => {
     if (view !== "replay" || replaySessionId || replayBusy || sessions.length === 0) return;
-    void loadReplay(sessions[0].session_id);
-  }, [view, sessions, replaySessionId, replayBusy]);
+    const preferred = sessions.find((session) => session.vin === selectedDiagnosticVin)
+      ?? sessions.find((session) => !session.vin)
+      ?? sessions[0];
+    void loadReplay(preferred.session_id);
+  }, [view, sessions, replaySessionId, replayBusy, selectedDiagnosticVin]);
 
   useEffect(() => {
     if (!replayPlaying || !replay) return;
@@ -1690,6 +1870,104 @@ function App() {
   );
   const dtcCount = report?.dtc_summary.active ?? 0;
   const selectedDiagnosticVehicle = diagnosticVehicles.find((vehicle) => vehicle.vin === selectedDiagnosticVin) ?? null;
+  const selectedIdentityProfile = vehicleProfiles.find((profile) => profile.key === identityProfileKey) ?? null;
+  const vehicleManufacturers = useMemo(
+    () => Array.from(new Set(vehicleProfiles.map((profile) => profile.manufacturer))).sort((left, right) => left.localeCompare(right, "fr")),
+    [vehicleProfiles],
+  );
+  const profilesForSelectedManufacturer = useMemo(
+    () => vehicleProfiles.filter((profile) => profile.manufacturer === selectedIdentityProfile?.manufacturer),
+    [selectedIdentityProfile?.manufacturer, vehicleProfiles],
+  );
+  const activeCommunicationProfileKey = (
+    capture?.active && capture.vehicle_profile
+      ? capture.vehicle_profile
+      : selectedDiagnosticVehicle?.vehicle_profile ?? identityProfileKey
+  );
+  const activeCommunicationProfile = vehicleProfiles.find((profile) => profile.key === activeCommunicationProfileKey) ?? selectedIdentityProfile;
+  useEffect(() => {
+    if (!activeCommunicationProfileKey) return;
+    setMaintenanceCatalog(null);
+    api<MaintenanceCatalog>(`/api/maintenance/catalog?vehicle_profile=${encodeURIComponent(activeCommunicationProfileKey)}`)
+      .then(setMaintenanceCatalog)
+      .catch(() => setMaintenanceCatalog(null));
+  }, [activeCommunicationProfileKey]);
+  const maintenanceCategories = useMemo(
+    () => ["Toutes", ...Array.from(new Set(maintenanceCatalog?.services.map((service) => service.category) ?? []))],
+    [maintenanceCatalog],
+  );
+  const visibleMaintenanceServices = useMemo(
+    () => (maintenanceCatalog?.services ?? []).filter((service) => maintenanceCategory === "Toutes" || service.category === maintenanceCategory),
+    [maintenanceCatalog, maintenanceCategory],
+  );
+  const vehicleLinkedSessions = useMemo(
+    () => sessions.filter((session) => session.vin === selectedDiagnosticVin),
+    [sessions, selectedDiagnosticVin],
+  );
+  const unassignedSessions = useMemo(
+    () => sessions.filter((session) => !session.vin),
+    [sessions],
+  );
+  const vehicleTimeline = useMemo<VehicleTimelineEntry[]>(() => {
+    if (!selectedDiagnosticVin) return [];
+    const entries: VehicleTimelineEntry[] = diagnosticReportHistory.map((item) => ({
+      id: item.scan_id,
+      kind: "diagnostic",
+      timestampMs: new Date(item.scanned_at).getTime(),
+      title: "Diagnostic complet ECU + DTC",
+      description: `${item.detected_ecus} calculateurs détectés · ${item.dtc_summary.active} actif(s) · ${item.dtc_summary.historical} historique(s)`,
+      badge: item.dtc_summary.active ? `${item.dtc_summary.active} défaut(s) actif(s)` : "Aucun défaut actif",
+      scanId: item.scan_id,
+      severity: item.dtc_summary.active ? "warning" : "good",
+    }));
+    for (const session of vehicleLinkedSessions) {
+      entries.push({
+        id: session.session_id,
+        kind: "capture",
+        timestampMs: (session.started_at_us ?? 0) / 1000,
+        title: session.name,
+        description: `${formatDuration(session.duration_ms)} · ${session.frame_count.toLocaleString("fr-FR")} trames${session.gps_point_count ? ` · ${session.gps_point_count} positions GPS` : ""}`,
+        badge: session.gps_point_count ? "Trajet géolocalisé" : session.marker_count ? `${session.marker_count} marqueur(s)` : "Capture CAN",
+        sessionId: session.session_id,
+        severity: session.error ? "warning" : "neutral",
+      });
+    }
+    if (selectedDiagnosticVehicle?.first_seen) {
+      entries.push({
+        id: `identity-${selectedDiagnosticVehicle.vin}`,
+        kind: "identity",
+        timestampMs: new Date(selectedDiagnosticVehicle.first_seen).getTime(),
+        title: "Véhicule ajouté au garage",
+        description: `Identité enregistrée sous le profil ${selectedDiagnosticVehicle.vehicle_profile}`,
+        badge: "VIN confirmé",
+        severity: "good",
+      });
+    }
+    return entries
+      .filter((entry) => Number.isFinite(entry.timestampMs) && (garageEventFilter === "all" || entry.kind === garageEventFilter))
+      .sort((left, right) => right.timestampMs - left.timestampMs);
+  }, [diagnosticReportHistory, garageEventFilter, selectedDiagnosticVehicle, selectedDiagnosticVin, vehicleLinkedSessions]);
+  const activeVehicleLabel = selectedDiagnosticVehicle
+    ? `${selectedDiagnosticVehicle.manufacturer} ${selectedDiagnosticVehicle.model}`
+    : activeCommunicationProfile
+      ? `${activeCommunicationProfile.manufacturer} ${activeCommunicationProfile.model}`
+      : "Aucun profil chargé";
+  const psaVehicleCompatible = Boolean(
+    selectedDiagnosticVehicle
+    && (
+      selectedDiagnosticVehicle.manufacturer.toLocaleLowerCase("fr").includes("peugeot")
+      || selectedDiagnosticVehicle.vehicle_profile.startsWith("peugeot_")
+      || selectedDiagnosticVehicle.vehicle_profile.startsWith("psa_")
+    ),
+  );
+  const directPsaCompatible = Boolean(
+    activeCommunicationProfile
+    && (
+      activeCommunicationProfile.manufacturer.toLocaleLowerCase("fr").includes("peugeot")
+      || activeCommunicationProfile.key.startsWith("peugeot_")
+      || activeCommunicationProfile.key.startsWith("psa_")
+    )
+  );
   const activeTitle = viewTitles[view];
   const dualCanOperational = Boolean(
     capture?.active
@@ -1698,15 +1976,22 @@ function App() {
     && capture.diagnostic_can_ready,
   );
   const diagnosticGatewayVerified = status?.transport === "virtual" || Boolean(status?.gateway_verified) || dualCanOperational;
+  const liveObdReadOnly = status?.transport === "virtual" || status?.gateway_hello?.live_obd_read_only === true;
   const diagnosticReady = Boolean(
     status?.can_tx_enabled
     && diagnosticGatewayVerified
     && (!capture?.active || dualCanOperational),
   );
-  const selectedIdentityProfile = vehicleProfiles.find((profile) => profile.key === identityProfileKey) ?? null;
+  const obdReadReady = Boolean(
+    diagnosticReady
+    && liveObdReadOnly,
+  );
+  const identityReadReady = Boolean(
+    diagnosticReady
+    && (selectedIdentityProfile?.identity_scope !== "identity_only" || obdReadReady),
+  );
   const selectedPsaEcu = psaCatalog?.ecus.find((ecu) => ecu.key === psaEcuKey) ?? null;
   const selectedPsaAction = psaCatalog?.actions.find((action) => action.key === psaSelectedActionKey) ?? null;
-  const psaLabChecksComplete = Object.values(psaLabChecks).every(Boolean);
   const psaUnlockEcu = psaCatalog?.ecus.find((ecu) => ecu.key === psaUnlockEcuKey) ?? null;
   const injectionValues = useMemo(
     () => new Map((injectionSnapshot?.values ?? []).map((value) => [value.key, value])),
@@ -1871,6 +2156,40 @@ function App() {
     missing: sensorInventoryRows.filter((row) => ["to_test", "to_observe", "to_decode", "unsupported"].includes(row.status)).length,
     excluded: sensorInventoryRows.filter((row) => row.status === "not_applicable").length,
   }), [sensorInventoryRows]);
+  const validationQueue = useMemo(
+    () => sensorInventoryRows.filter((row) => ["to_test", "to_observe", "to_decode", "supported"].includes(row.status)),
+    [sensorInventoryRows],
+  );
+  const focusedValidationRow = validationQueue.find((row) => row.id === validationFocusId)
+    ?? validationQueue.find((row) => row.priority === 1)
+    ?? validationQueue[0]
+    ?? null;
+  const liveSafetyEvidence = useMemo(() => {
+    if (!passiveSensors?.active || studioLiveHistory.length < 2) {
+      return { speedKnown: false, stationary: false, rpmKnown: false, engineOff: false, batteryKnown: false, batteryStable: false, batteryValue: null as number | null };
+    }
+    const latestMs = studioLiveHistory.at(-1)?.t_ms ?? 0;
+    const recent = studioLiveHistory.filter((point) => point.t_ms >= latestMs - 5_000);
+    const speeds = recent.map((point) => point.speed_kph).filter((value): value is number => typeof value === "number");
+    const rpms = recent.map((point) => point.engine_rpm).filter((value): value is number => typeof value === "number");
+    const voltages = recent.map((point) => point.battery_voltage_v).filter((value): value is number => typeof value === "number");
+    return {
+      speedKnown: speeds.length >= 2,
+      stationary: speeds.length >= 2 && Math.max(...speeds) <= 0.5,
+      rpmKnown: rpms.length >= 2,
+      engineOff: rpms.length >= 2 && Math.max(...rpms) < 50,
+      batteryKnown: voltages.length >= 5,
+      batteryStable: voltages.length >= 5 && Math.min(...voltages) >= 11.7 && Math.max(...voltages) <= 15.2 && Math.max(...voltages) - Math.min(...voltages) <= 0.4,
+      batteryValue: voltages.at(-1) ?? null,
+    };
+  }, [passiveSensors?.active, studioLiveHistory]);
+  const effectivePsaLabChecks = {
+    vehicle_stationary: liveSafetyEvidence.speedKnown ? liveSafetyEvidence.stationary : psaLabChecks.vehicle_stationary,
+    ignition_on_engine_off: liveSafetyEvidence.rpmKnown ? liveSafetyEvidence.engineOff : psaLabChecks.ignition_on_engine_off,
+    stable_battery_voltage: liveSafetyEvidence.batteryKnown ? liveSafetyEvidence.batteryStable : psaLabChecks.stable_battery_voltage,
+    workshop_or_private_site: psaLabChecks.workshop_or_private_site,
+  };
+  const psaLabChecksComplete = Object.values(effectivePsaLabChecks).every(Boolean);
   const currentRouteGeometry = useMemo(() => routeGeometry(replay), [replay]);
   const currentReplayGraphGeometries = useMemo(() => {
     const geometries = new Map<string, ReplayGraphGeometry>();
@@ -2356,9 +2675,12 @@ function App() {
 
   async function refreshDiagnosticHistory(preferredVin?: string, preferredProfile?: string) {
     try {
-      const vehicles = await api<DiagnosticVehicle[]>("/api/diagnostic/vehicles");
+      const [vehicles, activeVehicle] = await Promise.all([
+        api<DiagnosticVehicle[]>("/api/diagnostic/vehicles"),
+        api<DiagnosticVehicle>("/api/diagnostic/vehicles/active").catch(() => null),
+      ]);
       setDiagnosticVehicles(vehicles);
-      const rememberedVin = preferredVin ?? selectedDiagnosticVin;
+      const rememberedVin = preferredVin ?? activeVehicle?.vin ?? selectedDiagnosticVin;
       const selected = vehicles.some((vehicle) => vehicle.vin === rememberedVin)
         ? rememberedVin
         : vehicles[0]?.vin ?? "";
@@ -2388,11 +2710,62 @@ function App() {
   }
 
   async function selectDiagnosticVehicle(vin: string) {
+    if (!vin || vin === selectedDiagnosticVin) return;
+    if (capture?.active) {
+      setError("Arrête et sauvegarde la capture avant de changer de véhicule : elle est déjà rattachée au VIN actif.");
+      return;
+    }
+    setVehicleSelectionBusy(true);
+    setError("");
+    const previousVin = selectedDiagnosticVin;
     setSelectedDiagnosticVin(vin);
     setReport(null);
     setDiagnosticReportHistory([]);
+    setObservedDtcs([]);
+    setInjectionSnapshot(null);
+    setVehicleIdentity(null);
+    setReplay(null);
+    setReplayValidation(null);
+    setReplaySessionId("");
     const profile = diagnosticVehicles.find((vehicle) => vehicle.vin === vin)?.vehicle_profile;
-    await refreshDiagnosticHistory(vin, profile);
+    if (profile) setIdentityProfileKey(profile);
+    try {
+      await api<DiagnosticVehicle>("/api/diagnostic/vehicles/active", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vin }),
+      });
+      await refreshDiagnosticHistory(vin, profile);
+    } catch (err) {
+      setSelectedDiagnosticVin(previousVin);
+      await refreshDiagnosticHistory(previousVin || undefined);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVehicleSelectionBusy(false);
+    }
+  }
+
+  async function assignSessionsToActiveVehicle(sessionIds: string[]) {
+    if (!selectedDiagnosticVehicle || !sessionIds.length) return;
+    setSessionAssignmentBusy(sessionIds.length === 1 ? sessionIds[0] : "bulk");
+    setError("");
+    try {
+      await Promise.all(sessionIds.map((sessionId) => api(`/api/learn/sessions/${encodeURIComponent(sessionId)}/vehicle`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vin: selectedDiagnosticVehicle.vin,
+          vehicle_profile: selectedDiagnosticVehicle.vehicle_profile,
+          vehicle_label: `${selectedDiagnosticVehicle.manufacturer} ${selectedDiagnosticVehicle.model}`,
+        }),
+      })));
+      await refreshSessions();
+      if (replaySessionId && sessionIds.includes(replaySessionId)) await loadReplay(replaySessionId, true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSessionAssignmentBusy("");
+    }
   }
 
   async function selectDiagnosticReport(scanId: string) {
@@ -2401,8 +2774,75 @@ function App() {
     try {
       const selected = await api<Report>(`/api/diagnostic/reports/${encodeURIComponent(scanId)}`);
       setReport(selected);
+      setDiagnosticRegression(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function verifyDiagnosticRegression(scanId = report?.scan_id) {
+    if (!scanId) return;
+    setDiagnosticRegressionBusy(true);
+    setError("");
+    try {
+      const result = await api<RegressionResult>(
+        `/api/diagnostic/reports/${encodeURIComponent(scanId)}/regression`,
+      );
+      setDiagnosticRegression(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDiagnosticRegressionBusy(false);
+    }
+  }
+
+  async function importDiagnosticTrace(file: File | undefined) {
+    if (!file) return;
+    setTraceImportBusy(true);
+    setTraceImportResult(null);
+    setError("");
+    try {
+      const content = await file.text();
+      const result = await api<TraceImportResult>("/api/diagnostic/traces/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: file.name,
+          content,
+          vehicle_profile: report?.vehicle_profile ?? identityProfileKey,
+          source_format: "auto",
+        }),
+      });
+      setTraceImportResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTraceImportBusy(false);
+    }
+  }
+
+  async function clearSelectedEcuDtcs() {
+    if (!dtcClearEcuKey) return;
+    setDtcClearBusy(true);
+    setDtcClearResult(null);
+    setError("");
+    try {
+      const result = await api<ClearDtcResult>(
+        `/api/diagnostic/ecus/${encodeURIComponent(dtcClearEcuKey)}/dtcs/clear`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            confirmation: dtcClearConfirmation,
+            ...dtcClearChecks,
+          }),
+        },
+      );
+      setDtcClearResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDtcClearBusy(false);
     }
   }
 
@@ -2428,13 +2868,15 @@ function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vehicle_profile: vehicle?.vehicle_profile ?? status?.vehicle_profile ?? identityProfileKey,
+          vehicle_profile: vehicle?.vehicle_profile ?? identityProfileKey ?? status?.vehicle_profile,
           vin: selectedDiagnosticVin || null,
         }),
       });
       setReport(payload);
+      setDiagnosticRegression(null);
       if (payload.vin) setSelectedDiagnosticVin(payload.vin);
       await refreshDiagnosticHistory(payload.vin ?? undefined, payload.vehicle_profile);
+      if (payload.scan_id) await verifyDiagnosticRegression(payload.scan_id);
       setView("ecus");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -2457,10 +2899,17 @@ function App() {
       setView("studio");
       return;
     }
+    if (!liveObdReadOnly) {
+      setError("Le firmware principal doit annoncer live_obd_read_only=true pour autoriser les lectures OBD normalisées sur 6/14.");
+      setView("studio");
+      return;
+    }
     setInjectionBusy(true);
     setError("");
     try {
-      const payload = await api<DiagnosticSensorSnapshot>("/api/sensors/snapshot", { method: "POST" });
+      const profile = selectedDiagnosticVehicle?.vehicle_profile ?? identityProfileKey ?? status?.vehicle_profile;
+      const query = profile ? `?vehicle_profile=${encodeURIComponent(profile)}` : "";
+      const payload = await api<DiagnosticSensorSnapshot>(`/api/sensors/snapshot${query}`, { method: "POST" });
       setInjectionSnapshot(payload);
       setView(destination);
     } catch (err) {
@@ -2475,9 +2924,11 @@ function App() {
       setError("Arrête et sauvegarde la capture CAN avant de lire l’identité du véhicule.");
       return;
     }
-    if (!diagnosticReady) {
+    if (!identityReadReady) {
       setError(status?.can_tx_enabled
-        ? "Connecte et valide d’abord l’ESP32 avec le firmware diagnostic en lecture seule."
+        ? selectedIdentityProfile?.identity_scope === "identity_only" && !liveObdReadOnly
+          ? "Le firmware principal doit autoriser les lectures OBD 01/09 filtrées sur 6/14 pour identifier ce véhicule."
+          : "Connecte et valide d’abord l’ESP32 avec le firmware diagnostic en lecture seule."
         : "La lecture VIN nécessite des requêtes OBD/UDS de lecture (CAN_TX_ENABLED=true)."
       );
       return;
@@ -2504,6 +2955,11 @@ function App() {
   }
 
   async function readPsaDid() {
+    if (!psaVehicleCompatible) {
+      setError("Le véhicule actif n’est pas un profil PSA compatible. Charge la Peugeot depuis le Garage avant toute lecture constructeur.");
+      setView("garage");
+      return;
+    }
     if (!diagnosticReady) {
       setError(capture?.active && !dualCanOperational
         ? "Arrête et sauvegarde la capture avant une lecture UDS PSA."
@@ -2551,6 +3007,11 @@ function App() {
   }
 
   async function unlockPsaConfiguration() {
+    if (!psaVehicleCompatible) {
+      setError("SecurityAccess PSA refusé : le véhicule actif n’est pas un profil PSA compatible.");
+      setView("garage");
+      return;
+    }
     setPsaBusy("unlock");
     setPsaFeedback("");
     setError("");
@@ -2561,7 +3022,7 @@ function App() {
         body: JSON.stringify({
           application_key_hex: psaUnlockApplicationKey.trim(),
           confirmation: psaUnlockConfirmation,
-          ...psaLabChecks,
+          ...effectivePsaLabChecks,
         }),
       });
       setPsaFeedback(`${result.message} Seed ${result.seed_hex} · key ${result.response_key_hex}.`);
@@ -2574,6 +3035,11 @@ function App() {
   }
 
   async function executePsaAction() {
+    if (!psaVehicleCompatible) {
+      setError("Commande PSA refusée : charge d’abord un véhicule PSA compatible depuis le Garage.");
+      setView("garage");
+      return;
+    }
     if (!selectedPsaAction) return;
     setPsaBusy("action");
     setPsaFeedback("");
@@ -2585,7 +3051,7 @@ function App() {
         body: JSON.stringify({
           confirmation: psaConfirmation,
           duration_ms: psaDurationMs,
-          ...psaLabChecks,
+          ...effectivePsaLabChecks,
         }),
       });
       setPsaFeedback(`${result.message}${result.session_id ? ` Trace ${result.session_id}.` : ""}`);
@@ -2604,7 +3070,15 @@ function App() {
       const payload = await api<CaptureStatus>("/api/learn/capture/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: captureName, note: captureNote || null }),
+        body: JSON.stringify({
+          name: captureName,
+          note: captureNote || null,
+          vin: selectedDiagnosticVehicle?.vin ?? null,
+          vehicle_profile: activeCommunicationProfileKey || status?.vehicle_profile || null,
+          vehicle_label: activeCommunicationProfile
+            ? `${activeCommunicationProfile.manufacturer} ${activeCommunicationProfile.model}`
+            : null,
+        }),
       });
       setCapture(payload);
       setAnalysis(null);
@@ -2667,7 +3141,11 @@ function App() {
   }
 
   function renderReplay() {
-    const playableSessions = sessions.filter((session) => session.frame_count > 0);
+    const playableSessions = sessions.filter((session) => session.frame_count > 0 && (
+      !selectedDiagnosticVin || !session.vin || session.vin === selectedDiagnosticVin
+    ));
+    const activeVehicleReplays = playableSessions.filter((session) => session.vin === selectedDiagnosticVin);
+    const unassignedReplays = playableSessions.filter((session) => !session.vin);
     const selector = (
       <section className="panel replay-selector">
         <div>
@@ -2684,11 +3162,12 @@ function App() {
           onChange={(event) => void loadReplay(event.target.value)}
         >
           {!replaySessionId && <option value="">Sélectionner une session</option>}
-          {playableSessions.map((session) => (
-            <option key={session.session_id} value={session.session_id}>
-              {formatDate(session.started_at_us)} · {session.name}
-            </option>
-          ))}
+          {activeVehicleReplays.length > 0 && <optgroup label={activeVehicleLabel}>{activeVehicleReplays.map((session) => (
+            <option key={session.session_id} value={session.session_id}>{formatDate(session.started_at_us)} · {session.name}</option>
+          ))}</optgroup>}
+          {unassignedReplays.length > 0 && <optgroup label="Anciennes captures sans VIN">{unassignedReplays.map((session) => (
+            <option key={session.session_id} value={session.session_id}>{formatDate(session.started_at_us)} · {session.name}</option>
+          ))}</optgroup>}
         </select>
         <button
           className="ghost-button"
@@ -2705,6 +3184,10 @@ function App() {
     }
     if (replayBusy || !replay || !currentReplayPoint) {
       return <>{selector}<section className="panel replay-loading"><EmptyState title="Préparation du trajet…" text="Décodage CAN, échantillonnage temporel et reconstruction locale de la trajectoire. La capture originale reste intacte." /></section></>;
+    }
+    const replayProfileCompatible = !replay.vehicle_profile || replay.vehicle_profile.startsWith("peugeot_") || replay.vehicle_profile.startsWith("psa_");
+    if (!replayProfileCompatible) {
+      return <>{selector}<section className="panel"><EmptyState title={`Replay visuel indisponible pour ${replay.vehicle}`} text="La capture est correctement classée sous ce VIN, mais le décodeur dynamique Fiat n’est pas encore validé. Le fichier CAN brut reste conservé et analysable sans afficher de fausses valeurs Peugeot." action={<button className="secondary-button" onClick={() => setView("discovery")}>Ouvrir l’analyse brute</button>} /></section></>;
     }
 
     const point = currentReplayPoint;
@@ -2763,6 +3246,8 @@ function App() {
     return (
       <div className="replay-page">
         {selector}
+        {replay.vin && replay.vin !== selectedDiagnosticVin && <p className="inline-alert danger-alert">Ce replay appartient au VIN {replay.vin}, différent du véhicule actif. Recharge le bon véhicule depuis le Garage.</p>}
+        {!replay.vin && selectedDiagnosticVehicle && <div className="replay-assignment-strip"><div><strong>Capture non classée</strong><span>Associe-la à {activeVehicleLabel} pour l’intégrer à sa chronologie.</span></div><button className="secondary-button" disabled={Boolean(sessionAssignmentBusy)} onClick={() => void assignSessionsToActiveVehicle([replay.session_id])}>{sessionAssignmentBusy === replay.session_id ? "Association…" : "Associer au véhicule actif"}</button></div>}
 
         <section className="replay-summary-grid">
           <article><span>{roadConfirmed ? "Distance routière" : gpsMeasured ? "Distance GPS" : "Distance reconstruite"}</span><strong>{replay.distance_km.toFixed(2)} <small>km</small></strong></article>
@@ -3198,7 +3683,7 @@ function App() {
           </div>
         );
       }
-      if (!point) return <div className="studio-widget-empty">Démarre le direct pour recevoir les capteurs CAN.</div>;
+      if (!point) return <div className="studio-widget-empty">{!directPsaCompatible ? `Profil ${activeVehicleLabel} actif. Seuls les signaux validés pour cette marque seront affichés; les autres trames restent brutes.` : "Démarre le direct pour recevoir les capteurs CAN."}</div>;
       if (widget.kind === "speed") {
         const speed = Math.max(0, point.speed_kph ?? 0);
         const ratio = Math.min(1, speed / 150);
@@ -3332,8 +3817,9 @@ function App() {
         <header className="studio-toolbar">
           <button className="studio-exit" onClick={() => setView("dashboard")}>← Menu</button>
           <div className="studio-brand"><span>OD</span><div><strong>Dashboard direct</strong><small>Disposition sauvegardée automatiquement</small></div></div>
+          <button className={`studio-active-vehicle ${activeCommunicationProfile ? "loaded" : ""}`} disabled={capture?.active} onClick={() => setView(selectedDiagnosticVehicle ? "garage" : "identity")}><span>{selectedDiagnosticVehicle ? "VÉHICULE CHARGÉ" : "PROFIL COMMUNICATION"}</span><strong>{activeVehicleLabel}</strong><small>{selectedDiagnosticVehicle?.vin ?? activeCommunicationProfileKey ?? "Choisir une marque"}</small></button>
           <div className={`studio-live-source ${capture?.active ? "active" : ""}`}>
-            <i /><div><strong>{capture?.active ? (capture.dual_can ? "DOUBLE CAN DIRECT" : "CAN DIRECT") : "DIRECT EN ATTENTE"}</strong><small>{capture?.active ? `${(capture.live_frame_count ?? capture.frame_count ?? 0).toLocaleString("fr-FR")} live · ${(capture.diagnostic_frame_count ?? 0).toLocaleString("fr-FR")} diag · mise à jour 5 Hz` : "Clique sur Enregistrer pour démarrer"}</small></div>
+            <i /><div><strong>{capture?.active ? (capture.hybrid_obd_ready ? "CAN + OBD DIRECT" : capture.dual_can ? "DOUBLE CAN DIRECT" : "CAN DIRECT") : "DIRECT EN ATTENTE"}</strong><small>{capture?.active ? `${(capture.live_frame_count ?? capture.frame_count ?? 0).toLocaleString("fr-FR")} live · ${(capture.diagnostic_frame_count ?? 0).toLocaleString("fr-FR")} diag${typeof point?.engine_rpm === "number" ? ` · ${Math.round(point.engine_rpm)} tr/min` : ""}${typeof point?.battery_voltage_v === "number" ? ` · ${point.battery_voltage_v.toFixed(2)} V` : ""}` : "Clique sur Enregistrer pour démarrer"}</small></div>
           </div>
           <div className={`studio-esp-selector ${status?.gateway_verified || capture?.active ? "connected" : ""}`} title={capture?.active ? "Arrête la capture avant de changer d’ESP32" : undefined}>
             <i />
@@ -3403,7 +3889,122 @@ function App() {
     );
   }
 
+  function renderGarage() {
+    const totalCaptureMs = vehicleLinkedSessions.reduce((total, session) => total + session.duration_ms, 0);
+    const lastActivity = vehicleTimeline[0];
+    const currentHealth = report
+      ? report.dtc_summary.active > 0
+        ? { label: `${report.dtc_summary.active} défaut(s) actif(s)`, tone: "warning" }
+        : { label: "Aucun défaut actif", tone: "good" }
+      : { label: "Diagnostic à réaliser", tone: "neutral" };
+    const filterOptions: Array<{ key: typeof garageEventFilter; label: string }> = [
+      { key: "all", label: "Tout" },
+      { key: "diagnostic", label: "Diagnostics" },
+      { key: "capture", label: "Trajets & captures" },
+      { key: "identity", label: "Identité" },
+    ];
+    const openTimelineEntry = async (entry: VehicleTimelineEntry) => {
+      if (entry.scanId) {
+        await selectDiagnosticReport(entry.scanId);
+        setView("dtcs");
+      } else if (entry.sessionId) {
+        await loadReplay(entry.sessionId);
+        setView("replay");
+      } else {
+        if (selectedDiagnosticVehicle) setIdentityProfileKey(selectedDiagnosticVehicle.vehicle_profile);
+        setView("identity");
+      }
+    };
+
+    return (
+      <div className="garage-page">
+        {selectedDiagnosticVehicle ? (
+          <section className="panel garage-vehicle-hero">
+            <div className="garage-vehicle-identity">
+              <div className="garage-marque">{selectedDiagnosticVehicle.manufacturer.slice(0, 2).toUpperCase()}</div>
+              <div>
+                <span className="eyebrow">Véhicule actuellement chargé</span>
+                <h2>{selectedDiagnosticVehicle.manufacturer} {selectedDiagnosticVehicle.model}</h2>
+                <code>{selectedDiagnosticVehicle.vin}</code>
+              </div>
+              <span className="status-pill good"><i /> Dossier actif</span>
+            </div>
+            <div className="garage-health-grid">
+              <article><span>État connu</span><strong className={currentHealth.tone}>{currentHealth.label}</strong><small>{report?.scanned_at ? `Scan du ${formatIsoDate(report.scanned_at)}` : "Aucun rapport chargé"}</small></article>
+              <article><span>Suivi diagnostic</span><strong>{selectedDiagnosticVehicle.scan_count} rapport(s)</strong><small>Comparaison automatique avant / après</small></article>
+              <article><span>Données routières</span><strong>{vehicleLinkedSessions.length} session(s)</strong><small>{formatDuration(totalCaptureMs)} enregistrées</small></article>
+              <article><span>Dernière activité</span><strong>{lastActivity ? formatDate(lastActivity.timestampMs * 1000) : "—"}</strong><small>{lastActivity?.title ?? "Dossier récemment créé"}</small></article>
+            </div>
+            <div className="garage-quick-actions">
+              <button className="primary-button" onClick={() => setView("studio")}>Ouvrir le direct</button>
+              <button className="secondary-button" onClick={() => setView("ecus")}>Lancer un diagnostic</button>
+              <button className="ghost-button" onClick={() => { setIdentityProfileKey(selectedDiagnosticVehicle.vehicle_profile); setView("identity"); }}>Relire l’identité</button>
+            </div>
+          </section>
+        ) : (
+          <section className="panel"><EmptyState title="Aucun véhicule chargé" text="Lis le VIN pour créer un dossier véhicule fiable avant une capture ou un diagnostic." action={<button className="primary-button" onClick={() => setView("identity")}>Identifier le véhicule</button>} /></section>
+        )}
+
+        <section className="garage-workspace">
+          <aside className="panel garage-fleet-panel">
+            <div className="section-heading">
+              <div><span className="eyebrow">Garage local</span><h2>{diagnosticVehicles.length} véhicule(s)</h2><p>Un seul dossier est chargé à la fois.</p></div>
+            </div>
+            <div className="garage-fleet-list">
+              {diagnosticVehicles.map((vehicle) => {
+                const linked = sessions.filter((session) => session.vin === vehicle.vin).length;
+                const active = vehicle.vin === selectedDiagnosticVin;
+                return <button className={active ? "active" : ""} disabled={vehicleSelectionBusy || capture?.active} onClick={() => void selectDiagnosticVehicle(vehicle.vin)} key={vehicle.vin}>
+                  <span>{vehicle.manufacturer.slice(0, 2).toUpperCase()}</span>
+                  <div><strong>{vehicle.manufacturer} {vehicle.model}</strong><code>{vehicle.vin}</code><small>{vehicle.scan_count} diagnostic(s) · {linked} capture(s)</small></div>
+                  <b>{active ? "CHARGÉ" : "Charger"}</b>
+                </button>;
+              })}
+            </div>
+            <button className="garage-add-vehicle" onClick={() => setView("identity")}>＋ Ajouter par lecture VIN</button>
+            {capture?.active && <p className="garage-lock-note">Le changement de véhicule est bloqué pendant l’enregistrement en cours.</p>}
+          </aside>
+
+          <section className="panel garage-timeline-panel">
+            <div className="section-heading garage-timeline-heading">
+              <div><span className="eyebrow">Historique consolidé</span><h2>Chronologie du véhicule</h2><p>Diagnostics, captures et identité restent séparés des autres VIN.</p></div>
+              <div className="garage-filter-tabs">{filterOptions.map((option) => <button className={garageEventFilter === option.key ? "active" : ""} onClick={() => setGarageEventFilter(option.key)} key={option.key}>{option.label}</button>)}</div>
+            </div>
+            <div className="vehicle-timeline">
+              {vehicleTimeline.map((entry) => <button className={`timeline-entry ${entry.kind} ${entry.severity ?? "neutral"}`} onClick={() => void openTimelineEntry(entry)} key={entry.id}>
+                <time>{formatDate(entry.timestampMs * 1000)}</time>
+                <i><span>{entry.kind === "diagnostic" ? "DTC" : entry.kind === "capture" ? "CAN" : "VIN"}</span></i>
+                <div><strong>{entry.title}</strong><p>{entry.description}</p></div>
+                <span>{entry.badge}</span>
+                <b>→</b>
+              </button>)}
+              {!vehicleTimeline.length && <EmptyState title="Aucun événement dans cette vue" text="Change le filtre ou réalise une première opération sur le véhicule chargé." />}
+            </div>
+          </section>
+        </section>
+
+        {unassignedSessions.length > 0 && selectedDiagnosticVehicle && <section className="panel unassigned-sessions-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">À classer</span><h2>{unassignedSessions.length} ancienne(s) capture(s) sans VIN</h2><p>Les données ne sont jamais attribuées silencieusement. Confirme celles qui appartiennent à {activeVehicleLabel}.</p></div>
+            <button className="secondary-button" disabled={Boolean(sessionAssignmentBusy)} onClick={() => {
+              if (window.confirm(`Associer les ${unassignedSessions.length} captures sans VIN à ${activeVehicleLabel} ?`)) void assignSessionsToActiveVehicle(unassignedSessions.map((session) => session.session_id));
+            }}>{sessionAssignmentBusy === "bulk" ? "Classement…" : "Tout associer au véhicule actif"}</button>
+          </div>
+          <div className="unassigned-session-list">
+            {unassignedSessions.slice(0, 8).map((session) => <article key={session.session_id}>
+              <div><strong>{session.name}</strong><small>{formatDate(session.started_at_us)} · {session.frame_count.toLocaleString("fr-FR")} trames</small></div>
+              <button className="ghost-button" disabled={Boolean(sessionAssignmentBusy)} onClick={() => void assignSessionsToActiveVehicle([session.session_id])}>{sessionAssignmentBusy === session.session_id ? "Association…" : "Associer"}</button>
+            </article>)}
+            {unassignedSessions.length > 8 && <small>+ {unassignedSessions.length - 8} autres captures disponibles pour le classement global.</small>}
+          </div>
+        </section>}
+      </div>
+    );
+  }
+
   function renderDashboard() {
+    const applicableSensors = Math.max(1, sensorInventoryRows.length - inventoryCounts.excluded);
+    const sensorCoverage = Math.round((inventoryCounts.measured + inventoryCounts.supported) / applicableSensors * 100);
     return (
       <>
         <section className="metric-grid">
@@ -3416,8 +4017,8 @@ function App() {
           </article>
           <article className="metric-card">
             <span className="metric-label">Profil véhicule</span>
-            <strong>{status?.vehicle_profile ?? "Non chargé"}</strong>
-            <small>Peugeot 308 T9 · 2018</small>
+            <strong>{activeVehicleLabel}</strong>
+            <small>{selectedDiagnosticVehicle?.vin ?? "Lis le VIN pour créer le dossier"}</small>
           </article>
           <article className="metric-card">
             <span className="metric-label">Calculateurs</span>
@@ -3432,69 +4033,35 @@ function App() {
         </section>
 
         <section className="dashboard-grid">
-          <article className="panel quick-panel">
+          <article className="panel journey-panel">
             <div className="section-heading">
               <div>
-                <span className="eyebrow">Opérations</span>
-                <h2>Commencer un diagnostic</h2>
+                <span className="eyebrow">Parcours atelier</span>
+                <h2>Que souhaites-tu faire ?</h2>
+                <p>Chaque parcours ne montre que les outils nécessaires à l’étape en cours.</p>
               </div>
             </div>
-            <button className="operation-card" onClick={diagnosticReady ? scan : () => setView(status?.can_tx_enabled && !diagnosticGatewayVerified ? "studio" : "ecus")} disabled={busy}>
-              <span className="operation-icon">SCAN</span>
-              <span>
-                <strong>{busy ? "Scan en cours…" : diagnosticReady ? (dualCanOperational ? "Scanner pendant l’enregistrement" : "Scanner le véhicule") : capture?.active ? "CAN diagnostic 3/8 indisponible" : status?.can_tx_enabled ? "Connecter l’ESP32 diagnostic" : "Découvrir les systèmes"}</strong>
-                <small>{diagnosticReady ? "Inventaire ECU sur 3/8 · dashboard 6/14 conservé" : status?.can_tx_enabled ? "La poignée de main double CAN doit être validée" : "Observation passive maintenant · diagnostic actif séparé"}</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={openPassiveSensors}>
-              <span className="operation-icon">LIVE</span>
-              <span>
-                <strong>Voir les capteurs CAN</strong>
-                <small>Volant, freinage, moteur, BSI et ADAS sans émission</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={() => setView("identity")}>
-              <span className="operation-icon">VIN</span>
-              <span>
-                <strong>Identifier Peugeot ou Fiat</strong>
-                <small>VIN, logiciel, calibration, CVN et nom du calculateur en lecture seule</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={() => setView("inventory")}>
-              <span className="operation-icon">COV</span>
-              <span>
-                <strong>Inventaire des capteurs</strong>
-                <small>Mesurés, à tester, à décoder et équipements non applicables</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={() => setView("injection")}>
-              <span className="operation-icon">INJ</span>
-              <span>
-                <strong>Injection & moteur</strong>
-                <small>Pression de rampe, débit d'air, carburant, lambda, EGR et températures</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={() => setView("replay")}>
-              <span className="operation-icon">REPLAY</span>
-              <span>
-                <strong>Rejouer le trajet</strong>
-                <small>Carte, Peugeot animée, instruments et aides à la conduite</small>
-              </span>
-              <b>→</b>
-            </button>
-            <button className="operation-card" onClick={() => setView("discovery")}>
-              <span className="operation-icon">LEARN</span>
-              <span>
-                <strong>Mode découverte</strong>
-                <small>Capture annotée et corrélation hors ligne</small>
-              </span>
-              <b>→</b>
-            </button>
+            <div className="journey-grid">
+              <button className="journey-card observe" onClick={() => setView("studio")}>
+                <span className="journey-step">01</span>
+                <div><small>Sans émission</small><h3>Observer en direct</h3><p>Compose ton cockpit, affiche les capteurs et enregistre un trajet.</p></div>
+                <footer><span className={capture?.active ? "live" : ""}>{capture?.active ? "Enregistrement actif" : "Prêt à observer"}</span><b>→</b></footer>
+              </button>
+              <button className="journey-card validate" onClick={() => setView("inventory")}>
+                <span className="journey-step">02</span>
+                <div><small>Preuves guidées</small><h3>Valider les capteurs</h3><p>Traite une information à la fois avec la bonne méthode de test.</p></div>
+                <footer><span>{sensorCoverage}% couverts · {validationQueue.length} à traiter</span><b>→</b></footer>
+              </button>
+              <button className="journey-card diagnose" onClick={() => setView("ecus")}>
+                <span className="journey-step">03</span>
+                <div><small>Lecture seule</small><h3>Diagnostiquer le véhicule</h3><p>Identifie les ECU, lis les défauts et exporte un rapport par VIN.</p></div>
+                <footer><span className={diagnosticReady ? "ready" : ""}>{diagnosticReady ? "Liaison diagnostic prête" : "Connexion à vérifier"}</span><b>→</b></footer>
+              </button>
+            </div>
+            <div className="dashboard-personalize">
+              <div><strong>Un affichage adapté à ton usage</strong><span>Le dashboard direct reste entièrement déplaçable, redimensionnable et mémorisé.</span></div>
+              <button className="secondary-button" onClick={() => setView("studio")}>Personnaliser le direct</button>
+            </div>
           </article>
 
           <article className="panel safety-panel">
@@ -3513,6 +4080,10 @@ function App() {
               <div><span>ECU de sécurité</span><strong>{status?.safety_ecu_clear_enabled ? "Déverrouillés" : "Protégés"}</strong></div>
               <div><span>Traces CAN</span><strong>{status?.trace_can_frames ? "Actives" : "Inactives"}</strong></div>
               <div><span>Liaison ESP32</span><strong>{status?.transport === "esp32_wifi" ? "Wi-Fi privé" : status?.transport ?? "Inconnue"}</strong></div>
+            </div>
+            <div className="safety-action">
+              <div><strong>Commandes actives</strong><span>{status?.psa_actuator_enabled && !status?.read_only ? "Configurées · armement requis" : "Verrouillées par défaut"}</span></div>
+              <button className="ghost-button" onClick={() => { setPsaSection("actions"); setToolsOpen(true); setView("psa"); }}>Voir les autorisations</button>
             </div>
             {!status && (
               <p className="inline-alert danger-alert">
@@ -3563,8 +4134,12 @@ function App() {
             </div>
           )}
           <div className="detection-state-row">
-            <span className={`status-pill ${passiveSensors?.strict_passive ? "good" : "bad"}`}>
-              <i /> {passiveSensors?.strict_passive ? "Passif strict · émission impossible" : "Sécurité à vérifier"}
+            <span className={`status-pill ${passiveSensors?.strict_passive || liveObdReadOnly ? "good" : "bad"}`}>
+              <i /> {passiveSensors?.strict_passive
+                ? "Passif strict · émission impossible"
+                : liveObdReadOnly
+                  ? "Capture passive · OBD 01/09 filtré"
+                  : "Sécurité à vérifier"}
             </span>
             <span>Mises à jour différentielles toutes les 200 ms</span>
             {passiveSensors?.unknown_can_ids.length ? (
@@ -3617,7 +4192,7 @@ function App() {
         <section className="panel passive-sensors-panel">
           <div className="section-heading">
             <div>
-              <span className="eyebrow">Écoute CAN · aucune requête</span>
+              <span className="eyebrow">Direct hybride · CAN passif + OBD normalisé</span>
               <h2>Tous les signaux décodés</h2>
               <p>{passiveSensors
                 ? `${passiveSensors.decoded_signal_count} signaux live · ${passiveSensors.observed_message_count} messages OpenDBC · ${passiveSensors.frame_count.toLocaleString("fr-FR")} trames`
@@ -3668,12 +4243,12 @@ function App() {
                       {signal.customized && <small>Brut : {String(signal.raw_value ?? "—")} {signal.source_unit ?? ""}</small>}
                     </div>
                     <div className="sensor-live-source">
-                      <code>{hexadecimal(signal.arbitration_id)} · {signal.message}.{signal.signal}</code>
-                      <span>{signal.confidence === "validated" ? "Validé sur cette 308" : "Définition OpenDBC à confirmer"}</span>
+                      <code>{signal.source === "obd" ? `Mode 01 · PID 0x${(signal.pid ?? 0).toString(16).toUpperCase().padStart(2, "0")}` : `${hexadecimal(signal.arbitration_id)} · ${signal.message}.${signal.signal}`}</code>
+                      <span>{signal.confidence === "standardized" ? "OBD-II normalisé" : signal.confidence === "validated" ? "Validé sur le véhicule" : "Définition OpenDBC à confirmer"}</span>
                     </div>
-                    <button className="ghost-button" onClick={() => editPassiveSensor(signal)}>
+                    {signal.source === "can" ? <button className="ghost-button" onClick={() => editPassiveSensor(signal)}>
                       {signal.customized ? "Modifier" : "Corriger"}
-                    </button>
+                    </button> : <span className="source-badge measured">OBD</span>}
                   </article>
                 ))}
               </div>
@@ -3682,7 +4257,7 @@ function App() {
               )}
               <div className="footer-meta">
                 <span>{visiblePassiveSignals.length} affichés</span>
-                <span>{passiveSensors.strict_passive ? "Passif strict" : "Mode à vérifier"}</span>
+                <span>{passiveSensors.strict_passive ? "Passif strict" : liveObdReadOnly ? "OBD 01/09 filtré" : "Mode à vérifier"}</span>
                 <span>Session {passiveSensors.session_id || "—"}</span>
               </div>
             </>
@@ -3720,21 +4295,31 @@ function App() {
     const applicableTotal = Math.max(1, sensorInventoryRows.length - inventoryCounts.excluded);
     const coveredCount = inventoryCounts.measured + inventoryCounts.supported;
     const coverage = Math.round(coveredCount / applicableTotal * 100);
-    const actionFor = (row: SensorInventoryRow) => {
+    const actionFor = (row: SensorInventoryRow, emphasized = false) => {
+      const className = emphasized ? "primary-button" : "ghost-button";
       if (["to_test", "supported"].includes(row.status)) {
-        return <button className="ghost-button" disabled={injectionBusy} onClick={() => void readInjectionParameters("inventory")}>{injectionBusy ? "Lecture…" : "Tester OBD"}</button>;
+        return <button className={className} disabled={injectionBusy || !obdReadReady} onClick={() => { setValidationFocusId(row.id); void readInjectionParameters("inventory"); }}>{injectionBusy ? "Lecture…" : "Tester maintenant en OBD"}</button>;
       }
       if (row.status === "to_observe") {
-        return <button className="ghost-button" disabled={detectionBusy || detectionRemaining > 0} onClick={() => void startFullSensorDetection(false)}>{detectionRemaining > 0 ? `${detectionRemaining} s` : "Observer CAN"}</button>;
+        return <button className={className} disabled={detectionBusy || detectionRemaining > 0} onClick={() => { setValidationFocusId(row.id); void startFullSensorDetection(false); }}>{detectionRemaining > 0 ? `${detectionRemaining} s` : "Observer le CAN 30 s"}</button>;
       }
       if (row.status === "to_decode") {
-        return <button className="ghost-button" onClick={() => setView("discovery")}>Découvrir</button>;
+        return <button className={className} onClick={() => { setValidationFocusId(row.id); setView("discovery"); }}>Créer une capture annotée</button>;
       }
       if (row.status === "measured") {
-        return <button className="ghost-button" onClick={() => setView(row.source === "OBD-II" ? "injection" : "studio")}>Voir</button>;
+        return <button className={className} onClick={() => setView(row.source === "OBD-II" ? "injection" : "studio")}>Voir la preuve</button>;
       }
       return null;
     };
+    const focusIndex = focusedValidationRow ? validationQueue.findIndex((row) => row.id === focusedValidationRow.id) : -1;
+    const nextValidationRow = validationQueue.length
+      ? validationQueue[(Math.max(0, focusIndex) + 1) % validationQueue.length]
+      : null;
+    const validationMethod = focusedValidationRow?.status === "to_observe"
+      ? { code: "CAN", title: "Observation passive", text: "Provoque uniquement la grandeur ciblée pendant la fenêtre de 30 secondes. La valeur doit évoluer dans le bon sens et revenir au repos." }
+      : focusedValidationRow?.status === "to_decode"
+        ? { code: "PSA", title: "Découverte annotée", text: "Répète trois fois la même action avec le même marqueur. Le post-traitement comparera automatiquement les fenêtres avant et après." }
+        : { code: "OBD", title: "Lecture moteur normalisée", text: "Le calculateur indique d’abord les PID supportés, puis la valeur est lue et contrôlée avant d’être classée mesurée." };
 
     return (
       <div className="sensor-inventory-page">
@@ -3763,6 +4348,38 @@ function App() {
           <div><span>Total catalogué</span><strong>{sensorInventoryRows.length}</strong><small>{inventorySystems.length - 1} systèmes</small></div>
         </section>
 
+        <section className="panel validation-assistant">
+          <div className="section-heading">
+            <div><span className="eyebrow">Assistant de validation</span><h2>Une preuve à la fois</h2><p>L’outil choisit la méthode adaptée à la source et ne classe jamais un signal « validé » sur une simple supposition.</p></div>
+            <span className={`status-pill ${validationQueue.length ? "neutral" : "good"}`}><i /> {validationQueue.length ? `${validationQueue.length} tests dans la file` : "File terminée"}</span>
+          </div>
+          {focusedValidationRow ? (
+            <>
+              <div className="validation-steps" aria-label="Étapes de validation">
+                <div className="done"><span>1</span><strong>Cible choisie</strong><small>{focusedValidationRow.system}</small></div>
+                <div className="active"><span>2</span><strong>Acquérir</strong><small>{validationMethod.title}</small></div>
+                <div><span>3</span><strong>Contrôler</strong><small>Plage, réaction, cohérence</small></div>
+                <div><span>4</span><strong>Classer</strong><small>Mesuré, plausible ou rejeté</small></div>
+              </div>
+              <div className="validation-focus-card">
+                <div className="validation-method-code">{validationMethod.code}</div>
+                <div className="validation-focus-copy">
+                  <span>{focusedValidationRow.statusLabel} · priorité {focusedValidationRow.priority}</span>
+                  <h3>{focusedValidationRow.label}</h3>
+                  <p>{validationMethod.text}</p>
+                  <code>{focusedValidationRow.reference ?? focusedValidationRow.source}</code>
+                </div>
+                <div className="validation-focus-actions">
+                  {actionFor(focusedValidationRow, true)}
+                  {nextValidationRow && <button className="ghost-button" onClick={() => setValidationFocusId(nextValidationRow.id)}>Passer au suivant</button>}
+                </div>
+              </div>
+            </>
+          ) : (
+            <EmptyState title="Aucun test prioritaire" text="Toutes les informations testables de cette configuration disposent déjà d’une preuve." />
+          )}
+        </section>
+
         <section className="panel inventory-actions-panel">
           <div className="section-heading">
             <div><span className="eyebrow">Actualiser les preuves</span><h2>Tester la couverture réelle</h2><p>Les deux lectures sont séparées : le CAN passif n'émet rien; l'OBD-II envoie des requêtes de lecture au calculateur moteur.</p></div>
@@ -3771,8 +4388,8 @@ function App() {
             <button className="inventory-action" onClick={() => void startFullSensorDetection(false)} disabled={detectionBusy || detectionRemaining > 0}>
               <span>CAN</span><div><strong>{detectionRemaining > 0 ? `Observation · ${detectionRemaining} s` : "Observer le CAN pendant 30 s"}</strong><small>Recherche les signaux diffusés spontanément</small></div>
             </button>
-            <button className="inventory-action" onClick={() => void readInjectionParameters("inventory")} disabled={injectionBusy}>
-              <span>OBD</span><div><strong>{injectionBusy ? "Lecture moteur en cours…" : "Tester les PID moteur"}</strong><small>{diagnosticReady ? "ESP32 validé · lecture seule" : "La liaison ESP32 sera vérifiée avant toute requête"}</small></div>
+            <button className="inventory-action" onClick={() => void readInjectionParameters("inventory")} disabled={injectionBusy || !obdReadReady}>
+              <span>OBD</span><div><strong>{injectionBusy ? "Lecture moteur en cours…" : "Tester les PID moteur"}</strong><small>{obdReadReady ? "6/14 validé · OBD 01/09 uniquement" : "Firmware principal compatible requis"}</small></div>
             </button>
             <button className="inventory-action" onClick={() => setView("discovery")}>
               <span>PSA</span><div><strong>Découvrir un paramètre constructeur</strong><small>Capture annotée et corrélation hors ligne</small></div>
@@ -3823,13 +4440,31 @@ function App() {
               <h2>Lire le VIN sans modifier le véhicule</h2>
               <p>OpenDiag essaie les méthodes documentées dans l'ordre, valide le format du VIN et conserve les échanges OBD/UDS dans une trace JSONL.</p>
             </div>
-            <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? "Lecture prête" : capture?.active ? "Capture active" : "ESP32 à valider"}</span>
+            <span className={`status-pill ${identityReadReady ? "good" : "neutral"}`}><i /> {identityReadReady ? "Lecture prête" : capture?.active ? "Capture active" : "ESP32 à valider"}</span>
           </div>
 
           <div className="identity-launcher">
+            <label>Marque
+              <select
+                value={selectedIdentityProfile?.manufacturer ?? ""}
+                disabled={capture?.active}
+                onChange={(event) => {
+                  const next = vehicleProfiles.find((profile) => profile.manufacturer === event.target.value);
+                  if (!next) return;
+                  setIdentityProfileKey(next.key);
+                  setSelectedDiagnosticVin("");
+                  setVehicleIdentity(null);
+                  setInjectionSnapshot(null);
+                  setReport(null);
+                  setError("");
+                }}
+              >
+                {vehicleManufacturers.map((manufacturer) => <option value={manufacturer} key={manufacturer}>{manufacturer}</option>)}
+              </select>
+            </label>
             <label>Véhicule à identifier
-              <select value={identityProfileKey} onChange={(event) => { setIdentityProfileKey(event.target.value); setVehicleIdentity(null); setError(""); }}>
-                {vehicleProfiles.map((profile) => <option value={profile.key} key={profile.key}>{profile.manufacturer} {profile.model} · {profile.year ?? "année inconnue"}</option>)}
+              <select value={identityProfileKey} disabled={capture?.active} onChange={(event) => { setIdentityProfileKey(event.target.value); setSelectedDiagnosticVin(""); setVehicleIdentity(null); setInjectionSnapshot(null); setReport(null); setError(""); }}>
+                {profilesForSelectedManufacturer.map((profile) => <option value={profile.key} key={profile.key}>{profile.model} · {profile.year ?? "année inconnue"}</option>)}
               </select>
             </label>
             <div className="identity-profile-summary">
@@ -3837,15 +4472,17 @@ function App() {
               <strong>{selectedIdentityProfile?.platform ?? "Plateforme inconnue"}</strong>
               <small>{selectedIdentityProfile?.identity_scope === "identity_only" ? "Identification seulement" : "Profil diagnostic complet"}</small>
             </div>
-            <button className="primary-button" onClick={() => void readVehicleIdentity()} disabled={identityBusy || !diagnosticReady || !selectedIdentityProfile}>
+            <button className="primary-button" onClick={() => void readVehicleIdentity()} disabled={identityBusy || !identityReadReady || !selectedIdentityProfile}>
               {identityBusy ? "Lecture du véhicule…" : "Lire VIN + identité"}
             </button>
           </div>
 
-          {!diagnosticReady && <p className="inline-alert">{capture?.active && !dualCanOperational
+          {!identityReadReady && <p className="inline-alert">{capture?.active && !dualCanOperational
             ? "Arrête et sauvegarde la capture avant cette lecture active."
             : status?.can_tx_enabled
-              ? "Connecte l’ESP32 et vérifie la poignée de main du firmware diagnostic en lecture seule."
+              ? selectedIdentityProfile?.identity_scope === "identity_only" && !liveObdReadOnly
+                ? "Ce profil utilise l’OBD normalisé : flashe le firmware principal qui annonce live_obd_read_only=true."
+                : "Connecte l’ESP32 et vérifie la poignée de main du firmware diagnostic en lecture seule."
               : "CAN_TX_ENABLED doit autoriser les requêtes de lecture; les écritures restent bloquées."}</p>}
           {selectedIdentityProfile?.identity_scope === "identity_only" && <p className="inline-alert fiat-profile-note">Le profil Fiat est volontairement limité au VIN et aux informations OBD normalisées. Donne-moi ensuite l’année, la motorisation et si c’est une 500, 500X ou 500e pour construire le bon inventaire ECU.</p>}
         </section>
@@ -3937,21 +4574,21 @@ function App() {
               <h2>Relevé moteur et injection</h2>
               <p>Interroge uniquement les PID OBD-II supportés par le calculateur moteur. Aucune écriture, adaptation ou commande d'injecteur.</p>
             </div>
-            <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? "Prêt" : capture?.active ? "Capture active" : status?.can_tx_enabled ? "ESP32 à valider" : "Verrouillé"}</span>
+            <span className={`status-pill ${obdReadReady ? "good" : "neutral"}`}><i /> {obdReadReady ? "Prêt" : capture?.active ? "Capture active" : status?.can_tx_enabled ? "Firmware 6/14 à valider" : "Verrouillé"}</span>
           </div>
           <div className="diagnostic-preflight">
             <div><span>Liaison ESP32</span><strong>{diagnosticGatewayVerified ? "Validée" : "Connexion requise"}</strong></div>
             <div><span>Calculateur interrogé</span><strong>{hexadecimal(injectionSnapshot?.request_id ?? 0x7E0)} → {hexadecimal(injectionSnapshot?.response_id ?? 0x7E8)}</strong></div>
             <div><span>Mode diagnostic</span><strong>OBD-II 01 · lecture seule</strong></div>
-            <div><span>Capture CAN</span><strong>{dualCanOperational ? "Simultanée · live 6/14" : capture?.active ? "Diagnostic 3/8 indisponible" : "Port disponible"}</strong></div>
+            <div><span>Réseau utilisé</span><strong>{obdReadReady ? "6/14 · OBD 01/09 filtré" : "6/14 indisponible"}</strong></div>
           </div>
-          {diagnosticReady ? (
+          {obdReadReady ? (
             <button className="primary-button full-scan-button" onClick={() => void readInjectionParameters()} disabled={injectionBusy}>{injectionBusy ? "Lecture en cours…" : injectionSnapshot ? "Actualiser les paramètres d'injection" : "Lire les paramètres d'injection"}</button>
           ) : (
             <p className="inline-alert">{capture?.active && !dualCanOperational
               ? "Cette passerelle ne confirme pas deux contrôleurs CAN disponibles simultanément."
               : status?.can_tx_enabled
-                ? "Connecte l’ESP32 dans le Dashboard direct et valide la poignée de main lecture seule."
+                ? "Connecte puis flashe le firmware principal compatible OBD 01/09 sur 6/14."
                 : "Le backend est actuellement en écoute passive stricte; les requêtes OBD-II restent bloquées."}</p>
           )}
         </section>
@@ -3960,6 +4597,7 @@ function App() {
           <article><span>PID catalogués</span><strong>{diagnosticSensorCatalog.length || "—"}</strong><small>Mode 01 normalisé</small></article>
           <article><span>PID supportés</span><strong>{injectionSnapshot ? supportedCatalogCount : "—"}</strong><small>Déclarés par cet ECU</small></article>
           <article><span>Valeurs reçues</span><strong>{injectionSnapshot ? measuredCount : "—"}</strong><small>Dernier relevé</small></article>
+          <article><span>Voyant / DTC émissions</span><strong>{injectionSnapshot?.mil_on === false ? `Éteint · ${injectionSnapshot.emissions_dtc_count ?? 0} DTC` : injectionSnapshot?.mil_on === true ? `Allumé · ${injectionSnapshot.emissions_dtc_count ?? 0} DTC` : "—"}</strong><small>Mode 01 · PID 01, sans effacement</small></article>
           <article><span>Trace locale</span><strong>{injectionSnapshot?.debug.session_id ? "Sauvegardée" : "—"}</strong><small>{injectionSnapshot?.debug.session_id ?? "Après la première lecture"}</small></article>
         </section>
 
@@ -4019,6 +4657,57 @@ function App() {
     );
   }
 
+  function renderMaintenance() {
+    if (!maintenanceCatalog) {
+      return <EmptyState title="Catalogue en chargement" text="Lecture des capacités du profil véhicule actif." />;
+    }
+    const applicabilityLabel: Record<MaintenanceService["applicability"], string> = {
+      applicable: "Applicable",
+      if_equipped: "Selon équipement",
+      not_applicable: "Non applicable",
+      unknown: "À rechercher",
+    };
+    const statusLabel: Record<MaintenanceService["implementation_status"], string> = {
+      vehicle_validated: "Validé véhicule",
+      procedure_required: "Procédure à valider",
+      equipment_confirmation_required: "Équipement à confirmer",
+      not_applicable: "Masqué sur ce profil",
+      research_required: "Documentation requise",
+    };
+    return (
+      <>
+        <section className="panel maintenance-overview">
+          <div className="section-heading">
+            <div><span className="eyebrow">{maintenanceCatalog.manufacturer} {maintenanceCatalog.model}</span><h2>{maintenanceCatalog.service_count} services référencés</h2><p>Le catalogue n'autorise jamais une trame tant que la procédure exacte et ses prérequis ne sont pas validés sur le véhicule.</p></div>
+            <span className={`status-pill ${maintenanceCatalog.execution_enabled ? "good" : "neutral"}`}><i />{maintenanceCatalog.execution_enabled ? "Procédures validées disponibles" : "Catalogue sécurisé"}</span>
+          </div>
+          <div className="maintenance-protocol-grid">
+            {maintenanceCatalog.protocol_coverage.map((protocol) => <article className={protocol.supported ? "supported" : "missing"} key={protocol.key}><strong>{protocol.name}</strong><span>{protocol.supported ? "Pris en charge" : "Matériel requis"}</span><p>{protocol.detail}</p></article>)}
+          </div>
+          {maintenanceCatalog.notes.map((note) => <p className="inline-alert" key={note}>{note}</p>)}
+        </section>
+
+        <section className="panel maintenance-catalog-panel">
+          <div className="section-heading"><div><span className="eyebrow">Matrice d'applicabilité</span><h2>Fonctions Fiat / Peugeot</h2></div></div>
+          <div className="sensor-category-tabs">
+            {maintenanceCategories.map((category) => <button className={maintenanceCategory === category ? "active" : ""} key={category} onClick={() => setMaintenanceCategory(category)}>{category}</button>)}
+          </div>
+          <div className="maintenance-service-grid">
+            {visibleMaintenanceServices.map((service) => (
+              <article className={`${service.applicability} risk-${service.risk}`} key={service.key}>
+                <header><span>{service.category}</span><b>{applicabilityLabel[service.applicability]}</b></header>
+                <h3>{service.name}</h3>
+                <p>{service.description}</p>
+                <small>{service.reason}</small>
+                <footer><span>{statusLabel[service.implementation_status]}</span><button className="secondary-button" disabled={!service.execution_enabled} onClick={() => setError("L'exécuteur de cette procédure n'est pas encore installé.")}>{service.execution_enabled ? "Ouvrir la procédure" : "Verrouillé"}</button></footer>
+              </article>
+            ))}
+          </div>
+        </section>
+      </>
+    );
+  }
+
   function renderPsaAdvanced() {
     const firmwarePolicy = String(status?.gateway_hello?.tx_policy ?? (status?.transport === "virtual" ? "virtual-psa-lab" : "non vérifié"));
     const psaFirmwareReady = status?.transport === "virtual" || status?.gateway_hello?.psa_lab === true;
@@ -4029,6 +4718,15 @@ function App() {
       && diagnosticReady
       && psaFirmwareReady,
     );
+    const psaReadReady = diagnosticReady && psaVehicleCompatible;
+    const activeAuthorizationSteps = [
+      { label: "Passerelle", detail: diagnosticGatewayVerified ? "ESP32 authentifié" : "Connexion requise", complete: diagnosticGatewayVerified },
+      { label: "Firmware", detail: psaFirmwareReady ? "Allowlist PSA lab" : "Profil PSA lab requis", complete: psaFirmwareReady },
+      { label: "Backend", detail: psaCatalog?.actuator_enabled && !psaCatalog.read_only ? "Actions explicitement activées" : "Configuration verrouillée", complete: Boolean(psaCatalog?.actuator_enabled && !psaCatalog.read_only) },
+      { label: "Véhicule", detail: !psaVehicleCompatible ? "Profil PSA requis" : psaLabChecksComplete ? "VIN et préconditions confirmés" : "Contrôles à terminer", complete: psaVehicleCompatible && psaLabChecksComplete },
+    ];
+    const activeAuthorizationProgress = activeAuthorizationSteps.filter((step) => step.complete).length;
+    const activeAuthorizationReady = labRuntimeReady && psaVehicleCompatible && psaLabChecksComplete;
     const unlockableEcus = psaCatalog?.ecus.filter((ecu) => ["bsi", "telematics"].includes(ecu.key) && ecu.security_keys.length) ?? [];
     const updateLabCheck = (key: keyof typeof psaLabChecks, checked: boolean) => {
       setPsaLabChecks((current) => ({ ...current, [key]: checked }));
@@ -4048,27 +4746,33 @@ function App() {
           <div className="psa-readiness-grid">
             <article><span>Transport</span><strong>{status?.transport ?? "—"}</strong><small>{diagnosticGatewayVerified ? "Passerelle validée" : "Connexion requise"}</small></article>
             <article><span>Politique firmware</span><strong>{firmwarePolicy}</strong><small>{psaFirmwareReady ? "PSA lab reconnu" : "Lecture seule uniquement"}</small></article>
-            <article><span>Lecture UDS</span><strong>{diagnosticReady ? "Prête" : "Verrouillée"}</strong><small>Services 0x19 / 0x22 / 0x3E</small></article>
+            <article><span>Lecture UDS</span><strong>{psaReadReady ? "Prête" : "Verrouillée"}</strong><small>{psaVehicleCompatible ? "Services 0x19 / 0x22 / 0x3E" : "Charge un véhicule PSA"}</small></article>
             <article><span>Actionneurs</span><strong>{labRuntimeReady ? "Armables" : "Verrouillés"}</strong><small>0x2F exact · temporisation ≤ 3 s</small></article>
           </div>
           {psaCatalog && <div className="psa-wiring-note"><strong>Réseaux OBD à vérifier avant branchement</strong><span>{psaCatalog.wiring.vehicle_can} · {psaCatalog.wiring.standard_obd}</span><p>{psaCatalog.wiring.warning}</p></div>}
         </section>
 
-        <section className="panel psa-zone-reader">
+        <nav className="workspace-tabs" aria-label="Mode du diagnostic PSA">
+          <button className={psaSection === "read" ? "active" : ""} onClick={() => setPsaSection("read")}><span>01</span><div><strong>Lecture sécurisée</strong><small>DID et identification</small></div></button>
+          <button className={psaSection === "actions" ? "active danger" : ""} onClick={() => setPsaSection("actions")}><span>02</span><div><strong>Commandes actives</strong><small>Armement contrôlé</small></div></button>
+          <button className={psaSection === "expert" ? "active" : ""} onClick={() => setPsaSection("expert")}><span>03</span><div><strong>Outils experts</strong><small>Seed/key et SecurityAccess</small></div></button>
+        </nav>
+
+        {psaSection === "read" && <section className="panel psa-zone-reader">
           <div className="section-heading">
             <div><span className="eyebrow">ReadDataByIdentifier · service 0x22</span><h2>Lire une zone brute BSI, NAC ou ECU</h2><p>Cette lecture accepte un DID PSA non encore catalogué et conserve sa réponse brute dans une trace locale.</p></div>
-            <span className={`status-pill ${diagnosticReady ? "good" : "neutral"}`}><i /> {diagnosticReady ? "Lecture autorisée" : "CAN TX lecture requis"}</span>
+            <span className={`status-pill ${psaReadReady ? "good" : "neutral"}`}><i /> {psaReadReady ? "Lecture autorisée" : psaVehicleCompatible ? "CAN TX lecture requis" : "Mauvais véhicule actif"}</span>
           </div>
           <div className="psa-zone-form">
             <label>Calculateur<select value={psaEcuKey} onChange={(event) => { setPsaEcuKey(event.target.value); setPsaDidResult(null); }}>{psaCatalog?.ecus.map((ecu) => <option key={ecu.key} value={ecu.key}>{ecu.name}</option>)}</select></label>
             <label>DID hexadécimal<div className="psa-hex-input"><span>0x</span><input value={psaDid} onChange={(event) => setPsaDid(event.target.value.toUpperCase())} maxLength={6} /></div></label>
-            <button className="primary-button" onClick={() => void readPsaDid()} disabled={psaBusy === "did" || !diagnosticReady}>{psaBusy === "did" ? "Lecture…" : "Lire la zone"}</button>
+            <button className="primary-button" onClick={() => void readPsaDid()} disabled={psaBusy === "did" || !psaReadReady}>{psaBusy === "did" ? "Lecture…" : "Lire la zone"}</button>
           </div>
           <div className="psa-ecu-address"><span>{selectedPsaEcu?.family ?? "Famille inconnue"}</span><code>{hexadecimal(selectedPsaEcu?.request_id)} → {hexadecimal(selectedPsaEcu?.response_id)}</code><small>{selectedPsaEcu?.optional ? "Équipement optionnel" : "Calculateur attendu sur T9"}</small></div>
           {psaDidResult && <div className="psa-zone-result"><div><span>DID 0x{psaDidResult.did.toString(16).toUpperCase().padStart(4, "0")}</span><strong>{String(psaDidResult.value ?? "Réponse vide")}</strong></div><code>{psaDidResult.raw_hex ?? "—"}</code><small>{psaDidResult.codec} · {psaDidResult.confidence}</small></div>}
-        </section>
+        </section>}
 
-        <section className="psa-two-column">
+        {psaSection === "expert" && <section className="psa-two-column">
           <article className="panel psa-seed-panel">
             <div className="section-heading"><div><span className="eyebrow">Calcul local · aucune émission CAN</span><h2>Calculateur seed/key PSA</h2><p>Reproduit l'algorithme PSA public pour une seed de 4 octets et une clé application de 2 octets.</p></div></div>
             <div className="psa-seed-form">
@@ -4086,6 +4790,36 @@ function App() {
             </div>
             <p className="inline-alert">Une clé candidate ne confirme pas la variante montée. Une identification erronée peut déclencher l'anti-bruteforce de l'ECU.</p>
           </article>
+        </section>}
+
+        {psaSection === "actions" && <>
+        <section className="panel active-authorization-panel">
+          <div className="authorization-heading">
+            <div><span className="eyebrow">Autorisation temporaire · non mémorisée</span><h2>Préparer une commande active</h2><p>Une action ne devient exécutable que lorsque les quatre couches sont vertes. Une mesure CAN disponible ne peut pas être remplacée par une déclaration manuelle contradictoire.</p></div>
+            <div className={`authorization-score ${activeAuthorizationReady ? "ready" : ""}`}><strong>{activeAuthorizationProgress}/4</strong><span>{activeAuthorizationReady ? "Prêt à armer" : "Verrouillé"}</span></div>
+          </div>
+          <div className="authorization-chain">
+            {activeAuthorizationSteps.map((step, index) => <div className={step.complete ? "complete" : ""} key={step.label}><span>{index + 1}</span><div><strong>{step.label}</strong><small>{step.detail}</small></div></div>)}
+          </div>
+          <div className="authorization-conditions">
+            <label className={`${effectivePsaLabChecks.vehicle_stationary ? "complete" : ""} ${liveSafetyEvidence.speedKnown && !liveSafetyEvidence.stationary ? "blocked" : ""}`}>
+              <input type="checkbox" disabled={liveSafetyEvidence.speedKnown} checked={effectivePsaLabChecks.vehicle_stationary} onChange={(event) => updateLabCheck("vehicle_stationary", event.target.checked)} />
+              <span><strong>Véhicule immobilisé</strong><small>{liveSafetyEvidence.speedKnown ? liveSafetyEvidence.stationary ? "Mesuré sur 5 s : 0 km/h" : "Refusé : vitesse détectée" : "À confirmer manuellement"}</small></span>
+            </label>
+            <label className={`${effectivePsaLabChecks.ignition_on_engine_off ? "complete" : ""} ${liveSafetyEvidence.rpmKnown && !liveSafetyEvidence.engineOff ? "blocked" : ""}`}>
+              <input type="checkbox" disabled={liveSafetyEvidence.rpmKnown} checked={effectivePsaLabChecks.ignition_on_engine_off} onChange={(event) => updateLabCheck("ignition_on_engine_off", event.target.checked)} />
+              <span><strong>Contact mis, moteur arrêté</strong><small>{liveSafetyEvidence.rpmKnown ? liveSafetyEvidence.engineOff ? "Mesuré sur 5 s : régime nul" : "Refusé : moteur tournant" : "À confirmer manuellement"}</small></span>
+            </label>
+            <label className={`${effectivePsaLabChecks.stable_battery_voltage ? "complete" : ""} ${liveSafetyEvidence.batteryKnown && !liveSafetyEvidence.batteryStable ? "blocked" : ""}`}>
+              <input type="checkbox" disabled={liveSafetyEvidence.batteryKnown} checked={effectivePsaLabChecks.stable_battery_voltage} onChange={(event) => updateLabCheck("stable_battery_voltage", event.target.checked)} />
+              <span><strong>Tension batterie stable</strong><small>{liveSafetyEvidence.batteryKnown ? liveSafetyEvidence.batteryStable ? `Mesurée : ${liveSafetyEvidence.batteryValue?.toFixed(2)} V` : "Refusée : tension instable/hors plage" : "À confirmer manuellement"}</small></span>
+            </label>
+            <label className={effectivePsaLabChecks.workshop_or_private_site ? "complete" : ""}>
+              <input type="checkbox" checked={psaLabChecks.workshop_or_private_site} onChange={(event) => updateLabCheck("workshop_or_private_site", event.target.checked)} />
+              <span><strong>Atelier ou site privé</strong><small>Confirmation humaine obligatoire</small></span>
+            </label>
+          </div>
+          {!passiveSensors?.active && <p className="authorization-hint">Pour automatiser vitesse, régime et tension, démarre le direct CAN avec la double passerelle. Sans télémétrie fraîche, ces trois conditions restent des confirmations manuelles transmises et journalisées.</p>}
         </section>
 
         <section className="panel psa-actions-panel">
@@ -4110,16 +4844,17 @@ function App() {
             <div><span>Action préparée</span><strong>{selectedPsaAction.name}</strong><code>{selectedPsaAction.start_payload_hex}{selectedPsaAction.stop_payload_hex ? ` → arrêt ${selectedPsaAction.stop_payload_hex}` : ""}</code></div>
             {selectedPsaAction.timed && <label>Durée<input type="number" min={250} max={3000} step={250} value={psaDurationMs} onChange={(event) => setPsaDurationMs(Math.max(250, Math.min(3000, Number(event.target.value))))} /><span>ms</span></label>}
             <label className="psa-confirmation-field">Confirmation exacte<input value={psaConfirmation} onChange={(event) => setPsaConfirmation(event.target.value)} placeholder={selectedPsaAction.confirmation ?? ""} /><small>{selectedPsaAction.confirmation}</small></label>
-            <button className="danger-button" onClick={() => void executePsaAction()} disabled={!labRuntimeReady || !psaLabChecksComplete || psaConfirmation !== selectedPsaAction.confirmation || psaBusy === "action"}>{psaBusy === "action" ? "Action en cours…" : "Exécuter puis arrêter"}</button>
+            <button className="danger-button" onClick={() => void executePsaAction()} disabled={!activeAuthorizationReady || psaConfirmation !== selectedPsaAction.confirmation || psaBusy === "action"}>{psaBusy === "action" ? "Action en cours…" : "Exécuter puis arrêter"}</button>
           </div>}
         </section>
+        </>}
 
-        <section className="panel psa-security-panel">
+        {psaSection === "expert" && <section className="panel psa-security-panel">
           <div className="section-heading"><div><span className="eyebrow">Verrous communs aux actions et à SecurityAccess</span><h2>Armement atelier</h2><p>Ces confirmations sont transmises avec l'opération; elles ne sont pas mémorisées.</p></div></div>
           <div className="psa-safety-checks">
-            <label><input type="checkbox" checked={psaLabChecks.vehicle_stationary} onChange={(event) => updateLabCheck("vehicle_stationary", event.target.checked)} /><span>Véhicule immobilisé</span></label>
-            <label><input type="checkbox" checked={psaLabChecks.ignition_on_engine_off} onChange={(event) => updateLabCheck("ignition_on_engine_off", event.target.checked)} /><span>Contact mis, moteur arrêté</span></label>
-            <label><input type="checkbox" checked={psaLabChecks.stable_battery_voltage} onChange={(event) => updateLabCheck("stable_battery_voltage", event.target.checked)} /><span>Tension batterie stable</span></label>
+            <label><input type="checkbox" disabled={liveSafetyEvidence.speedKnown} checked={effectivePsaLabChecks.vehicle_stationary} onChange={(event) => updateLabCheck("vehicle_stationary", event.target.checked)} /><span>Véhicule immobilisé</span></label>
+            <label><input type="checkbox" disabled={liveSafetyEvidence.rpmKnown} checked={effectivePsaLabChecks.ignition_on_engine_off} onChange={(event) => updateLabCheck("ignition_on_engine_off", event.target.checked)} /><span>Contact mis, moteur arrêté</span></label>
+            <label><input type="checkbox" disabled={liveSafetyEvidence.batteryKnown} checked={effectivePsaLabChecks.stable_battery_voltage} onChange={(event) => updateLabCheck("stable_battery_voltage", event.target.checked)} /><span>Tension batterie stable</span></label>
             <label><input type="checkbox" checked={psaLabChecks.workshop_or_private_site} onChange={(event) => updateLabCheck("workshop_or_private_site", event.target.checked)} /><span>Atelier ou site privé</span></label>
           </div>
           <div className="psa-unlock-row">
@@ -4129,7 +4864,7 @@ function App() {
             <button className="danger-button" onClick={() => void unlockPsaConfiguration()} disabled={!psaCatalog?.security_access_enabled || !psaFirmwareReady || !psaLabChecksComplete || psaUnlockConfirmation !== `DEVERROUILLER ${psaUnlockEcuKey.toUpperCase()}` || psaBusy === "unlock"}>{psaBusy === "unlock" ? "Échange seed/key…" : "Déverrouiller sans écrire"}</button>
           </div>
           <p className="inline-alert">SecurityAccess est désactivé par défaut (`PSA_SECURITY_ACCESS_ENABLED=false`). La session est refermée immédiatement et aucune écriture `0x2E`, routine `0x31`, programmation ou effacement n'est autorisé.</p>
-        </section>
+        </section>}
 
         {psaFeedback && <div className="psa-feedback"><strong>Opération terminée</strong><span>{psaFeedback}</span></div>}
       </div>
@@ -4173,7 +4908,7 @@ function App() {
           </div>
           <div className="diagnostic-preflight">
             <div><span>Liaison ESP32</span><strong>{diagnosticGatewayVerified ? "Poignée de main validée" : "Connexion requise"}</strong></div>
-            <div><span>Réseaux CAN</span><strong>{dualCanOperational ? "6/14 live + 3/8 diagnostic" : status?.gateway_hello?.dual_can === true ? "Double CAN détecté" : "Interface unique"}</strong></div>
+            <div><span>Réseaux CAN</span><strong>{dualCanOperational ? liveObdReadOnly ? "6/14 OBD lecture + 3/8 diagnostic" : "6/14 live + 3/8 diagnostic" : status?.gateway_hello?.dual_can === true ? "Double CAN détecté" : "Interface unique"}</strong></div>
             <div><span>Firmware ESP32</span><strong>{status?.gateway_hello?.diagnostic_read_only === true || status?.transport === "virtual" ? "Lecture seule validée" : status?.can_tx_enabled ? "À confirmer" : "Listen-only"}</strong></div>
             <div><span>Requêtes CAN</span><strong>{status?.can_tx_enabled ? "UDS lecture uniquement" : "Bloquées"}</strong></div>
             <div><span>Effacement / télécodage</span><strong>{status?.dtc_clear_enabled ? "Maintenance armée" : "Toujours interdit"}</strong></div>
@@ -4196,8 +4931,16 @@ function App() {
                 <span className="eyebrow">{detectedEcus.length} détectés sur {report.ecus.length}</span>
                 <h2>Inventaire UDS des calculateurs</h2>
               </div>
-              <button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>Relancer le scan</button>
+              <div className="section-actions">
+                <button className="ghost-button" onClick={() => void verifyDiagnosticRegression()} disabled={!report.scan_id || diagnosticRegressionBusy}>{diagnosticRegressionBusy ? "Comparaison…" : "Vérifier la référence"}</button>
+                <button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>Relancer le scan</button>
+              </div>
             </div>
+            {diagnosticRegression && <div className={`regression-result ${diagnosticRegression.connectivity_match ? "good" : "warning"}`}>
+              <strong>{diagnosticRegression.connectivity_match ? "Couverture ECU conforme" : "Écart de couverture ECU"}</strong>
+              <span>{diagnosticRegression.connectivity_match ? "Les 8 calculateurs, leurs adresses et leurs réponses de session correspondent à la référence réelle." : `${diagnosticRegression.differences.filter((item) => item.scope === "connectivity").length} différence(s) de communication.`}</span>
+              <small>{diagnosticRegression.dtc_match ? "Mémoire DTC brute identique à la référence." : "Les DTC ont évolué : ce résultat peut être normal après une réparation ou un effacement."}</small>
+            </div>}
             <div className="ecu-list">
               {report.ecus.map((ecu) => (
                 <article className={`ecu-card ${ecu.detected ? "detected" : ""}`} key={ecu.key}>
@@ -4217,18 +4960,37 @@ function App() {
                       {ecu.dtcs.filter((dtc) => dtc.state === "historical").length > 0 && <span>{ecu.dtcs.filter((dtc) => dtc.state === "historical").length} historique(s)</span>}
                       {ecu.dtcs.filter((dtc) => dtc.state === "not_tested").length > 0 && <span>{ecu.dtcs.filter((dtc) => dtc.state === "not_tested").length} non testé(s)</span>}
                       {ecu.probe_method && <span>Réponse via {ecu.probe_method}</span>}
+                      {ecu.active_session !== null && ecu.active_session !== undefined && <span>Session {hexadecimal(ecu.active_session)}</span>}
                     </div>
-                    {ecu.identification.length > 0 && (
+                    {ecu.identification.some((item) => !item.error) && (
                       <div className="did-grid">
-                        {ecu.identification.map((item) => (
+                        {ecu.identification.filter((item) => !item.error).map((item) => (
                           <div key={item.did}>
                             <code>{hexadecimal(item.did)}</code>
                             <span>{item.name}</span>
-                            <strong>{item.error ?? String(item.value ?? "—")}</strong>
+                            <strong>{String(item.value ?? "—")}</strong>
+                            {item.raw_hex && <small>Brut {item.raw_hex}</small>}
                           </div>
                         ))}
                       </div>
                     )}
+                    {ecu.identification.some((item) => item.error) && <details className="ecu-technical-details">
+                      <summary>{ecu.identification.filter((item) => item.error).length} DID refusé(s), absent(s) ou non décodable(s)</summary>
+                      {ecu.identification.filter((item) => item.error).map((item) => <div key={item.did}>
+                        <code>{item.request_hex ?? `22${item.did.toString(16).toUpperCase()}`}</code>
+                        <span>{item.error}</span>
+                        <small>{item.response_hex ? `Réponse ${item.response_hex}` : "Aucune réponse"}</small>
+                      </div>)}
+                    </details>}
+                    {ecu.probe_attempts && ecu.probe_attempts.length > 0 && <details className="ecu-technical-details">
+                      <summary>Preuve de présence et échanges bruts</summary>
+                      {ecu.probe_attempts.map((attempt, index) => <div key={`${attempt.request_hex}-${index}`}>
+                        <code>{attempt.request_hex}</code>
+                        <span>{attempt.outcome === "positive" ? "Réponse positive" : attempt.outcome === "negative_response" ? `NRC ${hexadecimal(attempt.nrc)}` : "Timeout"}</span>
+                        <small>{attempt.response_hex ?? attempt.error ?? "Aucune réponse"}</small>
+                      </div>)}
+                      {ecu.dtc_request_hex && <div><code>{ecu.dtc_request_hex}</code><span>Lecture DTC</span><small>{ecu.dtc_response_hex ?? ecu.dtc_error ?? "Aucune réponse"}</small></div>}
+                    </details>}
                     {(ecu.error || ecu.dtc_error) && <p className="inline-alert">{ecu.error ?? ecu.dtc_error}</p>}
                   </div>
                 </article>
@@ -4236,6 +4998,47 @@ function App() {
             </div>
           </section>
         )}
+
+        <section className="panel trace-import-panel">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Analyse hors véhicule</span>
+              <h2>Importer une trace Diagbox</h2>
+              <p>Reconstitue les échanges ISO-TP, recense les DID lus et isole les services actifs pour revue. Aucune trame n’est envoyée à la voiture.</p>
+            </div>
+            <label className={`secondary-button file-button ${traceImportBusy ? "disabled" : ""}`}>
+              {traceImportBusy ? "Analyse…" : "Choisir une trace"}
+              <input type="file" accept=".log,.txt,.csv,.jsonl" disabled={traceImportBusy} onChange={(event) => { void importDiagnosticTrace(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            </label>
+          </div>
+          {traceImportResult && <div className="trace-import-result">
+            <div className="diagnostic-preflight">
+              <div><span>Trames CAN</span><strong>{traceImportResult.frame_count}</strong></div>
+              <div><span>Échanges UDS</span><strong>{traceImportResult.exchange_count}</strong></div>
+              <div><span>DID observés</span><strong>{traceImportResult.observed_dids.length}</strong></div>
+              <div><span>Services actifs isolés</span><strong>{traceImportResult.observed_actions.length}</strong></div>
+            </div>
+            {traceImportResult.observed_actions.length > 0 && <p className="inline-alert">{traceImportResult.observed_actions.length} commande(s) repérée(s), conservée(s) comme preuve non exécutable jusqu’à validation manuelle.</p>}
+            <small>Import {traceImportResult.import_id} · {traceImportResult.unparsed_line_count} ligne(s) non interprétée(s)</small>
+          </div>}
+        </section>
+
+        {report && <section className="panel dtc-clear-panel">
+          <div className="section-heading"><div><span className="eyebrow">Maintenance unitaire contrôlée</span><h2>Effacer la mémoire DTC d’un seul calculateur</h2><p>Le backend lit les défauts avant, exige la réponse positive 0x54, puis relit immédiatement le même ECU.</p></div><span className={`status-pill ${status?.dtc_clear_enabled ? "warning" : "neutral"}`}><i /> {status?.dtc_clear_enabled ? "Armé par configuration" : "Verrouillé"}</span></div>
+          <div className="dtc-clear-form">
+            <label>Calculateur<select value={dtcClearEcuKey} onChange={(event) => { setDtcClearEcuKey(event.target.value); setDtcClearConfirmation(""); setDtcClearResult(null); }}><option value="">Choisir un ECU</option>{report.ecus.filter((ecu) => ecu.detected).map((ecu) => <option value={ecu.key} key={ecu.key}>{ecu.name} · {ecu.dtcs.length} entrée(s)</option>)}</select></label>
+            <div className="dtc-clear-checks">
+              <label><input type="checkbox" checked={dtcClearChecks.vehicle_stationary} onChange={(event) => setDtcClearChecks((current) => ({ ...current, vehicle_stationary: event.target.checked }))} /> Véhicule immobilisé</label>
+              <label><input type="checkbox" checked={dtcClearChecks.ignition_on_engine_off} onChange={(event) => setDtcClearChecks((current) => ({ ...current, ignition_on_engine_off: event.target.checked }))} /> Contact mis, moteur arrêté</label>
+              <label><input type="checkbox" checked={dtcClearChecks.stable_battery_voltage} onChange={(event) => setDtcClearChecks((current) => ({ ...current, stable_battery_voltage: event.target.checked }))} /> Tension batterie stable</label>
+              <label><input type="checkbox" checked={dtcClearChecks.report_saved} onChange={(event) => setDtcClearChecks((current) => ({ ...current, report_saved: event.target.checked }))} /> Rapport avant effacement sauvegardé</label>
+            </div>
+            <label>Confirmation exacte<input value={dtcClearConfirmation} onChange={(event) => setDtcClearConfirmation(event.target.value)} placeholder={dtcClearEcuKey ? `EFFACER ${dtcClearEcuKey.toUpperCase()}` : "Choisir d’abord un ECU"} /></label>
+            <button className="danger-button" onClick={() => void clearSelectedEcuDtcs()} disabled={!status?.dtc_clear_enabled || !dtcClearEcuKey || dtcClearConfirmation !== `EFFACER ${dtcClearEcuKey.toUpperCase()}` || !Object.values(dtcClearChecks).every(Boolean) || dtcClearBusy}>{dtcClearBusy ? "Lecture, effacement, contrôle…" : "Effacer cet ECU et vérifier"}</button>
+          </div>
+          {!status?.dtc_clear_enabled && <p className="inline-alert">Verrou actif : `DTC_CLEAR_ENABLED=false`. Les ECU ABS, BSI, airbag, direction et caméra exigent en plus `SAFETY_ECU_CLEAR_ENABLED=true`.</p>}
+          {dtcClearResult && <div className={`regression-result ${dtcClearResult.verified ? "good" : "warning"}`}><strong>{dtcClearResult.verified ? "Effacement contrôlé" : "Effacement accepté, contrôle incomplet"}</strong><span>{dtcClearResult.message}</span><small>{dtcClearResult.before_dtcs.length} avant · {dtcClearResult.after_dtcs.length} après · TX {dtcClearResult.request_hex} / RX {dtcClearResult.response_hex ?? "—"}</small></div>}
+        </section>}
       </div>
     );
   }
@@ -4564,7 +5367,7 @@ function App() {
                       ? `${capture.gps_point_count.toLocaleString("fr-FR")} pts · ±${Math.round(capture.gps_last_accuracy_m ?? gpsTracking.accuracyM ?? 0)} m`
                       : gpsTracking.state === "requesting" ? "Autorisation…" : gpsTracking.state === "active" ? "Acquisition…" : "Indisponible"
                     : "Désactivé"}</strong></div>
-                  <div><span>Mode</span><strong>{capture.dual_can ? "6/14 passif + 3/8 diag" : capture.strict_passive === true ? "Passif strict" : capture.strict_passive === false ? "Observation" : "Vérification…"}</strong></div>
+                  <div><span>Mode</span><strong>{capture.dual_can ? liveObdReadOnly ? "6/14 OBD lecture + 3/8 diag" : "6/14 passif + 3/8 diag" : capture.strict_passive === true ? "Passif strict" : capture.strict_passive === false ? "Observation" : "Vérification…"}</strong></div>
                 </div>
                 {capture.error && <p className="inline-alert danger-alert">{capture.error}</p>}
                 {captureGpsEnabled && gpsTracking.message && gpsTracking.state !== "active" && (
@@ -4652,23 +5455,28 @@ function App() {
       <aside className="sidebar">
         <div className="brand"><span>OD</span><div><strong>Diagbox++</strong><small>OpenDiag Auto</small></div></div>
         <nav>
-          <p>Diagnostic</p>
-          <NavButton active={view === "dashboard"} glyph="⌂" label="Tableau de bord" onClick={() => setView("dashboard")} />
-          <NavButton active={view === "studio"} glyph="✣" label="Dashboard libre" onClick={() => setView("studio")} />
-          <NavButton active={view === "replay"} glyph="▷" label="Replay véhicule" onClick={() => setView("replay")} />
-          <NavButton active={view === "sensors"} glyph="∿" label="Capteurs live" onClick={openPassiveSensors} />
-          <NavButton active={view === "inventory"} glyph="✓" label="Inventaire capteurs" onClick={() => { setError(""); setView("inventory"); }} count={inventoryCounts.missing || undefined} />
-          <NavButton active={view === "identity"} glyph="VIN" label="VIN & véhicule" onClick={() => { setError(""); setView("identity"); }} />
-          <NavButton active={view === "injection"} glyph="INJ" label="Injection & moteur" onClick={() => { setError(""); setView("injection"); }} />
-          <NavButton active={view === "psa"} glyph="PSA" label="Diagnostic PSA avancé" onClick={() => { setError(""); setView("psa"); }} />
-          <NavButton active={view === "ecus"} glyph="▦" label="ECU & découverte" onClick={() => { setError(""); setView("ecus"); }} count={report ? detectedEcus.length : undefined} />
-          <NavButton active={view === "dtcs"} glyph="!" label="Codes DTC" onClick={() => setView("dtcs")} count={dtcCount || undefined} />
-          <p>Laboratoire</p>
-          <NavButton active={view === "discovery"} glyph="◎" label="Découverte" onClick={() => setView("discovery")} />
+          <p>Atelier</p>
+          <NavButton active={view === "dashboard"} glyph="⌂" label="Accueil" onClick={() => setView("dashboard")} />
+          <NavButton active={view === "garage"} glyph="▣" label="Garage & historique" onClick={() => { setError(""); setView("garage"); }} count={diagnosticVehicles.length || undefined} />
+          <NavButton active={view === "studio"} glyph="◉" label="Direct personnalisé" onClick={() => setView("studio")} />
+          <NavButton active={view === "inventory"} glyph="✓" label="Valider les capteurs" onClick={() => { setError(""); setView("inventory"); }} count={validationQueue.length || undefined} />
+          <NavButton active={view === "ecus"} glyph="▦" label="Diagnostic véhicule" onClick={() => { setError(""); setView("ecus"); }} count={report ? detectedEcus.length : undefined} />
+          <NavButton active={view === "maintenance"} glyph="↻" label="Services maintenance" onClick={() => { setError(""); setView("maintenance"); }} count={maintenanceCatalog?.service_count} />
+          <NavButton active={view === "replay"} glyph="▷" label="Replays & trajets" onClick={() => setView("replay")} />
+          <p>Plus</p>
+          <button className={`nav-disclosure ${toolsOpen ? "open" : ""}`} onClick={() => setToolsOpen((open) => !open)} aria-expanded={toolsOpen}><span>•••</span><strong>Données & outils</strong><b>⌄</b></button>
+          {toolsOpen && <div className="nav-submenu">
+            <NavButton active={view === "sensors"} glyph="∿" label="Capteurs CAN live" onClick={openPassiveSensors} />
+            <NavButton active={view === "identity"} glyph="VIN" label="VIN & identité" onClick={() => { setError(""); setView("identity"); }} />
+            <NavButton active={view === "injection"} glyph="INJ" label="Injection & moteur" onClick={() => { setError(""); setView("injection"); }} />
+            <NavButton active={view === "dtcs"} glyph="!" label="Codes défaut" onClick={() => setView("dtcs")} count={dtcCount || undefined} />
+            <NavButton active={view === "psa"} glyph="PSA" label="Autorisations PSA" onClick={() => { setError(""); setView("psa"); }} />
+            <NavButton active={view === "discovery"} glyph="◎" label="Laboratoire découverte" onClick={() => setView("discovery")} />
+          </div>}
         </nav>
         <div className="sidebar-footer">
           <div className={`connection-dot ${status ? "connected" : ""}`} />
-          <div><strong>{status ? "Backend connecté" : "Backend hors ligne"}</strong><small>{status?.transport ?? "127.0.0.1:8000"}</small></div>
+          <div><strong>{status ? "Backend connecté" : "Backend hors ligne"}</strong><small>{status?.transport ?? API_BASE.replace(/^https?:\/\//, "")}</small></div>
         </div>
       </aside>
 
@@ -4676,9 +5484,15 @@ function App() {
         <header className="topbar">
           <div><span className="eyebrow">{activeTitle.eyebrow}</span><h1>{activeTitle.title}</h1><p>{activeTitle.description}</p></div>
           <div className="topbar-status">
-            <span className="vehicle-chip">{view === "identity" && selectedIdentityProfile
-              ? <>{selectedIdentityProfile.manufacturer} {selectedIdentityProfile.model} <b>{selectedIdentityProfile.year ?? "?"}</b></>
-              : <>308 T9 <b>2018</b></>}</span>
+            {view !== "studio" && <button className="topbar-customize" onClick={() => setView("studio")}>Personnaliser le direct</button>}
+            <div className="vehicle-switcher-compact">
+              <span>Véhicule actif</span>
+              <select aria-label="Véhicule actif" value={selectedDiagnosticVin} disabled={!diagnosticVehicles.length || vehicleSelectionBusy || capture?.active} onChange={(event) => void selectDiagnosticVehicle(event.target.value)}>
+                {!diagnosticVehicles.length && <option value="">Aucun VIN chargé</option>}
+                {diagnosticVehicles.map((vehicle) => <option value={vehicle.vin} key={vehicle.vin}>{vehicle.manufacturer} {vehicle.model} · {vehicle.vin.slice(-6)}</option>)}
+              </select>
+              <button aria-label="Ouvrir le garage" title="Ouvrir le garage" onClick={() => setView("garage")}>▣</button>
+            </div>
             <span className={`status-pill ${status?.read_only ? "good" : status ? "bad" : "neutral"}`}>
               <i /> {status ? (status.read_only ? "Lecture seule" : "Écriture active") : "État inconnu"}
             </span>
@@ -4688,11 +5502,13 @@ function App() {
         <main className="content">
           {error && <div className="global-error"><strong>Opération impossible</strong><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
           {view === "dashboard" && renderDashboard()}
+          {view === "garage" && renderGarage()}
           {view === "replay" && renderReplay()}
           {view === "sensors" && renderSensors()}
           {view === "inventory" && renderSensorInventory()}
           {view === "identity" && renderVehicleIdentity()}
           {view === "injection" && renderInjection()}
+          {view === "maintenance" && renderMaintenance()}
           {view === "psa" && renderPsaAdvanced()}
           {view === "ecus" && renderEcus()}
           {view === "dtcs" && renderDtcs()}

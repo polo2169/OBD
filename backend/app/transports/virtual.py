@@ -20,11 +20,13 @@ class VirtualVehicleTransport(Transport):
         read_only: bool = True,
         maintenance: bool = False,
         response_ids: dict[int, int] | None = None,
+        flow_control_ids: dict[int, int] | None = None,
         safety_profile: TxSafetyProfile = "diagnostic_read_only",
     ) -> None:
         self.read_only = read_only
         self.maintenance = maintenance
         self.response_ids = response_ids or {}
+        self.flow_control_ids = flow_control_ids or {}
         self.safety_profile = safety_profile
         self._queue: queue.Queue[CanFrame] = queue.Queue()
         self._open = False
@@ -110,7 +112,11 @@ class VirtualVehicleTransport(Transport):
         flow_status = frame.data[0] & 0x0F
         if flow_status != 0:
             raise ValueError(f"Flow Status ISO-TP non pris en charge : {flow_status}.")
-        if self._response_id is None or frame.arbitration_id != self._response_request_id:
+        expected_flow_control_ids = {
+            self._response_request_id,
+            self.flow_control_ids.get(self._response_request_id),
+        }
+        if self._response_id is None or frame.arbitration_id not in expected_flow_control_ids:
             return
         while self._response_frames:
             self._queue_frame(self._response_id, self._response_frames.popleft())

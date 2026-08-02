@@ -38,9 +38,19 @@ Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compacte
 - lecture UDS `0x19/0x02`, décodage des états et descriptions DTC PSA ;
 - catalogue communautaire normalisé : 355 variantes et 40 840 définitions sourcées ;
 - mode « capteurs uniquement » avec découverte des PID OBD-II Mode 01 supportés ;
+- direct hybride Fiat/Peugeot : CAN constructeur passif prioritaire et complément
+  OBD Mode 01 borné par profil (régime, vitesse, températures, admission et
+  tension calculateur/batterie) ;
+- arbitrage transactionnel du transport partagé : une capture peut rester active
+  pendant le polling OBD sans mélanger les réponses ISO-TP avec un scan ECU ;
+- catalogue multimarque de 29 services de maintenance, avec applicabilité par
+  profil, équipement conditionnel, niveau de risque et verrouillage systématique
+  des procédures non validées sur véhicule ;
 - sessions JSONL détaillées : CAN, passerelle, ISO-TP, UDS/OBD, NRC et durées ;
 - API FastAPI ;
 - interface React ;
+- garage multi-véhicules avec sélection persistante du VIN actif et chronologie
+  consolidée des diagnostics, trajets et identifications ;
 - replay temporel des captures CAN avec Peugeot vue du dessus, instruments, commandes et états ADAS ;
 - reconstruction locale du mouvement par vitesse et angle du volant, avec cache de post-traitement sur le PC ;
 - base PSA extensible avec niveaux de confiance ;
@@ -189,6 +199,27 @@ GET /api/learn/replay/{session_id}
 GET /api/learn/replay/{session_id}?force=true
 GET /api/learn/replay/{session_id}/route.geojson
 ```
+
+### Garage, véhicule actif et historique
+
+Ouvrir **Garage & historique** avant de travailler sur une voiture. Le véhicule
+chargé est mémorisé côté PC par son VIN et devient le contexte commun du direct,
+des diagnostics, des DTC et des replays. Le sélecteur présent dans l'en-tête
+permet ensuite de changer rapidement de dossier.
+
+Chaque nouvelle capture CAN reçoit automatiquement le VIN actif. Les anciennes
+captures restent volontairement « sans VIN » jusqu'à leur classement depuis le
+Garage : leur association utilise un petit fichier annexe
+`data/sessions/<session>.vehicle.json` et ne réécrit jamais le JSONL brut.
+
+La chronologie d'un véhicule regroupe :
+
+- ses lectures d'identité ;
+- ses diagnostics ECU/DTC et leurs comparaisons avant/après ;
+- ses captures CAN et trajets GPS, ouvrables directement dans le replay.
+
+Le changement de véhicule est bloqué pendant une capture afin d'éviter qu'une
+session soit enregistrée sous le mauvais VIN.
 
 ### Simulation
 
@@ -387,12 +418,14 @@ brancher au véhicule, déjà terminé. CAN-H va sur OBD 6, CAN-L sur OBD 14 et 
 commune sur OBD 4 ou 5.
 
 Dans le montage double CAN de la Peugeot 308 T9, le tableau se lit avec
-`CS=GPIO27` et `INT=GPIO26`. Le TJA/TWAI actuel reste sur OBD `6/14` en écoute
-seule ; le MCP2515 quartz `16.000` est relié à CAN-H OBD `3` et CAN-L OBD `8`.
-Le profil `esp32-dual-can-16mhz-serial-diagnostic` lit les deux réseaux en même
-temps et autorise sur `3/8` uniquement les services de lecture verrouillés. Le
-backend partage alors la même liaison USB entre dashboard, enregistrement et
-diagnostic et inscrit l'origine `live`/`diagnostic` dans chaque capture.
+`CS=GPIO27` et `INT=GPIO26`. Le TJA/TWAI actuel reste sur OBD `6/14` ; le MCP2515
+quartz `16.000` est relié à CAN-H OBD `3` et CAN-L OBD `8`. Le profil
+`esp32-dual-can-16mhz-serial-diagnostic` lit les deux réseaux en même temps. Sur
+`6/14`, il n'autorise que les requêtes OBD-II normalisées `01` et `09` adressées à
+`0x7E0`, ainsi que le contrôle de flux ISO-TP nécessaire aux réponses. Sur `3/8`,
+il conserve l'allowlist diagnostic en lecture seule. Le backend applique la même
+séparation et la même double validation avant l'envoi, puis inscrit l'origine
+`live`/`diagnostic` dans chaque capture.
 
 Références électriques : [MCP2515 Microchip](https://www.microchip.com/content/dam/mchp/documents/APID/ProductDocuments/DataSheets/MCP2515-Family-Data-Sheet-DS20001801K.pdf),
 [TJA1050 NXP](https://www.nxp.com/docs/en/data-sheet/TJA1050.pdf).
@@ -411,9 +444,14 @@ OBD `3/8`. Elles échangent les trames diagnostic à 2 Mbit/s :
 
 Flasher respectivement `esp32-dual-uart-main-diagnostic` et
 `esp32-dual-uart-satellite-diagnostic`. Le backend continue à voir une seule
-passerelle `dual_can` et sépare les trames `live` et `diagnostic`. Le CAN principal
-6/14 est forcé matériellement en écoute seule ; toutes les émissions autorisées
-sont relayées exclusivement vers le satellite 3/8.
+passerelle `dual_can` et sépare les trames `live` et `diagnostic`. La carte
+principale n'accepte sur `6/14` que les lectures OBD-II `01`/`09` à destination de
+`0x7E0` et leur contrôle de flux ISO-TP. Les requêtes UDS restent relayées
+exclusivement vers le satellite `3/8`. Avec ce profil normal, effacement DTC,
+écriture, routine et commande d'actionneur restent bloqués sur les deux réseaux.
+Le profil séparé `esp32-dual-uart-satellite-psa-lab` est requis pour une séance de
+maintenance ; même dans ce mode, seul `14 FFFFFF` et les rares actions PSA nommées
+de l'allowlist firmware peuvent franchir la satellite.
 
 ### Transceiver TJA1050 seul
 
@@ -493,10 +531,18 @@ Le service UDS `0x14` est implémenté mais verrouillé par défaut. Il ne devie
 accessible qu'avec `DTC_CLEAR_ENABLED=true`, `READ_ONLY=false`, `CAN_TX_ENABLED=true`,
 une confirmation spécifique à l'ECU et quatre préconditions. ABS, airbag, BSI,
 caméra et direction assistée demandent en plus `SAFETY_ECU_CLEAR_ENABLED=true`.
+Le firmware doit annoncer `psa_lab=true`. Le workflow lit la mémoire du seul ECU
+avant l'effacement, exige la réponse exacte `0x54`, puis relit immédiatement la
+même mémoire et conserve les preuves avant/après dans la trace de session.
 
 Effacer un DTC ne répare pas la panne et ne garantit pas la disparition d'un message
 au tableau de bord : tout défaut encore présent sera recréé. Toujours sauvegarder le
 rapport avant effacement puis relire immédiatement les DTC.
+
+Les exports texte, CSV, candump ou JSONL de Diagbox peuvent être chargés depuis la
+page **Diagnostic véhicule**. L'importeur reconstitue ISO-TP et classe les lectures
+et services actifs hors véhicule ; une commande observée reste toujours marquée
+non exécutable jusqu'à validation explicite.
 
 Voir [docs/ECU_CATALOG.md](docs/ECU_CATALOG.md) pour les paires d'adresses, les sources
 figées et la stratégie de détection.

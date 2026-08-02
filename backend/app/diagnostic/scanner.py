@@ -43,7 +43,12 @@ def decode_vin(response: bytes) -> str | None:
 
 def decode_did_value(payload: bytes, codec: str) -> str | int:
     if codec == "ascii":
-        return payload.decode("ascii", errors="replace").strip("\x00 ")
+        try:
+            return payload.decode("ascii", errors="strict").strip("\x00 ")
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                "Valeur non ASCII : interprétation refusée, utiliser les octets bruts."
+            ) from exc
     if codec == "uint8":
         if len(payload) != 1:
             raise ValueError(f"uint8 attend 1 octet, reçu {len(payload)}.")
@@ -51,7 +56,16 @@ def decode_did_value(payload: bytes, codec: str) -> str | int:
     return payload.hex().upper()
 
 
-def _did_error(did: int, definition: dict, message: str, raw: bytes | None = None) -> DidReadResult:
+def _did_error(
+    did: int,
+    definition: dict,
+    message: str,
+    raw: bytes | None = None,
+    *,
+    response_raw: bytes | None = None,
+    nrc: int | None = None,
+    nrc_name: str | None = None,
+) -> DidReadResult:
     return DidReadResult(
         did=did,
         name=definition.get("name", f"DID 0x{did:04X}"),
@@ -59,6 +73,10 @@ def _did_error(did: int, definition: dict, message: str, raw: bytes | None = Non
         raw_hex=raw.hex().upper() if raw else None,
         source=definition.get("source"),
         confidence=definition.get("confidence", "experimental"),
+        request_hex=f"22{did:04X}",
+        response_hex=(response_raw or raw).hex().upper() if (response_raw or raw) else None,
+        nrc=nrc,
+        nrc_name=nrc_name,
         error=message,
     )
 
@@ -92,6 +110,33 @@ def _decode_dtcs(
             confidence=definition.get("confidence", "raw_only"),
         ))
     return [apply_dtc_classification(item) for item in decoded]
+
+
+def _read_dtc_snapshot(
+    session: UdsSession,
+    kb: KnowledgeBase,
+    ecu: EcuDefinition,
+    masks: list[int],
+) -> tuple[list[DtcReadResult], int, int, str]:
+    """Read one ECU DTC memory and keep the exact successful exchange metadata."""
+
+    errors: list[str] = []
+    for mask in dict.fromkeys(masks):
+        try:
+            response, availability_mask, raw_dtcs = read_dtcs_by_status_mask(session, mask)
+            return (
+                _decode_dtcs(kb, ecu, raw_dtcs),
+                availability_mask,
+                mask,
+                response.original_payload.hex().upper(),
+            )
+        except NegativeResponseException as exc:
+            errors.append(
+                f"masque 0x{mask:02X}: NRC 0x{exc.response.code:02X} {exc.response.code_name}"
+            )
+        except (TimeoutException, TimeoutError, ValueError) as exc:
+            errors.append(f"masque 0x{mask:02X}: {exc}")
+    raise ValueError("Lecture DTC impossible : " + "; ".join(errors))
 
 
 def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
@@ -131,17 +176,32 @@ def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
                     definition,
                     f"NRC 0x{exc.response.code:02X} {exc.response.code_name}",
                     exc.response.original_payload,
+                    nrc=exc.response.code,
+                    nrc_name=exc.response.code_name,
                 )
             else:
-                result = DidReadResult(
-                    did=did,
-                    name=definition.get("name", f"DID 0x{did:04X}"),
-                    codec=definition.get("codec", "bytes"),
-                    value=decode_did_value(value_payload, definition.get("codec", "bytes")),
-                    raw_hex=value_payload.hex().upper(),
-                    source=definition.get("source"),
-                    confidence=definition.get("confidence", "experimental"),
-                )
+                try:
+                    value = decode_did_value(value_payload, definition.get("codec", "bytes"))
+                except ValueError as exc:
+                    result = _did_error(
+                        did,
+                        definition,
+                        str(exc),
+                        value_payload,
+                        response_raw=response.original_payload,
+                    )
+                else:
+                    result = DidReadResult(
+                        did=did,
+                        name=definition.get("name", f"DID 0x{did:04X}"),
+                        codec=definition.get("codec", "bytes"),
+                        value=value,
+                        raw_hex=value_payload.hex().upper(),
+                        source=definition.get("source"),
+                        confidence=definition.get("confidence", "experimental"),
+                        request_hex=f"22{did:04X}",
+                        response_hex=response.original_payload.hex().upper(),
+                    )
             if trace:
                 trace.write({
                     "type": "did_read_result",
@@ -173,17 +233,41 @@ def _probe_payloads(diagnostic_config: dict) -> list[bytes]:
     return payloads
 
 
-def _probe_session(session: UdsSession, payloads: list[bytes]) -> tuple[bool, str | None, str | None]:
+def _probe_session(
+    session: UdsSession,
+    payloads: list[bytes],
+) -> tuple[bool, str | None, str | None, list[dict]]:
+    attempts: list[dict] = []
     for payload in payloads:
         label = payload.hex().upper()
         try:
             response = session.request(payload)
-            return True, label, response.hex().upper()
+            response_hex = response.hex().upper()
+            attempts.append({
+                "request_hex": label,
+                "response_hex": response_hex,
+                "outcome": "positive",
+            })
+            return True, label, response_hex, attempts
         except NegativeResponseException as exc:
-            return True, label, exc.response.original_payload.hex().upper()
-        except (TimeoutException, TimeoutError):
+            response_hex = exc.response.original_payload.hex().upper()
+            attempts.append({
+                "request_hex": label,
+                "response_hex": response_hex,
+                "outcome": "negative_response",
+                "nrc": exc.response.code,
+                "nrc_name": exc.response.code_name,
+            })
+            return True, label, response_hex, attempts
+        except (TimeoutException, TimeoutError) as exc:
+            attempts.append({
+                "request_hex": label,
+                "response_hex": None,
+                "outcome": "timeout",
+                "error": str(exc),
+            })
             continue
-    return False, None, None
+    return False, None, None, attempts
 
 
 def _address_options(ecu: EcuDefinition) -> list[dict]:
@@ -272,12 +356,17 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
             selected_response_id = ecu.response_id
             probe_method: str | None = None
             probe_response_hex: str | None = None
+            probe_attempts: list[dict] = []
+            active_session: int | None = None
+            active_session_source: str | None = None
             vin_value: str | None = None
             identification: list[DidReadResult] = []
             dtcs: list[DtcReadResult] = []
             dtc_availability_mask: int | None = None
             dtc_status_mask_used: int | None = None
             dtc_error: str | None = None
+            dtc_request_hex: str | None = None
+            dtc_response_hex: str | None = None
             raw_responses: list[str] = []
             transport_errors: list[str] = []
 
@@ -296,7 +385,11 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                         timeout=settings.diagnostic_timeout,
                         read_only=settings.read_only,
                     ) as session:
-                        present, method, probe_raw = _probe_session(session, probe_payloads)
+                        present, method, probe_raw, candidate_probe_attempts = _probe_session(
+                            session,
+                            probe_payloads,
+                        )
+                        probe_attempts.extend(candidate_probe_attempts)
                         if not present:
                             continue
                         detected = True
@@ -306,6 +399,9 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                         probe_response_hex = probe_raw
                         if probe_raw:
                             candidate_raw.append(probe_raw)
+                        if method and method.startswith("10") and probe_raw and probe_raw.startswith("50"):
+                            active_session = int(probe_raw[2:4], 16)
+                            active_session_source = "diagnostic_session_control"
 
                         for did in identification_dids:
                             definition = did_definitions.get(did, {})
@@ -322,9 +418,14 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                                     raw_hex=value_payload.hex().upper(),
                                     source=definition.get("source"),
                                     confidence=definition.get("confidence", "experimental"),
+                                    request_hex=f"22{did:04X}",
+                                    response_hex=response.original_payload.hex().upper(),
                                 ))
                                 if did == 0xF190 and isinstance(value, str):
                                     vin_value = value
+                                if did == 0xF186 and isinstance(value, int):
+                                    active_session = value
+                                    active_session_source = "did_f186"
                             except NegativeResponseException as exc:
                                 raw = exc.response.original_payload
                                 candidate_raw.append(raw.hex().upper())
@@ -333,6 +434,8 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                                     definition,
                                     f"NRC 0x{exc.response.code:02X} {exc.response.code_name}",
                                     raw,
+                                    nrc=exc.response.code,
+                                    nrc_name=exc.response.code_name,
                                 ))
                             except (TimeoutException, TimeoutError) as exc:
                                 candidate_identification.append(_did_error(did, definition, str(exc)))
@@ -342,6 +445,7 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                                     definition,
                                     str(exc),
                                     value_payload,
+                                    response_raw=response.original_payload,
                                 ))
 
                         if read_dtcs:
@@ -354,6 +458,8 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                                         mask,
                                     )
                                     candidate_raw.append(response.original_payload.hex().upper())
+                                    dtc_request_hex = f"1902{mask:02X}"
+                                    dtc_response_hex = response.original_payload.hex().upper()
                                     dtcs = _decode_dtcs(kb, ecu, raw_dtcs)
                                     dtc_status_mask_used = mask
                                     mask_errors = []
@@ -361,10 +467,14 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                                 except NegativeResponseException as exc:
                                     raw = exc.response.original_payload
                                     candidate_raw.append(raw.hex().upper())
+                                    dtc_request_hex = f"1902{mask:02X}"
+                                    dtc_response_hex = raw.hex().upper()
                                     mask_errors.append(
                                         f"masque 0x{mask:02X}: NRC 0x{exc.response.code:02X} {exc.response.code_name}"
                                     )
                                 except (TimeoutException, TimeoutError, ValueError) as exc:
+                                    dtc_request_hex = f"1902{mask:02X}"
+                                    dtc_response_hex = None
                                     mask_errors.append(f"masque 0x{mask:02X}: {exc}")
                             if mask_errors:
                                 dtc_error = "; ".join(mask_errors)
@@ -394,9 +504,14 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
                 dtcs=dtcs,
                 dtc_status_availability_mask=dtc_availability_mask,
                 dtc_status_mask_used=dtc_status_mask_used,
+                dtc_request_hex=dtc_request_hex,
+                dtc_response_hex=dtc_response_hex,
                 dtc_error=dtc_error,
+                active_session=active_session,
+                active_session_source=active_session_source,
                 probe_method=probe_method,
                 probe_response_hex=probe_response_hex,
+                probe_attempts=probe_attempts,
                 raw_responses=raw_responses,
                 error="; ".join(transport_errors) or (
                     "Aucune adresse candidate documentée n'a répondu."
@@ -488,13 +603,14 @@ def clear_ecu_dtcs(ecu_key: str, request: ClearDtcRequest) -> ClearDtcResult:
         raise ValueError(f"Adresses non documentées pour {ecu.name}.")
 
     trace = SessionWriter()
-    transport = build_transport(_trace_sink(trace))
+    transport = build_transport(_trace_sink(trace), safety_profile="psa_lab")
     trace.write({
         "type": "dtc_clear_start",
         "ecu": ecu_key,
         "request_id": ecu.request_id,
         "response_id": ecu.response_id,
         "preconditions": request.model_dump(exclude={"confirmation"}),
+        "request_hex": "14FFFFFF",
     })
     opened = False
     try:
@@ -508,12 +624,80 @@ def clear_ecu_dtcs(ecu_key: str, request: ClearDtcRequest) -> ClearDtcResult:
             read_only=False,
             maintenance=True,
         ) as uds_session:
+            masks = ecu.dtc_status_masks or [0xFF, 0x09]
+            before_dtcs, before_availability, before_mask, before_response = _read_dtc_snapshot(
+                uds_session,
+                kb,
+                ecu,
+                masks,
+            )
+            trace.write({
+                "type": "dtc_clear_before",
+                "ecu": ecu_key,
+                "request_hex": f"1902{before_mask:02X}",
+                "response_hex": before_response,
+                "availability_mask": before_availability,
+                "dtcs": [item.model_dump() for item in before_dtcs],
+            })
             response = clear_diagnostic_information(uds_session)
+            response_hex = response.original_payload.hex().upper()
+            trace.write({
+                "type": "dtc_clear_acknowledged",
+                "ecu": ecu_key,
+                "request_hex": "14FFFFFF",
+                "response_hex": response_hex,
+            })
+
+            after_dtcs: list[DtcReadResult] = []
+            verification_error: str | None = None
+            try:
+                after_dtcs, after_availability, after_mask, after_response = _read_dtc_snapshot(
+                    uds_session,
+                    kb,
+                    ecu,
+                    masks,
+                )
+                trace.write({
+                    "type": "dtc_clear_after",
+                    "ecu": ecu_key,
+                    "request_hex": f"1902{after_mask:02X}",
+                    "response_hex": after_response,
+                    "availability_mask": after_availability,
+                    "dtcs": [item.model_dump() for item in after_dtcs],
+                })
+            except ValueError as exc:
+                verification_error = str(exc)
+                trace.write({
+                    "type": "dtc_clear_verification_error",
+                    "ecu": ecu_key,
+                    "error": verification_error,
+                })
+
+        before_keys = {(item.raw_hex, item.code) for item in before_dtcs}
+        persistent_dtcs = [
+            item for item in after_dtcs
+            if (item.raw_hex, item.code) in before_keys and item.state in {"active", "historical"}
+        ]
+        verified = verification_error is None and not persistent_dtcs
+        if verification_error:
+            message = "Effacement accepté par l'ECU, mais la relecture de contrôle a échoué."
+        elif persistent_dtcs:
+            message = (
+                "Effacement accepté, mais certains défauts actifs ou historiques sont revenus "
+                "immédiatement."
+            )
+        else:
+            message = "Effacement accepté et contrôlé par une relecture DTC du même calculateur."
         result = ClearDtcResult(
             ecu_key=ecu_key,
             cleared=True,
-            response_hex=response.original_payload.hex().upper(),
-            message="Mémoire DTC effacée ; relire immédiatement les défauts pour vérifier ceux qui reviennent.",
+            response_hex=response_hex,
+            before_dtcs=before_dtcs,
+            after_dtcs=after_dtcs,
+            persistent_dtcs=persistent_dtcs,
+            verified=verified,
+            verification_error=verification_error,
+            message=message,
             session_id=trace.id,
         )
         trace.write({"type": "dtc_clear_result", "payload": result.model_dump()})

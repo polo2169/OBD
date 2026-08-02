@@ -1,4 +1,11 @@
-from app.safety import authorize_diagnostic_can_frame, authorize_obd, authorize_uds
+from app.safety import (
+    authorize_diagnostic_can_frame,
+    authorize_live_obd_can_frame,
+    authorize_obd,
+    authorize_transport_can_frame,
+    authorize_uds,
+    authorize_psa_lab_uds,
+)
 
 
 def test_read_did_allowed():
@@ -33,6 +40,8 @@ def test_dtc_clear_requires_explicit_maintenance_mode():
     assert not authorize_uds(bytes.fromhex("14FFFFFF"), False).allowed
     assert authorize_uds(bytes.fromhex("14FFFFFF"), False, maintenance=True).allowed
     assert not authorize_uds(bytes.fromhex("14FFFF"), False, maintenance=True).allowed
+    assert authorize_psa_lab_uds(0x764, bytes.fromhex("14FFFFFF")).allowed
+    assert not authorize_psa_lab_uds(0x764, bytes.fromhex("14FFFF00")).allowed
 
 
 def test_sensor_mode_only_allows_reading_obd_pids():
@@ -56,3 +65,29 @@ def test_can_policy_blocks_write_clear_security_and_unknown_ids():
 def test_can_policy_blocks_fragmented_requests_and_obd_clear():
     assert not authorize_diagnostic_can_frame(0x752, False, bytes.fromhex("10092E123456789A")).allowed
     assert not authorize_diagnostic_can_frame(0x7E0, False, bytes.fromhex("0104000000000000")).allowed
+
+
+def test_live_6_14_policy_only_allows_obd_read_modes_and_flow_control():
+    assert authorize_live_obd_can_frame(0x7DF, False, bytes.fromhex("0201000000000000")).allowed
+    assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("02010C0000000000")).allowed
+    assert authorize_live_obd_can_frame(0x18DB33F1, True, bytes.fromhex("0201000000000000")).allowed
+    assert authorize_live_obd_can_frame(0x18DA10F1, True, bytes.fromhex("0209020000000000")).allowed
+    assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0209020000000000")).allowed
+    assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("3008000000000000")).allowed
+    assert authorize_live_obd_can_frame(0x18DA10F1, True, bytes.fromhex("3008000000000000")).allowed
+
+    assert not authorize_live_obd_can_frame(0x7DF, False, bytes.fromhex("3008000000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x18DB33F1, True, bytes.fromhex("3008000000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x18DA11F1, True, bytes.fromhex("0201000000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x18DA10F1, True, bytes.fromhex("0204000000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0104000000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0222F10000000000")).allowed
+    assert not authorize_live_obd_can_frame(0x752, False, bytes.fromhex("0322F19000000000")).allowed
+
+
+def test_transport_policy_uses_bus_specific_allowlists():
+    obd = bytes.fromhex("02010C0000000000")
+    uds = bytes.fromhex("0322F19000000000")
+    assert authorize_transport_can_frame("diagnostic_read_only", 0x7E0, False, obd, "live").allowed
+    assert not authorize_transport_can_frame("diagnostic_read_only", 0x752, False, uds, "live").allowed
+    assert authorize_transport_can_frame("diagnostic_read_only", 0x752, False, uds, "diagnostic").allowed

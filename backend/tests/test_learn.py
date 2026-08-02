@@ -5,11 +5,12 @@ from app.config import settings
 from app.learn.analyzer import analyze_behavior, list_sessions
 from app.learn.capture import PassiveCaptureManager, capture_manager
 from app.learn.isotp import parse_isotp_frame, uds_service
-from app.learn.models import CaptureGpsPosition, CaptureStatus, CorrelationOptions, PassiveSensorOverride, ReplayGpsPoint, ReplaySample
+from app.learn.models import CaptureGpsPosition, CaptureStatus, CorrelationOptions, PassiveSensorOverride, ReplayGpsPoint, ReplaySample, SessionVehicleAssignment
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.passive_sensors import passive_sensor_snapshot
 from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _filter_fuel_level, prepare_replay, replay_geojson
 from app.learn.sensor_metadata import save_override
+from app.learn.session_vehicle import assign_session_vehicle
 from app.learn.validation import validate_replay
 from app.safety import authorize_uds
 
@@ -20,6 +21,32 @@ def test_single_frame_parse():
     assert parsed.complete
     assert parsed.payload == bytes.fromhex("22F190")
     assert uds_service(parsed.payload) == 0x22
+
+
+def test_session_can_be_attached_to_a_vehicle_without_rewriting_raw_capture(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    session_id = "learn-20260802T120000Z-garage"
+    raw_path = tmp_path / f"{session_id}.jsonl"
+    raw_payload = json.dumps({
+        "type": "meta",
+        "timestamp_us": 1_800_000_000_000_000,
+        "session_id": session_id,
+        "name": "Ancien trajet",
+        "source": "fixture",
+    }) + "\n"
+    raw_path.write_text(raw_payload, encoding="utf-8")
+
+    assign_session_vehicle(session_id, SessionVehicleAssignment(
+        vin="VF3LPHNYWJS141966",
+        vehicle_profile="peugeot_308_t9_2018",
+        vehicle_label="Peugeot 308 II",
+    ))
+
+    summary = list_sessions()[0]
+    assert raw_path.read_text(encoding="utf-8") == raw_payload
+    assert summary.vin == "VF3LPHNYWJS141966"
+    assert summary.vehicle_profile == "peugeot_308_t9_2018"
+    assert summary.vehicle_label == "Peugeot 308 II"
 
 
 def test_sensitive_service_stays_blocked():
@@ -370,6 +397,102 @@ def test_passive_sensor_snapshot_prefers_valid_steering_angle(tmp_path, monkeypa
     assert angle.raw_value == 9.5
     assert angle.unit == "tour"
     assert angle.customized
+
+
+def test_passive_sensor_snapshot_uses_fiat_profile_without_psa_decoding(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "sensor_overrides_file", tmp_path / "sensor_overrides.json")
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-fiat",
+        active=True,
+        source="fixture",
+        frame_count=2,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=True,
+        vehicle_profile="fiat_500_generic",
+        vehicle_label="Fiat 500",
+    ))
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [
+        {
+            "timestamp_us": 2_000_000,
+            "arbitration_id": 0x0618A001,
+            "extended": True,
+            "data": bytes.fromhex("002002B71F1E8400"),
+            "raw_hex": "002002B71F1E8400",
+        },
+        {
+            "timestamp_us": 2_000_100,
+            "arbitration_id": 0x0210A006,
+            "extended": True,
+            "data": bytes.fromhex("0000000000000000"),
+            "raw_hex": "0000000000000000",
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+
+    assert snapshot.observed_message_count == 1
+    assert snapshot.decoded_signal_count == 1
+    assert snapshot.unknown_can_ids == [0x0210A006]
+    assert snapshot.signals[0].key == "FIAT_ENGINE.ENGINE_RPM"
+    assert snapshot.signals[0].value == 695
+    assert snapshot.signals[0].confidence == "validated"
+    assert any("aucun décodeur Peugeot" in warning for warning in snapshot.warnings)
+
+
+def test_hybrid_obd_values_complete_fiat_passive_sensors(monkeypatch):
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-fiat-hybrid",
+        active=True,
+        source="fixture",
+        frame_count=0,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=False,
+        hybrid_obd_enabled=True,
+        hybrid_obd_ready=True,
+        obd_sample_count=3,
+        obd_supported_pids=[0x0C, 0x42],
+        vehicle_profile="fiat_500_generic",
+        vehicle_label="Fiat 500",
+    ))
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [])
+    monkeypatch.setattr(capture_manager, "latest_obd_values", lambda: [
+        {
+            "key": "engine_rpm",
+            "pid": 0x0C,
+            "name": "Régime moteur",
+            "value": 702,
+            "unit": "tr/min",
+            "raw_hex": "0AF8",
+            "updated_at_us": 3_000_000,
+            "request_id": 0x18DB33F1,
+            "response_id": 0x18DAF110,
+        },
+        {
+            "key": "control_module_voltage",
+            "pid": 0x42,
+            "name": "Tension calculateur",
+            "value": 13.82,
+            "unit": "V",
+            "raw_hex": "35FC",
+            "updated_at_us": 3_000_100,
+            "request_id": 0x18DB33F1,
+            "response_id": 0x18DAF110,
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+    by_key = {signal.key: signal for signal in snapshot.signals}
+
+    assert snapshot.hybrid_obd_ready
+    assert snapshot.obd_sample_count == 3
+    assert snapshot.decoded_signal_count == 2
+    assert by_key["OBD01.engine_rpm"].value == 702
+    assert by_key["OBD01.control_module_voltage"].value == 13.82
+    assert by_key["OBD01.control_module_voltage"].source == "obd"
+    assert by_key["OBD01.control_module_voltage"].confidence == "standardized"
+    assert snapshot.cursor_us == 3_000_100
 
 
 def test_post_processing_finds_repeated_bit_correlation(tmp_path, monkeypatch):

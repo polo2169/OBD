@@ -96,14 +96,24 @@ def _profile(profile_key: str) -> dict:
     return kb.vehicle(profile_key)
 
 
+def _tx_bus(protocol: str, definition: dict) -> str:
+    configured = definition.get("bus")
+    bus = str(configured) if configured is not None else ("live" if protocol == "obd" else "diagnostic")
+    if bus not in {"live", "diagnostic"}:
+        raise ValueError(f"Bus d'identification non pris en charge : {bus}.")
+    return bus
+
+
 def _read_vin_attempt(transport, strategy: dict) -> VehicleIdentityAttempt:
     protocol = str(strategy.get("protocol", "")).lower()
     if protocol not in {"uds", "obd"}:
         raise ValueError(f"Protocole d'identification non pris en charge : {protocol}.")
     request_id = _integer(strategy["request_id"])
     response_id = _integer(strategy["response_id"])
-    if not (0 <= request_id <= 0x7FF and 0 <= response_id <= 0x7FF):
-        raise ValueError("Le profil VIN doit utiliser des identifiants CAN 11 bits documentés.")
+    if not (0 <= request_id <= 0x1FFFFFFF and 0 <= response_id <= 0x1FFFFFFF):
+        raise ValueError("Le profil VIN contient un identifiant CAN hors plage.")
+    if (request_id > 0x7FF) != (response_id > 0x7FF):
+        raise ValueError("La paire VIN doit utiliser un format CAN homogène, 11 ou 29 bits.")
 
     if protocol == "uds":
         did = _integer(strategy.get("did", 0xF190))
@@ -124,6 +134,7 @@ def _read_vin_attempt(transport, strategy: dict) -> VehicleIdentityAttempt:
         source=strategy.get("source"),
         confidence=str(strategy.get("confidence", "experimental")),
     )
+    response: bytes | None = None
     try:
         with UdsSession(
             transport,
@@ -131,6 +142,13 @@ def _read_vin_attempt(transport, strategy: dict) -> VehicleIdentityAttempt:
             response_id,
             timeout=settings.diagnostic_timeout,
             read_only=True,
+            tx_bus=_tx_bus(protocol, strategy),
+            flow_control_id=(
+                _integer(strategy["flow_control_id"])
+                if strategy.get("flow_control_id") is not None
+                else None
+            ),
+            flow_control_blocksize=int(strategy.get("flow_control_blocksize", 8)),
         ) as session:
             if protocol == "obd":
                 response = session.request_obd(command)
@@ -145,7 +163,10 @@ def _read_vin_attempt(transport, strategy: dict) -> VehicleIdentityAttempt:
         attempt.raw_hex = response.hex().upper()
     except Exception as exc:
         raw = getattr(getattr(exc, "response", None), "original_payload", None)
-        attempt.raw_hex = raw.hex().upper() if isinstance(raw, bytes) else None
+        if response is not None:
+            attempt.raw_hex = response.hex().upper()
+        elif isinstance(raw, bytes):
+            attempt.raw_hex = raw.hex().upper()
         attempt.error = str(exc)
     return attempt
 
@@ -178,6 +199,13 @@ def _read_identity_field(transport, definition: dict) -> VehicleIdentityField:
             response_id,
             timeout=settings.diagnostic_timeout,
             read_only=True,
+            tx_bus=_tx_bus(protocol, definition),
+            flow_control_id=(
+                _integer(definition["flow_control_id"])
+                if definition.get("flow_control_id") is not None
+                else None
+            ),
+            flow_control_blocksize=int(definition.get("flow_control_blocksize", 8)),
         ) as session:
             if protocol == "obd":
                 response = session.request_obd(command)
@@ -214,12 +242,21 @@ def read_vehicle_identity(profile_key: str) -> VehicleIdentityResult:
 
     vehicle = _profile(profile_key)
     diagnostic = vehicle.get("diagnostic", {})
-    strategies = diagnostic.get("vin_strategies", [])
+    strategies = [
+        strategy
+        for strategy in diagnostic.get("vin_strategies", [])
+        if strategy.get("enabled", True)
+    ]
     if not strategies:
         raise ValueError(f"Aucune stratégie VIN documentée pour {profile_key}.")
 
     trace = SessionWriter()
-    transport = build_transport(_trace_sink(trace))
+    transport = build_transport(
+        _trace_sink(trace),
+        receive_buses=("default", "live", "diagnostic"),
+        require_diagnostic_can=False,
+        vehicle_profile=profile_key,
+    )
     result = VehicleIdentityResult(
         vehicle_profile=profile_key,
         manufacturer=str(vehicle.get("manufacturer", "Inconnu")),

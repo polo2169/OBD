@@ -1,0 +1,152 @@
+version: 1
+description: >-
+  Catalogue fonctionnel multimarque. Une entrée décrit une capacité commerciale,
+  jamais une séquence à transmettre. Les profils véhicule portent seuls
+  l'applicabilité et le niveau de validation.
+
+services:
+  - key: abs_bleed
+    name: Purge ABS
+    category: Freinage
+    risk: high
+    description: Pilote la pompe et les électrovannes ABS pendant une purge encadrée.
+  - key: adblue_reset
+    name: Réinitialisation AdBlue
+    category: Dépollution
+    risk: medium
+    description: Réinitialise les adaptations SCR après intervention documentée.
+  - key: adaptive_front_lighting_reset
+    name: Éclairage avant adaptatif
+    category: Éclairage
+    risk: medium
+    description: Initialise ou calibre le système d'éclairage directionnel/adaptatif.
+  - key: air_fuel_adaptation_reset
+    name: Réinitialisation air/carburant
+    category: Moteur
+    risk: medium
+    description: Efface les adaptations de richesse après réparation compatible.
+  - key: air_level_calibration
+    name: Calibrage du niveau d'air
+    category: Suspension
+    risk: high
+    description: Calibre les hauteurs d'une suspension pneumatique équipée.
+  - key: airbag_reset
+    name: Réinitialisation airbag
+    category: Sécurité passive
+    risk: restricted
+    description: Efface uniquement les défauts réparés; aucune suppression de données de choc.
+  - key: battery_adaptation
+    name: Adaptation de la batterie
+    category: Électricité
+    risk: medium
+    description: Enregistre une batterie remplacée auprès du gestionnaire d'énergie.
+  - key: brake_service_reset
+    name: Réinitialisation des freins
+    category: Freinage
+    risk: high
+    description: Place ou initialise le système de freinage selon la procédure constructeur.
+  - key: coolant_bleed
+    name: Purge du liquide de refroidissement
+    category: Refroidissement
+    risk: high
+    description: Pilote les pompes électriques prévues par la procédure de purge.
+  - key: crankshaft_relearn
+    name: Apprentissage vilebrequin
+    category: Moteur
+    risk: high
+    description: Lance l'apprentissage du capteur de position du vilebrequin.
+  - key: dpf_regeneration
+    name: Régénération DPF/FAP
+    category: Dépollution
+    risk: restricted
+    description: Lance une régénération forcée uniquement dans des conditions d'atelier sûres.
+  - key: egr_adaptation
+    name: Adaptation EGR
+    category: Dépollution
+    risk: medium
+    description: Initialise les butées ou adaptations de la vanne EGR remplacée.
+  - key: throttle_relearn
+    name: Réapprentissage du papillon
+    category: Moteur
+    risk: medium
+    description: Réinitialise et apprend les positions du boîtier papillon motorisé.
+  - key: transmission_relearn
+    name: Réapprentissage de la boîte
+    category: Transmission
+    risk: high
+    description: Lance l'adaptation d'une boîte automatique ou robotisée équipée.
+  - key: immobilizer_relearn
+    name: Réapprentissage antidémarrage
+    category: Antivol
+    risk: restricted
+    description: Apprentissage autorisé avec justificatif et identifiants propriétaire; aucun contournement.
+  - key: injector_coding
+    name: Codage des injecteurs
+    category: Moteur
+    risk: high
+    description: Enregistre les codes de correction des injecteurs compatibles.
+  - key: language_change
+    name: Changement de langue
+    category: Habitacle
+    risk: low
+    description: Configure une langue proposée par le calculateur concerné.
+  - key: nox_sensor_reset
+    name: Réinitialisation capteur NOx
+    category: Dépollution
+    risk: medium
+    description: Initialise les adaptations d'un capteur NOx remplacé.
+  - key: odometer_module_replacement
+    name: Compteur ODO · remplacement module
+    category: Instrumentation
+    risk: restricted
+    description: Synchronisation légitime après remplacement, sans réduction ni altération arbitraire du kilométrage.
+  - key: oil_service_reset
+    name: Réinitialisation entretien huile
+    category: Entretien
+    risk: low
+    description: Réinitialise l'échéance d'entretien après vidange effectuée.
+  - key: occupant_detection_calibration
+    name: Calibrage occupation des sièges
+    category: Sécurité passive
+    risk: high
+    description: Calibre le système de détection d'occupation selon l'outillage constructeur.
+  - key: steering_angle_calibration
+    name: Calibrage angle de braquage
+    category: Direction
+    risk: high
+    description: Initialise le zéro du capteur d'angle avec roues et volant centrés.
+  - key: start_stop_reset
+    name: Réinitialisation Stop/Start
+    category: Électricité
+    risk: medium
+    description: Réinitialise les apprentissages du système Stop/Start équipé.
+  - key: sunroof_calibration
+    name: Réinitialisation toit ouvrant
+    category: Habitacle
+    risk: medium
+    description: Réapprend les butées et l'antipincement du toit équipé.
+  - key: tpms_reset
+    name: Réinitialisation TPMS
+    category: Pneumatiques
+    risk: medium
+    description: Initialise le système de surveillance de pression équipé.
+  - key: tire_configuration_reset
+    name: Réinitialisation pneus
+    category: Pneumatiques
+    risk: medium
+    description: Enregistre les dimensions ou références autorisées par le constructeur.
+  - key: transport_mode
+    name: Mode transport
+    category: Configuration
+    risk: high
+    description: Active ou désactive le mode logistique selon une procédure vérifiée.
+  - key: window_calibration
+    name: Calibrage des fenêtres
+    category: Habitacle
+    risk: medium
+    description: Réapprend les butées et l'antipincement des lève-vitres équipés.
+  - key: proxy_alignment
+    name: Alignement de configuration inter-ECU
+    category: Configuration
+    risk: restricted
+    description: Synchronise les configurations après remplacement d'un calculateur compatible.

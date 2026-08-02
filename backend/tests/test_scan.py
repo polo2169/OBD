@@ -1,6 +1,7 @@
 from app.config import settings
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
 from app.diagnostic.obd import snapshot_sensors
+from app.diagnostic.isotp import UdsSession
 from app.diagnostic.uds import decode_dtc_status, format_sae_dtc
 from app.models import ClearDtcRequest
 from app.diagnostic.uds import request
@@ -24,6 +25,13 @@ def test_virtual_scan():
     assert "confirmed" in abs_ecu.dtcs[0].status_labels
     assert report.debug.session_id
     assert report.debug.event_types["uds_request"] > 0
+    assert engine.active_session == 1
+    assert engine.active_session_source == "did_f186"
+    assert engine.probe_attempts == [{
+        "request_hex": "1001",
+        "response_hex": "5001003201F4",
+        "outcome": "positive",
+    }]
 
 
 def test_multiframe_vin_response_is_reassembled():
@@ -99,6 +107,25 @@ def test_virtual_sensor_only_snapshot():
     assert snapshot.debug.event_types["obd_request"] > 0
 
 
+def test_obd_session_routes_requests_to_live_bus():
+    events: list[dict] = []
+    transport = VirtualVehicleTransport()
+    transport.set_debug_sink(events.append)
+    transport.open()
+    try:
+        with UdsSession(transport, 0x7E0, 0x7E8, tx_bus="live") as session:
+            assert session.request_obd(bytes.fromhex("010C")) == bytes.fromhex("410C0C30")
+    finally:
+        transport.close()
+
+    assert any(
+        event.get("type") == "can_frame"
+        and event.get("direction") == "tx"
+        and event.get("bus") == "live"
+        for event in events
+    )
+
+
 def test_explicit_virtual_dtc_clear_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "session_dir", tmp_path)
     monkeypatch.setattr(settings, "dtc_clear_enabled", True)
@@ -113,6 +140,10 @@ def test_explicit_virtual_dtc_clear_workflow(tmp_path, monkeypatch):
     ))
     assert result.cleared
     assert result.response_hex == "54"
+    assert result.request_hex == "14FFFFFF"
+    assert result.before_dtcs == []
+    assert result.after_dtcs == []
+    assert result.verified is True
     assert result.session_id
 
 

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     debug_sessions_enabled: bool = True
     trace_can_frames: bool = True
     trace_max_events: int = 250_000
+    live_obd_enabled: bool = True
     esp32_handshake_timeout: float = 3.0
     dtc_clear_enabled: bool = False
     safety_ecu_clear_enabled: bool = False
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
     observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
     diagnostic_history_dir: Path = Path("../data/diagnostics")
+    diagnostic_trace_import_dir: Path = Path("../data/diagbox_imports")
     transport_selection_file: Path = Path("../data/transport_selection.json")
     vehicle_profile: str = "peugeot_308_t9_2018"
     opendbc_enabled: bool = True

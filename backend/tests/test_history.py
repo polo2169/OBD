@@ -1,11 +1,13 @@
 from app.diagnostic.dtc_status import apply_dtc_classification, summarize_dtcs
 from app.diagnostic.history import (
+    active_vehicle,
     finalize_scan,
     latest_report,
     list_reports,
     list_vehicles,
     report_html,
     save_identity,
+    select_vehicle,
 )
 from app.models import (
     DtcReadResult,
@@ -80,3 +82,23 @@ def test_history_is_per_vin_and_compares_only_meaningful_fault_states():
     assert list_vehicles()[0]["vin"] == VIN
     assert len(list_reports(vin=VIN)) == 2
     assert "Tests non exécutés" in report_html(after)
+
+
+def test_vehicle_selection_is_persisted_server_side():
+    save_identity(VehicleIdentityResult(
+        vehicle_profile="peugeot_308_t9_2018",
+        manufacturer="Peugeot",
+        detected_manufacturer="Peugeot",
+        model="308 T9",
+        year=2018,
+        transport="virtual",
+        found=True,
+        vin=VIN,
+        wmi="VF3",
+    ))
+
+    selected = select_vehicle(VIN)
+
+    assert selected["vin"] == VIN
+    assert active_vehicle()["vin"] == VIN
+    assert list_vehicles()[0]["is_active"] is True

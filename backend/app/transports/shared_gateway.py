@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 import queue
 import threading
+from typing import Iterator
 
 from app.models import CanFrame
 from app.safety import TxSafetyProfile
@@ -69,6 +71,15 @@ class SharedGatewayClient(Transport):
             raise RuntimeError("Transport partagé fermé.")
         self._hub.send(self, frame)
 
+    @contextmanager
+    def diagnostic_transaction(self) -> Iterator[None]:
+        with self._hub.diagnostic_transaction():
+            # A client waiting behind another diagnostic session keeps receiving
+            # its own copy of CAN traffic. Drop that stale backlog before the
+            # next ISO-TP exchange so an old response cannot be mis-associated.
+            self._clear_frames()
+            yield
+
     def accepts(self, frame: CanFrame) -> bool:
         return self._receive_buses is None or frame.bus in self._receive_buses
 
@@ -118,6 +129,7 @@ class SharedGatewayHub:
         self._clients_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
         self._send_lock = threading.Lock()
+        self._diagnostic_lock = threading.RLock()
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
         self._reader_error: Exception | None = None
@@ -228,6 +240,12 @@ class SharedGatewayHub:
                 if previous_profile is not None:
                     physical.safety_profile = previous_profile
 
+    @contextmanager
+    def diagnostic_transaction(self) -> Iterator[None]:
+        """Serialize complete ISO-TP sessions on the shared physical bus."""
+        with self._diagnostic_lock:
+            yield
+
     def _read_loop(self) -> None:
         physical = self._physical
         if physical is None:
@@ -278,6 +296,16 @@ class SharedGatewayHub:
         if client.safety_profile == "psa_lab" and hello.get("psa_lab") is not True:
             raise RuntimeError(
                 "Le firmware ESP32 partagé n'annonce pas la capacité PSA lab."
+            )
+        psa_lab = hello.get("psa_lab") is True
+        if (
+            client.require_diagnostic_can
+            and client.safety_profile == "diagnostic_read_only"
+            and hello.get("diagnostic_read_only") is not True
+            and not psa_lab
+        ):
+            raise RuntimeError(
+                "Le firmware ESP32 partagé n'annonce aucun verrou diagnostic compatible."
             )
 
 

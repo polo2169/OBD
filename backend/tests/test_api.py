@@ -99,6 +99,21 @@ def test_dtc_clear_is_locked_by_default():
     assert "DTC_CLEAR_ENABLED=false" in response.json()["detail"]
 
 
+def test_trace_import_endpoint_never_transmits(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "diagnostic_trace_import_dir", tmp_path)
+    response = client.post("/api/diagnostic/traces/import", json={
+        "name": "lecture-vin.log",
+        "vehicle_profile": "peugeot_308_t9_2018",
+        "source_format": "text",
+        "content": "TX 752#0322F18600000000\nRX 652#0462F18601000000\n",
+    })
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["exchange_count"] == 1
+    assert payload["observed_dids"][0]["did"] == 0xF186
+    assert payload["observed_actions"] == []
+
+
 def test_observed_dtcs_are_persisted_and_enriched(tmp_path, monkeypatch):
     path = tmp_path / "observed_dtcs.json"
     monkeypatch.setattr(settings, "observed_dtcs_file", path)

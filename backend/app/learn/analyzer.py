@@ -28,6 +28,7 @@ from app.learn.models import (
     UdsCandidate,
 )
 from app.learn.opendbc import OpendbcDecoder, get_opendbc_decoder
+from app.learn.session_vehicle import load_session_vehicle
 
 
 READ_ONLY_SERVICES = {0x10, 0x19, 0x22, 0x3E}
@@ -54,6 +55,9 @@ def list_sessions() -> list[DiscoverySessionSummary]:
         analysis_path = settings.session_dir / f"{path.stem}.correlations.json"
         name = path.stem
         source = ""
+        vin: str | None = None
+        vehicle_profile: str | None = None
+        vehicle_label: str | None = None
         started_at_us: int | None = None
         min_timestamp: int | None = None
         max_timestamp: int | None = None
@@ -92,6 +96,9 @@ def list_sessions() -> list[DiscoverySessionSummary]:
                     if event.get("type") == "meta":
                         name = str(event.get("name") or name)
                         source = str(event.get("source") or source)
+                        vin = str(event.get("vin") or vin or "") or None
+                        vehicle_profile = str(event.get("vehicle_profile") or vehicle_profile or "") or None
+                        vehicle_label = str(event.get("vehicle_label") or vehicle_label or "") or None
                         if started_at_us is None and timestamp:
                             started_at_us = timestamp
                         if event.get("event") == "capture_error":
@@ -116,6 +123,10 @@ def list_sessions() -> list[DiscoverySessionSummary]:
         duration_ms = cached_duration_ms or 0.0
         if cached_duration_ms is None and min_timestamp is not None and max_timestamp is not None:
             duration_ms = max(0.0, (max_timestamp - min_timestamp) / 1000)
+        assignment = load_session_vehicle(path.stem)
+        vin = str(assignment.get("vin") or vin or "") or None
+        vehicle_profile = str(assignment.get("vehicle_profile") or vehicle_profile or "") or None
+        vehicle_label = str(assignment.get("vehicle_label") or vehicle_label or "") or None
         summaries.append(DiscoverySessionSummary(
             session_id=path.stem,
             name=name,
@@ -133,6 +144,9 @@ def list_sessions() -> list[DiscoverySessionSummary]:
             size_bytes=path.stat().st_size,
             analyzed=analysis_path.exists(),
             error=error,
+            vin=vin,
+            vehicle_profile=vehicle_profile,
+            vehicle_label=vehicle_label,
         ))
     return summaries
 

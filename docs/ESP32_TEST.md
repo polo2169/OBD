@@ -37,7 +37,7 @@ propre transceiver CAN. Une seule ESP32 reste reliée au PC :
 
 | Rôle | CAN | Firmware |
 |---|---|---|
-| ESP32 principale | OBD 6/14, écoute seule | `esp32-dual-uart-main-diagnostic` |
+| ESP32 principale | OBD 6/14, OBD 01/09 filtré | `esp32-dual-uart-main-diagnostic` |
 | ESP32 satellite | OBD 3/8, diagnostic filtré | `esp32-dual-uart-satellite-diagnostic` |
 
 Relier les deux ESP32 en logique 3,3 V, sans convertisseur :
@@ -55,16 +55,17 @@ TJA1050 5 V exige toujours une adaptation sur RXD vers GPIO4. Un TJA1051 avec VI
 3,3 V ou un transceiver CAN entièrement 3,3 V est préférable. Retirer toute
 terminaison 120 ohms ajoutée par les modules.
 
-Ne jamais relier OBD `3/8` à OBD `6/14`. Le firmware de la carte principale place
-matériellement son TWAI en écoute seule et ne relaie vers le satellite que les
-requêtes diagnostic autorisées.
+Ne jamais relier OBD `3/8` à OBD `6/14`. Le firmware de la carte principale ne
+permet sur son TWAI que les lectures OBD-II normalisées `01`/`09` à destination de
+`0x7E0` et le contrôle de flux ISO-TP associé. Il ne relaie vers le satellite que
+les requêtes diagnostic autorisées pour `3/8`.
 
 ### Ancien montage double CAN — MCP2515 quartz 16.000
 
 Le transceiver déjà relié au contrôleur TWAI reste sur le CAN véhicule OBD
-`6/14`. Il fonctionne en écoute seule et conserve le débit du dashboard. Le
-MCP2515 est un second contrôleur indépendant exclusivement relié au CAN
-diagnostic PSA OBD `3/8` :
+`6/14`. Il conserve le débit du dashboard et n'accepte que les lectures OBD-II
+`01`/`09` filtrées. Le MCP2515 est un second contrôleur indépendant exclusivement
+relié au CAN diagnostic PSA OBD `3/8` :
 
 | Signal MCP2515 | Connexion |
 |---|---|
@@ -129,8 +130,22 @@ cd firmware/esp32-gateway
   -e esp32-dual-uart-satellite-diagnostic -t upload
 ```
 
+Pour une séance de maintenance DTC explicitement armée, seule la satellite 3/8
+doit être remplacée temporairement par le profil PSA lab :
+
+```bash
+/Users/paul/.platformio/penv/bin/pio run \
+  -e esp32-dual-uart-satellite-psa-lab -t upload
+```
+
+Ce profil n'ouvre pas un émetteur brut : il ajoute uniquement `14 FFFFFF`, les
+actions NAC nommées et l'accès de configuration déjà listé dans le firmware.
+Reflasher `esp32-dual-uart-satellite-diagnostic` après la séance remet le verrou
+strictement lecture seule.
+
 Le `hello` de la carte principale doit annoncer `protocol=7`,
-`driver=twai+uart-twai`, `dual_can=true`, `live_listen_only=true`,
+`driver=twai+uart-twai`, `dual_can=true`, `live_listen_only=false`,
+`live_obd_read_only=true`, `live_tx_policy=obd_01_09_read_only`,
 `live_can_ready=true`, `diagnostic_can_ready=true` et
 `satellite_connected=true`. Le PC ne sélectionne que le port USB de la carte
 principale.
@@ -146,14 +161,20 @@ cd firmware/esp32-gateway
 
 Le `hello` attendu annonce `protocol=7`, `driver=twai+mcp2515`,
 `dual_can=true`, `live_can_ready=true`, `diagnostic_can_ready=true`,
-`live_listen_only=true`, `oscillator_mhz=16`, `spi_cs_pin=27` et
+`live_listen_only=false`, `live_obd_read_only=true`,
+`live_tx_policy=obd_01_09_read_only`, `oscillator_mhz=16`, `spi_cs_pin=27` et
 `spi_hz=8000000`. Ne pas flasher le profil `psa-lab` pour une lecture normale :
 il reste réservé aux actions nommées déjà validées et explicitement armées.
 
 Chaque ligne compacte conserve le format `F,...`; le bit `0x40` du champ flags
 identifie désormais une trame `diagnostic`. Le backend enregistre `bus: live` ou
-`bus: diagnostic`, utilise uniquement `live` pour le dashboard/replay et route
-les requêtes UDS uniquement vers le MCP2515.
+`bus: diagnostic`, utilise uniquement `live` pour le dashboard/replay, route les
+requêtes OBD `01`/`09` vers `live` et les requêtes UDS vers `diagnostic`.
+
+Trois barrières se cumulent pour `6/14` : l'interface exige la capacité annoncée
+par le `hello`, le backend valide l'identifiant et le service, puis le firmware
+refait la même validation. Les modes OBD d'effacement, les requêtes UDS, les
+écritures et les actions restent rejetés sur ce réseau.
 
 Les boutons **Capteurs uniquement** et **Scanner le véhicule** doivent envoyer des
 requêtes de lecture. Il faut donc flasher `esp32-s3-active`, tout en gardant le backend

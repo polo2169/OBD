@@ -19,6 +19,44 @@ notes:
   - La présence exacte des calculateurs optionnels dépend de l'équipement du véhicule.
   - Toute adresse doit être confirmée par une réponse UDS avant d'être considérée présente.
 
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable:
+    - abs_bleed
+    - air_fuel_adaptation_reset
+    - airbag_reset
+    - battery_adaptation
+    - brake_service_reset
+    - crankshaft_relearn
+    - throttle_relearn
+    - oil_service_reset
+    - steering_angle_calibration
+    - tire_configuration_reset
+    - window_calibration
+    - proxy_alignment
+  conditional:
+    - adblue_reset
+    - adaptive_front_lighting_reset
+    - coolant_bleed
+    - dpf_regeneration
+    - egr_adaptation
+    - transmission_relearn
+    - immobilizer_relearn
+    - injector_coding
+    - language_change
+    - nox_sensor_reset
+    - odometer_module_replacement
+    - occupant_detection_calibration
+    - start_stop_reset
+    - sunroof_calibration
+    - tpms_reset
+    - transport_mode
+  not_applicable:
+    - air_level_calibration
+  notes:
+    - Le profil T9 couvre plusieurs motorisations ; AdBlue, FAP, EGR, NOx, boîte et Stop/Start restent conditionnels à l'identification exacte des calculateurs.
+    - Les commandes actives existantes du laboratoire PSA ne valent pas validation d'une procédure de maintenance.
+
 networks:
   diagnostic_can:
     bitrate: 500000
@@ -46,6 +84,26 @@ diagnostic:
   # capteurs normalisés. Ce mode est distinct des adresses diagnostic PSA.
   obd_request_id: 0x7E0
   obd_response_id: 0x7E8
+  live_obd:
+    enabled: true
+    interval_ms: 1000
+    # Complément normalisé au CAN passif AEE2010. Les signaux CAN validés
+    # gardent la priorité dans l'interface quand les deux sources existent.
+    pids:
+      - 0x04
+      - 0x05
+      - 0x0B
+      - 0x0C
+      - 0x0D
+      - 0x0F
+      - 0x11
+      - 0x2F
+      - 0x33
+      - 0x42
+      - 0x46
+      - 0x49
+      - 0x4A
+      - 0x5C
   identification_dids:
     - 0xF180
     - 0xF181

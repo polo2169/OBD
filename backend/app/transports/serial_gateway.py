@@ -92,7 +92,8 @@ class Esp32SerialTransport(Transport):
                     "Flashez le profil esp32-tja1050-serial-psa-lab."
                 )
             if (
-                self.safety_profile == "diagnostic_read_only"
+                self.require_diagnostic_can
+                and self.safety_profile == "diagnostic_read_only"
                 and self.hello.get("diagnostic_read_only") is not True
                 and not psa_lab
             ):
@@ -160,11 +161,20 @@ class Esp32SerialTransport(Transport):
             raise PermissionError("Émission ESP32 désactivée par CAN_TX_ENABLED.")
         if not self.serial:
             raise RuntimeError("Transport fermé.")
+        if (
+            frame.bus == "live"
+            and (not self.hello or self.hello.get("live_obd_read_only") is not True)
+        ):
+            raise PermissionError(
+                "Le firmware ESP32 n'annonce pas l'allowlist OBD lecture seule sur 6/14. "
+                "Flashez le nouveau profil double-CAN principal."
+            )
         decision = authorize_transport_can_frame(
             self.safety_profile,
             frame.arbitration_id,
             frame.extended,
             frame.data,
+            frame.bus,
         )
         if not decision.allowed:
             raise PermissionError(decision.reason)

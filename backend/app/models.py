@@ -48,6 +48,10 @@ class DidReadResult(BaseModel):
     raw_hex: str | None = None
     source: str | None = None
     confidence: str = "experimental"
+    request_hex: str | None = None
+    response_hex: str | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
     error: str | None = None
 
 
@@ -108,14 +112,22 @@ class SensorValue(BaseModel):
     name: str
     value: float | int | None = None
     unit: str | None = None
+    group: str | None = None
+    description: str | None = None
+    source: str | None = None
+    confidence: str = "standardized"
     raw_hex: str | None = None
     error: str | None = None
 
 
 class SensorSnapshot(BaseModel):
     transport: str
+    vehicle_profile: str | None = None
     request_id: int
     response_id: int
+    mil_on: bool | None = None
+    emissions_dtc_count: int | None = None
+    readiness_raw_hex: str | None = None
     supported_pids: list[int] = Field(default_factory=list)
     values: list[SensorValue] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
@@ -139,9 +151,14 @@ class EcuScanResult(BaseModel):
     dtcs: list[DtcReadResult] = Field(default_factory=list)
     dtc_status_availability_mask: int | None = None
     dtc_status_mask_used: int | None = None
+    dtc_request_hex: str | None = None
+    dtc_response_hex: str | None = None
     dtc_error: str | None = None
+    active_session: int | None = None
+    active_session_source: str | None = None
     probe_method: str | None = None
     probe_response_hex: str | None = None
+    probe_attempts: list[dict] = Field(default_factory=list)
     raw_responses: list[str] = Field(default_factory=list)
     error: str | None = None
 
@@ -204,6 +221,14 @@ class ScanRequest(BaseModel):
     )
 
 
+class VehicleSelectionRequest(BaseModel):
+    vin: str = Field(
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
+    )
+
+
 class ClearDtcRequest(BaseModel):
     confirmation: str
     vehicle_stationary: bool = False
@@ -217,8 +242,21 @@ class ClearDtcResult(BaseModel):
     cleared: bool
     group: str = "FFFFFF"
     response_hex: str | None = None
+    request_hex: str = "14FFFFFF"
+    before_dtcs: list[DtcReadResult] = Field(default_factory=list)
+    after_dtcs: list[DtcReadResult] = Field(default_factory=list)
+    persistent_dtcs: list[DtcReadResult] = Field(default_factory=list)
+    verified: bool = False
+    verification_error: str | None = None
     message: str
     session_id: str | None = None
+
+
+class DiagnosticTraceImportRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=5_000_000)
+    vehicle_profile: str = Field(default="peugeot_308_t9_2018", min_length=1, max_length=100)
+    source_format: Literal["auto", "text", "csv", "jsonl"] = "auto"
 
 
 class TransportConnectRequest(BaseModel):

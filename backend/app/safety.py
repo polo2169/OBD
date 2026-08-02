@@ -40,6 +40,7 @@ PSA_LAB_ACTION_PAYLOADS = {
     bytes.fromhex("2FD6700340"),  # camera zoom view
     bytes.fromhex("2FD6700350"),  # camera lateral view
 }
+PSA_LAB_DTC_CLEAR_PAYLOAD = bytes.fromhex("14FFFFFF")
 PSA_LAB_SECURITY_REQUEST_IDS = {0x752, 0x764}
 
 
@@ -54,10 +55,50 @@ def authorize_transport_can_frame(
     arbitration_id: int,
     extended: bool,
     data: bytes,
+    bus: str = "default",
 ) -> SafetyDecision:
+    if bus == "live":
+        return authorize_live_obd_can_frame(arbitration_id, extended, data)
+    if bus not in {"default", "diagnostic"}:
+        return SafetyDecision(False, f"Bus CAN inconnu : {bus}.")
     if profile == "psa_lab":
         return authorize_psa_lab_can_frame(arbitration_id, extended, data)
     return authorize_diagnostic_can_frame(arbitration_id, extended, data)
+
+
+def authorize_live_obd_can_frame(
+    arbitration_id: int,
+    extended: bool,
+    data: bytes,
+) -> SafetyDecision:
+    """Allow only standardized read-only OBD traffic on the live 6/14 bus."""
+    allowed_ids = (
+        {0x18DB33F1, 0x18DA10F1}
+        if extended
+        else {0x7DF, 0x7E0}
+    )
+    if arbitration_id not in allowed_ids:
+        return SafetyDecision(False, "Identifiant non autorisé par l'allowlist EOBD Mode 01/09 sur 6/14.")
+    if not data or len(data) > 8:
+        return SafetyDecision(False, "Longueur de trame ISO-TP invalide sur OBD 6/14.")
+
+    pci_type = data[0] >> 4
+    if pci_type == 0x3:
+        if arbitration_id not in {0x7E0, 0x18DA10F1}:
+            return SafetyDecision(False, "Le contrôle de flux OBD doit utiliser une adresse physique moteur.")
+        if len(data) < 3 or (data[0] & 0x0F) > 0x02:
+            return SafetyDecision(False, "Trame de contrôle de flux ISO-TP invalide sur OBD 6/14.")
+        return SafetyDecision(True, "Contrôle de flux OBD ISO-TP autorisé sur 6/14.")
+    if pci_type != 0x0:
+        return SafetyDecision(False, "Requêtes OBD multi-trames verrouillées sur 6/14.")
+
+    application_length = data[0] & 0x0F
+    if application_length != 2 or len(data) < 3:
+        return SafetyDecision(False, "Une lecture OBD 6/14 doit contenir exactement un mode et un PID.")
+    service = data[1]
+    if service not in {0x01, 0x09}:
+        return SafetyDecision(False, f"Mode OBD 0x{service:02X} verrouillé sur 6/14.")
+    return SafetyDecision(True, "Lecture OBD Mode 01/09 autorisée sur 6/14.")
 
 
 def authorize_diagnostic_can_frame(
@@ -133,6 +174,11 @@ def authorize_psa_lab_uds(arbitration_id: int, payload: bytes) -> SafetyDecision
         return readonly
 
     service = payload[0]
+    if service == 0x14:
+        if payload == PSA_LAB_DTC_CLEAR_PAYLOAD:
+            return SafetyDecision(True, "Effacement global DTC 0x14/FFFFFF autorisé en mode maintenance.")
+        return SafetyDecision(False, "Seul le groupe DTC exact FFFFFF est autorisé en mode PSA lab.")
+
     if service == 0x27 and arbitration_id in PSA_LAB_SECURITY_REQUEST_IDS:
         if len(payload) == 2 and payload[1] == 0x03:
             return SafetyDecision(True, "Demande de seed de configuration PSA autorisée.")

@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.config import settings
+from app.diagnostic.history import list_vehicles
+from app.database import KnowledgeBase
 from app.learn.analyzer import analyze_behavior, analyze_session, list_sessions
 from app.learn.capture import capture_manager
 from app.learn.exporter import export_proposals
@@ -21,6 +23,7 @@ from app.learn.models import (
     PassiveSensorSnapshot,
     ReplayData,
     ReplayValidation,
+    SessionVehicleAssignment,
     UdsCandidate,
 )
 from app.learn.opendbc import get_opendbc_decoder
@@ -28,6 +31,7 @@ from app.learn.passive_sensors import passive_sensor_snapshot
 from app.learn.replay import prepare_replay, replay_geojson
 from app.learn.sensor_metadata import delete_override, save_override
 from app.learn.validation import validate_replay
+from app.learn.session_vehicle import assign_session_vehicle
 
 router = APIRouter(prefix="/api/learn", tags=["OpenDiag Learn"])
 
@@ -35,7 +39,26 @@ router = APIRouter(prefix="/api/learn", tags=["OpenDiag Learn"])
 @router.post("/capture/start", response_model=CaptureStatus)
 def start_capture(capture: CaptureStart | None = None) -> CaptureStatus:
     capture = capture or CaptureStart()
-    return capture_manager.start(capture.name, capture.note)
+    if capture.vin:
+        vehicle = next((item for item in list_vehicles() if item.get("vin") == capture.vin), None)
+        if vehicle is None:
+            raise HTTPException(status_code=422, detail="VIN inconnu du Garage : lis d’abord l’identité du véhicule.")
+        capture.vehicle_profile = vehicle["vehicle_profile"]
+        capture.vehicle_label = " ".join(filter(None, [vehicle.get("manufacturer"), vehicle.get("model")]))
+    if capture.vehicle_profile:
+        profiles = {item["key"]: item for item in KnowledgeBase().vehicle_profiles()}
+        profile = profiles.get(capture.vehicle_profile)
+        if profile is None:
+            raise HTTPException(status_code=422, detail="Profil de communication véhicule inconnu.")
+        if not capture.vehicle_label:
+            capture.vehicle_label = " ".join(filter(None, [profile.get("manufacturer"), profile.get("model")]))
+    return capture_manager.start(
+        capture.name,
+        capture.note,
+        capture.vin,
+        capture.vehicle_profile,
+        capture.vehicle_label,
+    )
 
 
 @router.post("/capture/marker", response_model=CaptureStatus)
@@ -67,6 +90,21 @@ def capture_status() -> CaptureStatus:
 @router.get("/sessions", response_model=list[DiscoverySessionSummary])
 def sessions() -> list[DiscoverySessionSummary]:
     return list_sessions()
+
+
+@router.put("/sessions/{session_id}/vehicle")
+def update_session_vehicle(session_id: str, assignment: SessionVehicleAssignment) -> dict:
+    try:
+        vehicle = next((item for item in list_vehicles() if item.get("vin") == assignment.vin), None)
+        if vehicle is None:
+            raise HTTPException(status_code=404, detail="Véhicule introuvable dans le Garage.")
+        canonical = assignment.model_copy(update={
+            "vehicle_profile": vehicle["vehicle_profile"],
+            "vehicle_label": " ".join(filter(None, [vehicle.get("manufacturer"), vehicle.get("model")])),
+        })
+        return assign_session_vehicle(session_id, canonical)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/replay/{session_id}", response_model=ReplayData)

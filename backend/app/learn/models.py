@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 class CaptureStart(BaseModel):
     name: str = Field(default="Nouvelle découverte", min_length=1, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+    vin: str | None = Field(default=None, min_length=17, max_length=17, pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    vehicle_profile: str | None = Field(default=None, min_length=1, max_length=100)
+    vehicle_label: str | None = Field(default=None, min_length=1, max_length=120)
+
+
+class SessionVehicleAssignment(BaseModel):
+    vin: str = Field(min_length=17, max_length=17, pattern=r"^[A-HJ-NPR-Z0-9]{17}$")
+    vehicle_profile: str = Field(min_length=1, max_length=100)
+    vehicle_label: str = Field(min_length=1, max_length=120)
 
 
 class CaptureMarker(BaseModel):
@@ -41,7 +50,15 @@ class CaptureStatus(BaseModel):
     dual_can: bool = False
     live_can_ready: bool | None = None
     diagnostic_can_ready: bool | None = None
+    hybrid_obd_enabled: bool = False
+    hybrid_obd_ready: bool = False
+    obd_sample_count: int = 0
+    obd_supported_pids: list[int] = Field(default_factory=list)
+    obd_error: str | None = None
     error: str | None = None
+    vin: str | None = None
+    vehicle_profile: str | None = None
+    vehicle_label: str | None = None
 
 
 class CapturedEvent(BaseModel):
@@ -95,6 +112,9 @@ class DiscoverySessionSummary(BaseModel):
     size_bytes: int = 0
     analyzed: bool = False
     error: str | None = None
+    vin: str | None = None
+    vehicle_profile: str | None = None
+    vehicle_label: str | None = None
 
 
 class CorrelationOptions(BaseModel):
@@ -165,7 +185,9 @@ class PassiveCanSignal(BaseModel):
     essential: bool = False
     updated_at_us: int
     raw_hex: str
-    confidence: Literal["validated", "dbc_candidate"] = "dbc_candidate"
+    source: Literal["can", "obd"] = "can"
+    pid: int | None = None
+    confidence: Literal["validated", "dbc_candidate", "standardized"] = "dbc_candidate"
 
 
 class PassiveSensorOverride(BaseModel):
@@ -203,6 +225,10 @@ class PassiveSensorSnapshot(BaseModel):
     signals: list[PassiveCanSignal] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     source_url: str | None = None
+    hybrid_obd_enabled: bool = False
+    hybrid_obd_ready: bool = False
+    obd_sample_count: int = 0
+    obd_error: str | None = None
 
 
 class ByteProfile(BaseModel):
@@ -372,10 +398,13 @@ class ReplayData(BaseModel):
     session_id: str
     name: str
     vehicle: str
+    vin: str | None = None
+    vehicle_profile: str | None = None
     source: str
     source_size_bytes: int
     source_mtime_ns: int
     route_override_mtime_ns: int | None = None
+    vehicle_assignment_mtime_ns: int | None = None
     start_timestamp_us: int
     duration_ms: int
     sample_period_ms: int

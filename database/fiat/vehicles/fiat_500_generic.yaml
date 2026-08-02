@@ -16,7 +16,46 @@ notes:
   - Profil initial consacré à l'identification en lecture seule, pas encore à un scan complet des ECU Fiat.
   - "L'année, la motorisation et le marché doivent être renseignés avant d'étendre le catalogue : 500 type 312, 500X et 500e n'ont pas la même architecture."
   - Le VIN est demandé d'abord par le service OBD-II normalisé Mode 09 PID 02 sur les broches OBD 6/14.
-  - Les paires 7B0/7C0 et 7B0/7C3 viennent d'un catalogue communautaire et sont seulement des replis expérimentaux.
+  - La Fiat 500 type 312 testée répond en EOBD CAN 29 bits sur la paire moteur 18DA10F1/18DAF110.
+  - Les paires 7B0/7C0 et 7B0/7C3 viennent d'un catalogue communautaire ; elles restent désactivées tant que leur routage 6/14 n'est pas validé sur véhicule.
+
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable:
+    - air_fuel_adaptation_reset
+    - crankshaft_relearn
+    - throttle_relearn
+    - oil_service_reset
+    - steering_angle_calibration
+    - window_calibration
+  conditional:
+    - abs_bleed
+    - adaptive_front_lighting_reset
+    - airbag_reset
+    - battery_adaptation
+    - brake_service_reset
+    - coolant_bleed
+    - egr_adaptation
+    - transmission_relearn
+    - immobilizer_relearn
+    - injector_coding
+    - language_change
+    - odometer_module_replacement
+    - occupant_detection_calibration
+    - start_stop_reset
+    - sunroof_calibration
+    - tpms_reset
+    - tire_configuration_reset
+    - transport_mode
+    - proxy_alignment
+  not_applicable:
+    - adblue_reset
+    - air_level_calibration
+    - dpf_regeneration
+    - nox_sensor_reset
+  notes:
+    - Applicabilité établie pour une Fiat 500 type 312 essence 1.2 de 2010 ; les équipements optionnels doivent être détectés avant affichage comme disponibles.
+    - Aucune séquence de maintenance Fiat n'est encore autorisée à l'émission : les adresses Body/Combiné restent à valider sur le véhicule.
 
 networks:
   diagnostic_can:
@@ -26,20 +65,45 @@ networks:
 
 diagnostic:
   identity_scope: identity_only
-  obd_request_id: 0x7E0
-  obd_response_id: 0x7E8
+  obd_request_id: 0x18DB33F1
+  obd_response_id: 0x18DAF110
+  obd_flow_control_id: 0x18DA10F1
+  obd_flow_control_blocksize: 0
+  live_obd:
+    enabled: true
+    interval_ms: 1000
+    # Lectures normalisées Mode 01 uniquement. La liste est volontairement
+    # bornée et reste filtrée une seconde fois par l'allowlist du firmware.
+    pids:
+      - 0x04  # charge moteur
+      - 0x05  # température liquide de refroidissement
+      - 0x0B  # pression collecteur
+      - 0x0C  # régime
+      - 0x0D  # vitesse
+      - 0x0F  # température air admission
+      - 0x11  # papillon
+      - 0x2F  # niveau carburant si exposé
+      - 0x33  # pression barométrique
+      - 0x42  # tension calculateur / batterie
+      - 0x46  # température ambiante si exposée
+      - 0x49  # pédale accélérateur D
+      - 0x4A  # pédale accélérateur E
+      - 0x5C  # température huile si exposée
   vin_strategies:
     - key: obd_mode09_vin
       label: OBD-II moteur · Mode 09 PID 02
       protocol: obd
-      request_id: 0x7E0
-      response_id: 0x7E8
+      request_id: 0x18DB33F1
+      response_id: 0x18DAF110
+      flow_control_id: 0x18DA10F1
+      flow_control_blocksize: 0
       command: 0x0902
       confidence: standardized
       source: https://github.com/OBDb/SAEJ1979
     - key: fiat_body_f190_candidate
       label: Body Computer Fiat · DID F190 expérimental
       protocol: uds
+      enabled: false
       request_id: 0x7B0
       response_id: 0x7C0
       did: 0xF190
@@ -48,6 +112,7 @@ diagnostic:
     - key: fiat_cluster_f190_candidate
       label: Combiné Fiat · DID F190 expérimental
       protocol: uds
+      enabled: false
       request_id: 0x7B0
       response_id: 0x7C3
       did: 0xF190
@@ -57,8 +122,10 @@ diagnostic:
     - key: calibration_id
       name: Identifiant de calibration
       protocol: obd
-      request_id: 0x7E0
-      response_id: 0x7E8
+      request_id: 0x18DB33F1
+      response_id: 0x18DAF110
+      flow_control_id: 0x18DA10F1
+      flow_control_blocksize: 0
       pid: 0x04
       codec: indexed_ascii
       confidence: standardized
@@ -66,8 +133,10 @@ diagnostic:
     - key: calibration_verification_number
       name: Numéro de vérification de calibration (CVN)
       protocol: obd
-      request_id: 0x7E0
-      response_id: 0x7E8
+      request_id: 0x18DB33F1
+      response_id: 0x18DAF110
+      flow_control_id: 0x18DA10F1
+      flow_control_blocksize: 0
       pid: 0x06
       codec: indexed_hex
       confidence: standardized
@@ -75,8 +144,10 @@ diagnostic:
     - key: ecu_name
       name: Nom du calculateur OBD
       protocol: obd
-      request_id: 0x7E0
-      response_id: 0x7E8
+      request_id: 0x18DB33F1
+      response_id: 0x18DAF110
+      flow_control_id: 0x18DA10F1
+      flow_control_blocksize: 0
       pid: 0x0A
       codec: indexed_ascii
       confidence: standardized
@@ -86,10 +157,10 @@ ecus:
   - key: engine
     name: Calculateur moteur / OBD-II
     family: INJ_GENERIC
-    request_id: 0x7E0
-    response_id: 0x7E8
+    request_id: 0x18DA10F1
+    response_id: 0x18DAF110
     protocol: obd2
-    confidence: standardized_address_candidate
+    confidence: validated_on_vehicle
     access: read_only
     network: diagnostic_can
     optional: false

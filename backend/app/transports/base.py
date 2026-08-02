@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import contextmanager
+from typing import Iterator
 from app.models import CanFrame
 
 
@@ -17,6 +19,15 @@ class Transport(ABC):
         except Exception:
             # La journalisation ne doit jamais interrompre un échange diagnostic.
             pass
+
+    @contextmanager
+    def diagnostic_transaction(self) -> Iterator[None]:
+        """Reserve the diagnostic request/response channel for one ISO-TP session.
+
+        Dedicated transports do not need additional arbitration. Shared gateways
+        override this hook so two clients cannot consume each other's replies.
+        """
+        yield
 
     @abstractmethod
     def open(self) -> None:

@@ -17,17 +17,29 @@ def build_transport(
     safety_profile: TxSafetyProfile = "diagnostic_read_only",
     receive_buses: Iterable[str] | None = ("default", "diagnostic"),
     require_diagnostic_can: bool = True,
+    vehicle_profile: str | None = None,
 ) -> Transport:
     if settings.transport == "virtual":
+        knowledge = KnowledgeBase()
         response_ids = {
             ecu.request_id: ecu.response_id
-            for ecu in KnowledgeBase().ecus()
+            for ecu in knowledge.ecus(vehicle_profile)
             if ecu.request_id is not None and ecu.response_id is not None
         }
+        diagnostic = knowledge.vehicle(vehicle_profile).get("diagnostic", {})
+        obd_request_id = diagnostic.get("obd_request_id")
+        obd_response_id = diagnostic.get("obd_response_id")
+        flow_control_ids: dict[int, int] = {}
+        if obd_request_id is not None and obd_response_id is not None:
+            request_id = int(str(obd_request_id), 0)
+            response_ids[request_id] = int(str(obd_response_id), 0)
+            if diagnostic.get("obd_flow_control_id") is not None:
+                flow_control_ids[request_id] = int(str(diagnostic["obd_flow_control_id"]), 0)
         transport = VirtualVehicleTransport(
             read_only=settings.read_only,
             maintenance=settings.dtc_clear_enabled,
             response_ids=response_ids,
+            flow_control_ids=flow_control_ids,
             safety_profile=safety_profile,
         )
     elif settings.transport == "esp32_serial":

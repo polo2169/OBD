@@ -1,0 +1,18 @@
+{
+  "name": "Peugeot 308 T9 réelle · référence du 2 août 2026",
+  "vehicle_profile": "peugeot_308_t9_2018",
+  "captured_from_scan": "scan-20260802T152802400960Z-da1fb35d",
+  "purpose": "Détecter une régression des 8 ECU, des réponses de session et de la mémoire DTC brute.",
+  "detected_count": 8,
+  "detected_ecus": {
+    "engine": {"request_id": 1704, "response_id": 1672, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 0, "dtc_fingerprint_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    "gearbox": {"request_id": 1705, "response_id": 1673, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 0, "dtc_fingerprint_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    "abs_esp": {"request_id": 1709, "response_id": 1677, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 52, "dtc_fingerprint_sha256": "9b65430b1ffd8ebd67aa3b0573e3a195ced591d2e2abcd45d6c141bd6819c089"},
+    "bsi": {"request_id": 1874, "response_id": 1618, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 71, "dtc_fingerprint_sha256": "c853b1fe5f5b0724613bfa0447c80193e64706d46c93ef95fcd70fe463223763"},
+    "instrument_cluster": {"request_id": 1887, "response_id": 1631, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 1, "dtc_fingerprint_sha256": "05938dd1a387c0f8b0d9815ba5a93476071fe801fede1a6eaa666c705e68b0f5"},
+    "climate_control": {"request_id": 1901, "response_id": 1645, "probe_method": "1001", "probe_response_hex": "500100C80019", "active_session": 1, "dtc_count": 0, "dtc_fingerprint_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+    "front_camera": {"request_id": 1866, "response_id": 1610, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 2, "dtc_fingerprint_sha256": "33d71f79c978bbd86274da7c20c299a36f33f8a6ec2d23579ceddc549329288d"},
+    "telematics": {"request_id": 1892, "response_id": 1636, "probe_method": "1001", "probe_response_hex": "500100C80014", "active_session": 1, "dtc_count": 6, "dtc_fingerprint_sha256": "6ba10d7d4b857f3f152c8535a7acaf5799d0cf8e532c7660462fac9815c64259"}
+  },
+  "dtc_summary": {"active": 22, "historical": 59, "not_tested": 51, "inactive": 0, "total": 132, "affected_ecus": 5}
+}
