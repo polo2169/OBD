@@ -9,6 +9,7 @@ from app.database import KnowledgeBase
 from app.learn.analyzer import analyze_behavior, analyze_session, list_sessions
 from app.learn.capture import capture_manager
 from app.learn.exporter import export_proposals
+from app.learn.manual_validation import clear_manual_validation, set_manual_validation
 from app.learn.models import (
     AnalysisReport,
     BehavioralAnalysisReport,
@@ -18,6 +19,8 @@ from app.learn.models import (
     CaptureStatus,
     CorrelationOptions,
     DiscoverySessionSummary,
+    ManualSignalValidation,
+    ManualSignalValidationRequest,
     OpendbcCatalog,
     PassiveSensorOverride,
     PassiveSensorSnapshot,
@@ -147,6 +150,16 @@ def replay_validation(session_id: str, force: bool = Query(default=False)) -> Re
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/signals/{key}/validation", response_model=ManualSignalValidation)
+def set_signal_manual_validation(key: str, request: ManualSignalValidationRequest) -> ManualSignalValidation:
+    return set_manual_validation(key, request.validated, request.note, request.session_id)
+
+
+@router.delete("/signals/{key}/validation")
+def clear_signal_manual_validation(key: str) -> dict:
+    return {"key": key, "deleted": clear_manual_validation(key)}
 
 
 @router.get("/opendbc/catalog", response_model=OpendbcCatalog)

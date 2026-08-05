@@ -3,7 +3,7 @@ model: "500"
 platform: 312 / génération à confirmer
 year: 2007+
 architecture: Fiat CAN générique
-confidence: partial_community_catalog
+confidence: partial_vehicle_validated_catalog
 sources:
   ecu_addresses:
     url: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L354-L357
@@ -22,6 +22,9 @@ sources:
     url: https://github.com/P1kachu/talking-with-cars/blob/master/notes/fiat-500.txt
     vehicle: Fiat 500C 1.2 8V 69 ch 2010
     confidence: community_candidate_cross_checked_with_vehicle_capture
+  krzysztof_fiat_can_project:
+    description: Projet Arduino Mega2560 à deux interfaces CAN, recoupé avec les identifiants du catalogue Fiat 500
+    confidence: community_cross_checked
   fiat_engine_broadcast_reverse_engineering:
     url: https://fiatpunto.com.pl/topic59422-50.html
     vehicle_family: Fiat 29-bit CAN / Grande Punto
@@ -33,7 +36,7 @@ notes:
   - La Fiat 500 type 312 testée répond en EOBD CAN 29 bits sur la paire moteur 18DA10F1/18DAF110.
   - "Les trames 0218A006, 0628A001, 0810A000, 0A18A000, 0C1CA000 et 0C28A000 de la source ouverte sont aussi présentes dans la capture du VIN ZFA31200000504700. Leur décodage reste candidat jusqu'à une action annotée ou un recoupement indépendant."
   - "Confirmations conducteur pour ZFA31200000504700 : régime moteur 0618A001, pédale de frein 0810A000 et témoin de porte conducteur 0A18A000. Le niveau brut de freinage, le frein de stationnement et les autres bits de ces trames restent candidats."
-  - "Sur 0618A001, l'octet 7 est conservé comme position de papillon candidate (0..255 vers 0..100 %) et l'octet 4 comme charge/pression d'air brute candidate. Ils doivent être comparés respectivement aux PID EOBD 01/11 et 01/0B avant validation."
+  - "Sur 0618A001, le régime moteur est validé sur véhicule. L'octet 7 reste une position de papillon recoupée mais candidate, et l'octet 4 une charge/pression d'air brute candidate ; comparaison requise avec les PID EOBD 01/11 et 01/0B."
   - Les paires 7B0/7C0 et 7B0/7C3 viennent d'un catalogue communautaire ; elles restent désactivées tant que leur routage 6/14 n'est pas validé sur véhicule.
 
 maintenance:
@@ -221,3 +224,274 @@ ecus:
     network: diagnostic_can
     optional: false
     source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L356-L357
+
+broadcast_can:
+  scope: passive_read_only
+  validation_policy: >-
+    Un signal passe à validated_on_vehicle uniquement lorsqu'il est confirmé
+    sur la capture du véhicule et recoupé avec une source indépendante ou une
+    action conducteur explicitement annotée. La présence d'une trame seule ne
+    suffit pas à valider son décodage.
+  networks:
+    body_can_slow:
+      bitrate: 50000
+      confidence: community_vehicle_cross_check
+      note: Réseau lent utilisé par le projet communautaire Fiat 500.
+    powertrain_can:
+      bitrate: 500000
+      confidence: community_vehicle_cross_check
+      note: Réseau moteur rapide utilisé par le projet communautaire Fiat 500.
+  messages:
+    - id: 0x0618A001
+      name: engine_broadcast
+      network: powertrain_can
+      format: extended_29bit
+      dlc: 8
+      status: partially_validated
+      confidence: validated_on_vehicle
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+        - fiat_engine_broadcast_reverse_engineering
+      signals:
+        - key: engine_speed
+          name: Régime moteur
+          status: validated_on_vehicle
+          confidence: validated_driver_action
+          note: Présence et corrélation avec le régime moteur confirmées sur le véhicule. Le codage exact doit rester dans le décodeur validé associé.
+        - key: intake_air_load_or_pressure_raw
+          name: Charge ou pression d'air admission brute
+          byte: 4
+          bit_offset: 0
+          bit_length: 8
+          codec: unsigned_raw
+          status: candidate_cross_checked
+          confidence: community_candidate_cross_checked_with_vehicle_capture
+          note: Valeur brute recoupée, mais la grandeur physique exacte et l'échelle doivent encore être comparées au PID OBD Mode 01 PID 0B.
+        - key: throttle_position_raw
+          name: Position papillon brute
+          byte: 7
+          bit_offset: 0
+          bit_length: 8
+          codec: linear
+          factor: 0.3921568627
+          offset: 0
+          unit: "%"
+          range: [0, 100]
+          status: candidate_cross_checked
+          confidence: community_candidate_cross_checked_with_vehicle_capture
+          note: Conversion communautaire 0..255 vers 0..100 %. À comparer au PID OBD Mode 01 PID 11 avant validation complète.
+
+    - id: 0x0810A000
+      name: braking_status
+      network: powertrain_can
+      format: extended_29bit
+      dlc: 8
+      status: partially_validated
+      confidence: validated_on_vehicle
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+      signals:
+        - key: brake_pedal_pressed
+          name: Pédale de frein
+          status: validated_on_vehicle
+          confidence: validated_driver_action
+          note: L'information de pédale de frein est confirmée. Le bit, la polarité et les autres champs de la trame restent à isoler.
+        - key: braking_level_raw
+          name: Niveau de freinage brut
+          status: candidate
+          confidence: low
+        - key: parking_brake
+          name: Frein de stationnement
+          status: candidate
+          confidence: low
+
+    - id: 0x0A18A000
+      name: body_status
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: partially_validated
+      confidence: validated_on_vehicle
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+      signals:
+        - key: driver_door_open_warning
+          name: Témoin de porte conducteur ouverte
+          status: validated_on_vehicle
+          confidence: validated_driver_action
+          note: Fonction confirmée, mais le bit et la polarité exacts restent à formaliser.
+        - key: other_door_states
+          name: États des autres ouvrants
+          status: candidate
+          confidence: low
+
+    - id: 0x04294000
+      name: vehicle_speed_broadcast
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: validated_from_independent_community_code
+      confidence: community_cross_checked
+      sources:
+        - fiat_500_can_reverse_engineering
+        - krzysztof_fiat_can_project
+      signals:
+        - key: vehicle_speed_raw
+          name: Vitesse véhicule brute
+          byte_start: 0
+          byte_length: 2
+          byte_order: big_endian_candidate
+          codec: unsigned_raw
+          status: validated_signal_presence
+          confidence: community_cross_checked
+          note: Les octets 0 et 1 varient avec la vitesse. L'échelle physique exacte n'est pas inscrite ici faute de formule indépendamment validée.
+
+    - id: 0x02214000
+      name: direction_indicator_status
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: validated_from_independent_community_code
+      confidence: community_cross_checked
+      sources:
+        - fiat_500_can_reverse_engineering
+        - krzysztof_fiat_can_project
+      signals:
+        - key: direction_indicator_state
+          name: État clignotants et feux de détresse
+          byte: 2
+          bit_offset: 0
+          bit_length: 8
+          codec: enum
+          values:
+            0x00: off
+            0x20: right_indicator
+            0x40: left_indicator
+            0x60: hazard_lights
+          status: validated_from_community_cross_check
+          confidence: high
+
+    - id: 0x06214000
+      name: door_and_key_status
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: validated_from_independent_community_code
+      confidence: community_cross_checked
+      sources:
+        - fiat_500_can_reverse_engineering
+        - krzysztof_fiat_can_project
+      signals:
+        - key: front_door_state_raw
+          name: État brut des portes avant
+          byte: 1
+          bit_offset: 0
+          bit_length: 8
+          codec: enum
+          values:
+            0x00: both_closed
+            0x04: one_front_door_open
+            0x08: other_front_door_open
+            0x0C: both_front_doors_open
+          status: validated_from_community_cross_check
+          confidence: high
+          note: L'attribution conducteur/passager entre 0x04 et 0x08 doit rester à confirmer sur ce véhicule.
+        - key: key_present_or_ignition_state
+          name: Présence clé ou état contact
+          byte: 2
+          bit_offset: 0
+          bit_length: 8
+          codec: boolean_from_value
+          false_value: 0x18
+          true_rule: value_not_equal_to_false_value
+          status: validated_from_community_cross_check
+          confidence: high
+          note: La source décrit ce champ comme clé présente dans le contact ; ne pas l'assimiler sans test à un état d'allumage complet.
+
+    - id: 0x06314003
+      name: dashboard_illumination_and_seatbelt_candidate
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: partially_validated
+      confidence: community_cross_checked
+      sources:
+        - fiat_500_can_reverse_engineering
+        - krzysztof_fiat_can_project
+      signals:
+        - key: dashboard_brightness
+          name: Niveau de luminosité du combiné
+          byte: 2
+          bit_offset: 4
+          bit_length: 3
+          codec: enum
+          values:
+            0x0: level_0
+            0x1: level_1
+            0x2: level_2
+            0x3: level_3
+            0x4: level_4
+            0x5: level_5
+            0x6: level_6
+            0x7: level_7
+          status: validated_from_community_cross_check
+          confidence: high
+        - key: driver_seatbelt_candidate
+          name: État ceinture conducteur candidat
+          byte: 4
+          status: candidate
+          confidence: low
+          note: Décodage commenté dans la source et non retenu comme fiable hors contact.
+
+    - id: 0x04214001
+      name: engine_running_candidate
+      network: body_can_slow
+      format: extended_29bit
+      dlc: 8
+      status: candidate
+      confidence: low
+      sources:
+        - krzysztof_fiat_can_project
+      signals:
+        - key: engine_running
+          name: Moteur en fonctionnement
+          byte: 6
+          codec: nonzero_boolean
+          status: candidate
+          confidence: low
+          note: Présent mais inutilisé et commenté dans le code communautaire.
+
+    - id: 0x0218A006
+      name: unknown_0218A006
+      status: observed_candidate
+      confidence: capture_presence_only
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+
+    - id: 0x0628A001
+      name: unknown_0628A001
+      status: observed_candidate
+      confidence: capture_presence_only
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+
+    - id: 0x0C1CA000
+      name: unknown_0C1CA000
+      status: observed_candidate
+      confidence: capture_presence_only
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering
+
+    - id: 0x0C28A000
+      name: unknown_0C28A000
+      status: observed_candidate
+      confidence: capture_presence_only
+      sources:
+        - vehicle_capture_ZFA31200000504700
+        - fiat_500_can_reverse_engineering

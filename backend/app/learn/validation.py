@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from statistics import median
+from statistics import median, pstdev
 from typing import Any
 import json
 import math
 
 from app.config import settings
+from app.learn.manual_validation import load_manual_validations
 from app.learn.models import ReplayData, ReplayValidation, SignalValidation
 from app.learn.replay import prepare_replay
 
 
-VALIDATION_VERSION = 4
+VALIDATION_VERSION = 7
 
 LABELS = {
     "speed_kph": "Vitesse véhicule",
@@ -48,6 +49,9 @@ LABELS = {
     "relative_accelerator_position_pct": "Position relative de l’accélérateur",
     "engine_torque_nm": "Couple moteur",
     "idle_setpoint_rpm": "Consigne de ralenti",
+    "cruise_xvv_state": "Régulateur · état brut (0x208)",
+    "cruise_active_candidate": "Régulateur actif",
+    "cruise_setpoint_kph": "Régulateur · consigne de vitesse",
     "fuel_consumption_candidate_mm3": "Consommation carburant passive candidate",
     "virtual_fuel_consumption_candidate_mm3": "Consommation carburant virtuelle candidate",
     "current_gear": "Rapport engagé",
@@ -79,6 +83,12 @@ LABELS = {
     "wheel_front_right_kph": "Vitesse roue avant droite",
     "wheel_rear_left_kph": "Vitesse roue arrière gauche",
     "wheel_rear_right_kph": "Vitesse roue arrière droite",
+    "latitude": "Latitude GPS",
+    "longitude": "Longitude GPS",
+    "gps_accuracy_m": "Précision GPS déclarée",
+    "gps_altitude_m": "Altitude GPS",
+    "gps_heading_deg": "Cap GPS",
+    "gps_speed_kph": "Vitesse GPS",
 }
 
 PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
@@ -114,6 +124,8 @@ PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
     "relative_accelerator_position_pct": (0, 100),
     "engine_torque_nm": (-600, 800),
     "idle_setpoint_rpm": (600, 1_200),
+    "cruise_xvv_state": (0, 3),
+    "cruise_setpoint_kph": (0, 250),
     "longitudinal_accel_ms2": (-15, 15),
     "lateral_accel_ms2": (-15, 15),
     "yaw_rate_deg_s": (-100, 100),
@@ -132,6 +144,12 @@ PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
     "wheel_front_right_kph": (0, 260),
     "wheel_rear_left_kph": (0, 260),
     "wheel_rear_right_kph": (0, 260),
+    "latitude": (-90, 90),
+    "longitude": (-180, 180),
+    "gps_accuracy_m": (0, 100_000),
+    "gps_altitude_m": (-500, 9_000),
+    "gps_heading_deg": (0, 360),
+    "gps_speed_kph": (0, 260),
 }
 
 EXPECTED_UNAVAILABLE = {
@@ -592,6 +610,214 @@ def _apply_gear_checks(replay: ReplayData, by_key: dict[str, SignalValidation]) 
                 result.status = "validated" if agreement >= 0.9 else "plausible"
 
 
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_m = 6_371_000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return 2 * earth_radius_m * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _apply_gps_checks(replay: ReplayData, by_key: dict[str, SignalValidation]) -> None:
+    """Cross-check the GPS track and speed against the independent CAN reconstruction.
+
+    The point isn't to validate GPS as a technology, but to confirm that *this*
+    capture's position fusion (browser GPS, dead reckoning, or a blend of both)
+    agrees with the wheel/yaw-based distance and speed already used elsewhere.
+    """
+    fixes = [
+        point for point in replay.points
+        if _is_number(point.latitude) and _is_number(point.longitude)
+    ]
+    if len(fixes) >= 5:
+        track_m = sum(
+            _haversine_m(a.latitude, a.longitude, b.latitude, b.longitude)
+            for a, b in zip(fixes, fixes[1:])
+        )
+        can_distance_m = replay.distance_km * 1000
+        evidence = (
+            f"Trace GPS ({len(fixes)} points) : {track_m / 1000:.2f} km contre "
+            f"{replay.distance_km:.2f} km reconstruits par le CAN (roues/lacet)."
+        )
+        coherent: bool | None = None
+        if can_distance_m > 200:
+            relative_error = abs(track_m - can_distance_m) / can_distance_m
+            evidence += f" Écart relatif {relative_error * 100:.0f}%."
+            coherent = relative_error <= 0.20
+
+        accuracies = [point.gps_accuracy_m for point in replay.points if point.gps_accuracy_m is not None]
+        median_accuracy = median(accuracies) if accuracies else None
+        if median_accuracy is not None:
+            evidence += f" Précision déclarée médiane {median_accuracy:.0f} m."
+
+        for key in ("latitude", "longitude"):
+            result = by_key.get(key)
+            if result is None:
+                continue
+            result.evidence.append(evidence)
+            if result.status == "suspicious":
+                continue
+            if coherent is False or (median_accuracy is not None and median_accuracy > 100):
+                result.status = "suspicious"
+            elif coherent is True and (median_accuracy is None or median_accuracy <= 50):
+                result.status = "validated"
+            else:
+                result.status = "plausible"
+
+    speed_pairs = [
+        (float(point.gps_speed_kph), float(point.speed_kph))
+        for point in replay.points
+        if _is_number(point.gps_speed_kph) and _is_number(point.speed_kph)
+    ]
+    speed_correlation = _correlation(speed_pairs)
+    if speed_correlation is not None:
+        result = by_key.get("gps_speed_kph")
+        if result:
+            result.evidence.append(
+                f"Vitesse GPS comparée à la vitesse CAN sur {len(speed_pairs)} points : "
+                f"corrélation {speed_correlation:.3f}."
+            )
+            if result.status != "suspicious":
+                result.status = "validated" if speed_correlation >= 0.9 else "plausible"
+
+
+def _apply_cruise_checks(replay: ReplayData, by_key: dict[str, SignalValidation]) -> None:
+    result = by_key.get("cruise_xvv_state")
+    if result is None:
+        return
+
+    active_pedal = [
+        float(point.accelerator_pct)
+        for point in replay.points
+        if point.cruise_xvv_state == 2 and _is_number(point.accelerator_pct)
+    ]
+    baseline_pedal = [
+        float(point.accelerator_pct)
+        for point in replay.points
+        if point.cruise_xvv_state == 0
+        and not point.brake_active
+        and (point.speed_kph or 0) > 30
+        and _is_number(point.accelerator_pct)
+    ]
+    active_speed = [
+        float(point.speed_kph)
+        for point in replay.points
+        if point.cruise_xvv_state == 2 and _is_number(point.speed_kph)
+    ]
+    baseline_speed = [
+        float(point.speed_kph)
+        for point in replay.points
+        if point.cruise_xvv_state == 0
+        and not point.brake_active
+        and (point.speed_kph or 0) > 30
+        and _is_number(point.speed_kph)
+    ]
+
+    if len(active_pedal) < 20 or len(baseline_pedal) < 20:
+        result.evidence.append(
+            f"Échantillon insuffisant pour comparer état actif ({len(active_pedal)} points) et "
+            f"conduite normale ({len(baseline_pedal)} points) ; corrélation à confirmer sur une capture plus longue."
+        )
+        return
+
+    active_pedal_median = median(active_pedal)
+    baseline_pedal_median = median(baseline_pedal)
+    active_speed_std = pstdev(active_speed) if len(active_speed) > 1 else 0.0
+    baseline_speed_std = pstdev(baseline_speed) if len(baseline_speed) > 1 else 0.0
+
+    evidence = (
+        f"Pédale médiane {active_pedal_median:.1f}% pendant l'état actif contre {baseline_pedal_median:.1f}% "
+        f"en conduite normale à vitesse comparable ({len(active_pedal)}/{len(baseline_pedal)} points) ; "
+        f"écart-type de vitesse {active_speed_std:.2f}/{baseline_speed_std:.2f} km/h."
+    )
+    pedal_released = active_pedal_median <= baseline_pedal_median - 10
+    speed_held = active_speed_std <= baseline_speed_std + 1.5
+
+    for key in ("cruise_xvv_state", "cruise_active_candidate"):
+        target = by_key.get(key)
+        if target is None:
+            continue
+        target.evidence.append(evidence)
+        if target.status != "suspicious":
+            target.status = "plausible" if pedal_released and speed_held else "candidate"
+
+
+def _apply_cruise_setpoint_check(replay: ReplayData, by_key: dict[str, SignalValidation]) -> None:
+    result = by_key.get("cruise_setpoint_kph")
+    if result is None:
+        return
+
+    engage_errors: list[float] = []
+    previous_state: int | None = None
+    for point in replay.points:
+        state = point.cruise_xvv_state
+        if (
+            state == 2
+            and previous_state != 2
+            and _is_number(point.speed_kph)
+            and _is_number(point.cruise_setpoint_kph)
+        ):
+            engage_errors.append(abs(float(point.cruise_setpoint_kph) - float(point.speed_kph)))
+        previous_state = state
+
+    if not engage_errors:
+        result.evidence.append(
+            "Aucun engagement complet observé dans cette capture pour comparer la consigne "
+            "à la vitesse réelle au moment de l'activation."
+        )
+        return
+
+    mean_error = sum(engage_errors) / len(engage_errors)
+    evidence = (
+        f"Écart moyen entre consigne et vitesse réelle à l'instant de l'engagement : "
+        f"{mean_error:.1f} km/h sur {len(engage_errors)} engagement(s)."
+    )
+    result.evidence.append(evidence)
+    if result.status != "suspicious":
+        result.status = "plausible" if mean_error <= 8 else "candidate"
+
+
+def _apply_manual_overrides(result: ReplayValidation) -> ReplayValidation:
+    """Overlay human-confirmed/rejected signals on top of the cached, automated report.
+
+    Manual records live in their own small store (see manual_validation.py) so a
+    confirmation made from the UI takes effect immediately without invalidating
+    or recomputing the versioned, cached statistical report.
+    """
+    manual = load_manual_validations()
+    if not manual:
+        return result
+
+    signals = [signal.model_copy(deep=True) for signal in result.signals]
+    changed = False
+    for signal in signals:
+        record = manual.get(signal.key)
+        if record is None:
+            continue
+        changed = True
+        signal.manual_validation = record.validated
+        note_suffix = f" « {record.note} »" if record.note else ""
+        if record.validated:
+            signal.status = "validated"
+            signal.evidence.append(f"Confirmé manuellement le {record.validated_at}{note_suffix}.")
+        else:
+            signal.status = "suspicious"
+            signal.evidence.append(f"Marqué invalide manuellement le {record.validated_at}{note_suffix}.")
+
+    if not changed:
+        return result
+
+    order = {"suspicious": 0, "candidate": 1, "plausible": 2, "validated": 3, "unavailable": 4}
+    signals.sort(key=lambda item: (order[item.status], item.label.casefold()))
+    return result.model_copy(update={
+        "signals": signals,
+        "validated_count": sum(signal.status == "validated" for signal in signals),
+        "plausible_count": sum(signal.status == "plausible" for signal in signals),
+        "suspicious_count": sum(signal.status == "suspicious" for signal in signals),
+    })
+
+
 def validate_replay(session_id: str, force: bool = False) -> ReplayValidation:
     source = _source_path(session_id)
     output = source.with_suffix(".validation.json")
@@ -599,13 +825,13 @@ def validate_replay(session_id: str, force: bool = False) -> ReplayValidation:
         try:
             cached = ReplayValidation.model_validate_json(output.read_text(encoding="utf-8"))
             if cached.version == VALIDATION_VERSION:
-                return cached
+                return _apply_manual_overrides(cached)
         except (OSError, ValueError, json.JSONDecodeError):
             pass
 
     replay = prepare_replay(session_id, force=force)
     keys = sorted(set(replay.available_fields) - {
-        "x_m", "y_m", "heading_deg", "distance_m", "latitude", "longitude",
+        "x_m", "y_m", "heading_deg", "distance_m",
     })
     signals = [_base_validation(replay, key) for key in keys]
     existing_keys = {signal.key for signal in signals}
@@ -624,6 +850,9 @@ def validate_replay(session_id: str, force: bool = False) -> ReplayValidation:
     _apply_fuel_checks(replay, by_key)
     _apply_wheel_checks(replay, by_key)
     _apply_gear_checks(replay, by_key)
+    _apply_gps_checks(replay, by_key)
+    _apply_cruise_checks(replay, by_key)
+    _apply_cruise_setpoint_check(replay, by_key)
     order = {"suspicious": 0, "candidate": 1, "plausible": 2, "validated": 3, "unavailable": 4}
     signals.sort(key=lambda item: (order[item.status], item.label.casefold()))
     result = ReplayValidation(
@@ -645,4 +874,4 @@ def validate_replay(session_id: str, force: bool = False) -> ReplayValidation:
     temporary = output.with_suffix(output.suffix + ".tmp")
     temporary.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     temporary.replace(output)
-    return result
+    return _apply_manual_overrides(result)

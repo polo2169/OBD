@@ -110,6 +110,43 @@ type DtcValue = {
   actionable: boolean;
 };
 
+type DtcSnapshotResult = {
+  ecu_key: string;
+  code: string;
+  dtc_raw_hex: string;
+  record_number_requested: number;
+  status?: number | null;
+  status_hex?: string | null;
+  status_labels: string[];
+  snapshot_record_number?: number | null;
+  identifier_count?: number | null;
+  raw_data_hex?: string | null;
+  request_hex: string;
+  response_hex?: string | null;
+  nrc?: number | null;
+  nrc_name?: string | null;
+  error?: string | null;
+};
+
+type DidSweepHit = {
+  did: number;
+  outcome: "positive" | "negative_response";
+  raw_hex?: string | null;
+  response_hex?: string | null;
+  nrc?: number | null;
+  nrc_name?: string | null;
+};
+
+type DidSweepResult = {
+  ecu_key: string;
+  did_start: number;
+  did_end: number;
+  scanned_count: number;
+  hits: DidSweepHit[];
+  unsupported_count: number;
+  timeout_count: number;
+};
+
 type ObservedDtc = {
   code: string;
   ecu_key?: string | null;
@@ -150,6 +187,9 @@ type Ecu = {
   probe_response_hex?: string | null;
   probe_attempts?: ProbeAttempt[];
   error?: string | null;
+  did_sweep_hits?: DidSweepHit[];
+  did_sweep_range?: string | null;
+  did_sweep_error?: string | null;
 };
 
 type DebugSummary = {
@@ -795,6 +835,17 @@ type ReplaySample = {
   acc_mode?: number | null;
   acc_requested?: boolean | null;
   speed_setpoint_kph?: number | null;
+  cruise_probable?: boolean | null;
+  cruise_confidence?: number | null;
+  cruise_detection_state?: string | null;
+  cruise_detection_reason?: string | null;
+  cruise_switch_candidate?: boolean | null;
+  cruise_xvv_state?: number | null;
+  cruise_active_candidate?: boolean | null;
+  cruise_setpoint_kph?: number | null;
+  front_sensor_b0_raw?: number | null;
+  front_sensor_b2_raw?: number | null;
+  front_sensor_b4_raw?: number | null;
   wheel_front_left_kph?: number | null;
   wheel_front_right_kph?: number | null;
   wheel_rear_left_kph?: number | null;
@@ -835,6 +886,8 @@ type ReplayData = {
   max_speed_kph: number;
   average_moving_speed_kph: number;
   distance_km: number;
+  estimated_fuel_consumption_l_100km?: number | null;
+  fuel_consumption_note?: string | null;
   gps_available: boolean;
   gps_point_count: number;
   route_method: string;
@@ -867,6 +920,7 @@ type SignalValidation = {
   maximum?: number | null;
   transitions: number;
   evidence: string[];
+  manual_validation?: boolean | null;
 };
 
 type ReplayValidation = {
@@ -900,6 +954,7 @@ type ReplayGaugeDefinition = {
   note: string;
   status?: boolean;
   rejected?: boolean;
+  experimental?: boolean;
 };
 
 const replayGaugeCatalog: ReplayGaugeDefinition[] = [
@@ -947,6 +1002,12 @@ const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "accelerator_pct", label: "Accélérateur · voie D", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#62e39a", note: "Position de pédale; sur la Fiat, voie normalisée EOBD 01/49." },
   { key: "accelerator_secondary_pct", label: "Accélérateur · voie E", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#8ce9b4", note: "Seconde voie redondante de la pédale EOBD 01/4A." },
   { key: "relative_accelerator_position_pct", label: "Accélérateur relatif", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#b8efc9", note: "Position relative de l'accélérateur EOBD 01/5A." },
+  { key: "cruise_xvv_state", label: "Régulateur · état brut", unit: "code", minimum: 0, maximum: 3, color: "#f2cc60", note: "0x208 Dyn_CMM, octet 4 bits 2-3 : 0 inactif, 2 actif, 3 transitoire (bascule). Candidat confirmé par corrélation sur plusieurs essais.", experimental: true },
+  { key: "cruise_active_candidate", label: "Régulateur", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "Actif quand cruise_xvv_state = 2.", status: true, experimental: true },
+  { key: "cruise_setpoint_kph", label: "Régulateur · consigne", unit: "km/h", minimum: 0, maximum: 150, precision: 0, color: "#89d7ff", note: "0x50E Dat_CLIM.P219_Com_xPrpReqRaw (255 = inactif). Confirmé sur 5 engagements, 4 essais indépendants.", experimental: true },
+  { key: "front_sensor_b0_raw", label: "Radar avant · octet 0", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 0, non documenté. Candidat très précoce, non validé.", experimental: true },
+  { key: "front_sensor_b2_raw", label: "Radar avant · octet 2", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 2, non documenté. Candidat très précoce, non validé.", experimental: true },
+  { key: "front_sensor_b4_raw", label: "Radar avant · octet 4", unit: "brut", minimum: 0, maximum: 32, color: "#ff8ec7", note: "0x489 octet 4, non documenté. Bascule par à-coups dont la cadence semble suivre la proximité sur deux essais dédiés ; à confirmer.", experimental: true },
   { key: "longitudinal_accel_ms2", label: "Accélération longitudinale", unit: "m/s²", minimum: -4, maximum: 4, precision: 2, color: "#72c6ff", note: "Accélération calculée à partir des roues." },
   { key: "lateral_accel_ms2", label: "Accélération latérale", unit: "m/s²", minimum: -5, maximum: 5, precision: 2, color: "#ff8ec7", note: "Trame 0x3CD, échelle 0,05 m/s² validée par corrélation avec les quatre roues et le volant." },
   { key: "yaw_rate_deg_s", label: "Vitesse de lacet", unit: "°/s", minimum: -40, maximum: 40, precision: 1, color: "#63e6e2", note: "Trame 0x3CD, échelle 0,1°/s validée par deux références CAN indépendantes." },
@@ -998,6 +1059,18 @@ function laneAssistStatusLabel(status?: number | null): string {
   return typeof status === "number"
     ? laneAssistStatusLabels[status] ?? `État inconnu ${status}`
     : "État absent";
+}
+
+const cruiseXvvStateLabels: Record<number, string> = {
+  0: "Inactif",
+  2: "Actif",
+  3: "Transitoire",
+};
+
+function cruiseXvvStateLabel(state?: number | null): string {
+  return typeof state === "number"
+    ? cruiseXvvStateLabels[state] ?? `État inconnu ${state}`
+    : "Signal absent";
 }
 
 type ReplayGraphGeometry = {
@@ -1391,6 +1464,72 @@ function replayGraphGeometry(replay: ReplayData, definition: ReplayGaugeDefiniti
   return { path: commands.join(" "), minimum, maximum };
 }
 
+function ExperimentalSignalsPanel({
+  point,
+  validation,
+  onValidate,
+  onClear,
+  busyKey,
+}: {
+  point: ReplaySample | null;
+  validation?: ReplayValidation | null;
+  onValidate?: (key: string, validated: boolean) => void;
+  onClear?: (key: string) => void;
+  busyKey?: string;
+}) {
+  const definitions = replayGaugeCatalog.filter((definition) => definition.experimental);
+  if (!point) return null;
+  return (
+    <section className="panel experimental-signals-panel">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">En cours de validation</span>
+          <h2>Signaux expérimentaux</h2>
+          <p>Candidats trouvés par corrélation, pas encore confirmés officiellement.{onValidate ? " Valeur en direct et confirmation manuelle ci-dessous." : " Valeur en direct pendant le test."}</p>
+        </div>
+      </div>
+      <div className="experimental-signal-list">
+        {definitions.map((definition) => {
+          const raw = point[definition.key];
+          const value = typeof raw === "number"
+            ? `${raw.toFixed(definition.precision ?? 0)} ${definition.unit}`
+            : typeof raw === "boolean"
+              ? (raw ? "Actif" : "Inactif")
+              : "—";
+          const signal = validation?.signals.find((item) => item.key === definition.key);
+          return (
+            <article key={definition.key}>
+              <div><strong>{definition.label}</strong><small>{definition.note}</small></div>
+              <div className="experimental-signal-value">{value}</div>
+              {signal && <span className={`validation-badge ${signal.status}`}>{signal.status === "validated" ? "Validé" : signal.status === "plausible" ? "Plausible" : signal.status === "suspicious" ? "Suspect" : signal.status === "unavailable" ? "Indisponible" : "À confirmer"}</span>}
+              {onValidate && onClear && signal && signal.status !== "unavailable" && (
+                <div className="validation-manual-actions">
+                  {signal.manual_validation === true ? (
+                    <>
+                      <span className="manual-validation-tag confirmed">Confirmé</span>
+                      <button className="ghost-button" disabled={busyKey === definition.key} onClick={() => onClear(definition.key)}>Retirer</button>
+                    </>
+                  ) : signal.manual_validation === false ? (
+                    <>
+                      <span className="manual-validation-tag rejected">Invalidé</span>
+                      <button className="ghost-button" disabled={busyKey === definition.key} onClick={() => onClear(definition.key)}>Retirer</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="secondary-button" disabled={busyKey === definition.key} onClick={() => onValidate(definition.key, true)}>Confirmer</button>
+                      <button className="ghost-button" disabled={busyKey === definition.key} onClick={() => onValidate(definition.key, false)}>Invalide</button>
+                    </>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point: ReplaySample; availableFields: string[] } {
   const signals = new Map(snapshot.signals.map((signal) => [signal.key, signal.value]));
   const numeric = (key: string): number | null => {
@@ -1516,6 +1655,26 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     acc_mode: integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE"),
     acc_requested: logical("HS2_DAT_MDD_CMD_452.RVV_ACC_ACTIVATION_REQ"),
     speed_setpoint_kph: numeric("HS2_DAT_MDD_CMD_452.SPEED_SETPOINT"),
+    cruise_probable: null,
+    cruise_confidence: null,
+    cruise_detection_state: null,
+    cruise_detection_reason: null,
+    cruise_switch_candidate:
+      integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE") === null
+        ? null
+        : integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE") !== 0,
+    cruise_xvv_state: integer("Dyn_CMM.P037_VehV_stXVV"),
+    cruise_active_candidate:
+      integer("Dyn_CMM.P037_VehV_stXVV") === null
+        ? null
+        : integer("Dyn_CMM.P037_VehV_stXVV") === 2,
+    cruise_setpoint_kph:
+      (integer("Dat_CLIM.P219_Com_xPrpReqRaw") ?? 255) >= 255
+        ? null
+        : integer("Dat_CLIM.P219_Com_xPrpReqRaw"),
+    front_sensor_b0_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE0_RAW"),
+    front_sensor_b2_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE2_RAW"),
+    front_sensor_b4_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE4_RAW"),
     wheel_front_left_kph: numeric("Dyn4_FRE.P263_VehV_VPsvValWhlFrtL") ?? fiatWheelSpeeds[0],
     wheel_front_right_kph: numeric("Dyn4_FRE.P264_VehV_VPsvValWhlFrtR") ?? fiatWheelSpeeds[1],
     wheel_rear_left_kph: numeric("Dyn4_FRE.P265_VehV_VPsvValWhlBckL") ?? fiatWheelSpeeds[2],
@@ -1753,6 +1912,12 @@ function App() {
   });
   const [dtcClearBusy, setDtcClearBusy] = useState(false);
   const [dtcClearResult, setDtcClearResult] = useState<ClearDtcResult | null>(null);
+  const [dtcSnapshotBusy, setDtcSnapshotBusy] = useState("");
+  const [dtcSnapshotResults, setDtcSnapshotResults] = useState<Record<string, DtcSnapshotResult>>({});
+  const [didSweepStart, setDidSweepStart] = useState("F180");
+  const [didSweepEnd, setDidSweepEnd] = useState("F1FF");
+  const [didSweepBusy, setDidSweepBusy] = useState(false);
+  const [didSweepResult, setDidSweepResult] = useState<DidSweepResult | null>(null);
   const [observedDtcs, setObservedDtcs] = useState<ObservedDtc[]>([]);
   const [diagnosticVehicles, setDiagnosticVehicles] = useState<DiagnosticVehicle[]>([]);
   const [selectedDiagnosticVin, setSelectedDiagnosticVin] = useState(
@@ -1841,6 +2006,7 @@ function App() {
   const [detectionRemaining, setDetectionRemaining] = useState(0);
   const [detectionBusy, setDetectionBusy] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [extendedProbeEnabled, setExtendedProbeEnabled] = useState(false);
   const [error, setError] = useState("");
 
   const [capture, setCapture] = useState<CaptureStatus | null>(null);
@@ -1864,6 +2030,7 @@ function App() {
   const [opendbcCatalog, setOpendbcCatalog] = useState<OpendbcCatalog | null>(null);
   const [replay, setReplay] = useState<ReplayData | null>(null);
   const [replayValidation, setReplayValidation] = useState<ReplayValidation | null>(null);
+  const [signalValidationBusy, setSignalValidationBusy] = useState("");
   const [replaySessionId, setReplaySessionId] = useState("");
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayTimeMs, setReplayTimeMs] = useState(0);
@@ -2586,6 +2753,40 @@ function App() {
     }
   }
 
+  async function setSignalManualValidation(key: string, validated: boolean) {
+    if (!replaySessionId) return;
+    setSignalValidationBusy(key);
+    setError("");
+    try {
+      await api(`/api/learn/signals/${encodeURIComponent(key)}/validation`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ validated, session_id: replaySessionId }),
+      });
+      const updated = await api<ReplayValidation>(`/api/learn/replay/${encodeURIComponent(replaySessionId)}/validation`);
+      setReplayValidation(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSignalValidationBusy("");
+    }
+  }
+
+  async function clearSignalManualValidation(key: string) {
+    if (!replaySessionId) return;
+    setSignalValidationBusy(key);
+    setError("");
+    try {
+      await api(`/api/learn/signals/${encodeURIComponent(key)}/validation`, { method: "DELETE" });
+      const updated = await api<ReplayValidation>(`/api/learn/replay/${encodeURIComponent(replaySessionId)}/validation`);
+      setReplayValidation(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSignalValidationBusy("");
+    }
+  }
+
   async function loadReplay(sessionId: string, force = false) {
     if (!sessionId) return;
     setReplayBusy(true);
@@ -3267,6 +3468,55 @@ function App() {
     }
   }
 
+  async function readDtcSnapshot(ecuKey: string, dtc: DtcValue) {
+    const resultKey = `${ecuKey}-${dtc.raw_hex}`;
+    setDtcSnapshotBusy(resultKey);
+    setError("");
+    try {
+      const result = await api<DtcSnapshotResult>(
+        `/api/diagnostic/ecus/${encodeURIComponent(ecuKey)}/dtcs/snapshot`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dtc_raw_hex: dtc.raw_hex }),
+        },
+      );
+      setDtcSnapshotResults((current) => ({ ...current, [resultKey]: result }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDtcSnapshotBusy("");
+    }
+  }
+
+  async function sweepSelectedEcuDids() {
+    if (!selectedEcu) return;
+    const start = parseInt(didSweepStart.trim().replace(/^0x/i, ""), 16);
+    const end = parseInt(didSweepEnd.trim().replace(/^0x/i, ""), 16);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      setError("Les bornes du balayage DID doivent être des valeurs hexadécimales valides.");
+      return;
+    }
+    setDidSweepBusy(true);
+    setDidSweepResult(null);
+    setError("");
+    try {
+      const result = await api<DidSweepResult>(
+        `/api/diagnostic/ecus/${encodeURIComponent(selectedEcu.key)}/dids/sweep`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ did_start: start, did_end: end }),
+        },
+      );
+      setDidSweepResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDidSweepBusy(false);
+    }
+  }
+
   async function scan() {
     if (capture?.active && !dualCanOperational) {
       setError("Arrête et sauvegarde la capture CAN avant de lancer l’inventaire UDS.");
@@ -3291,6 +3541,7 @@ function App() {
         body: JSON.stringify({
           vehicle_profile: vehicle?.vehicle_profile ?? identityProfileKey ?? status?.vehicle_profile,
           vin: selectedDiagnosticVin || null,
+          extended_probe: extendedProbeEnabled,
         }),
       });
       setReport(payload);
@@ -3683,6 +3934,35 @@ function App() {
           <article><span>Début des données</span><strong>{replayDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong></article>
         </section>
 
+        <section className="panel fuel-consumption-panel">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Estimation trajet</span>
+              <h2>Consommation</h2>
+              <p>Calculée à partir du niveau de carburant filtré (flotteur), sur ce trajet uniquement — pas un débitmètre instantané.</p>
+            </div>
+          </div>
+          {typeof replay.estimated_fuel_consumption_l_100km === "number" ? (
+            <div className="fuel-consumption-value">
+              <strong>{replay.estimated_fuel_consumption_l_100km.toFixed(1)}</strong>
+              <span>L/100km · estimation</span>
+            </div>
+          ) : (
+            <p className="inline-alert">{replay.fuel_consumption_note ?? "Estimation non calculable sur cette capture."}</p>
+          )}
+          {typeof replay.estimated_fuel_consumption_l_100km === "number" && replay.fuel_consumption_note && (
+            <p className="fuel-consumption-note">{replay.fuel_consumption_note}</p>
+          )}
+        </section>
+
+        <ExperimentalSignalsPanel
+          point={point}
+          validation={replayValidation}
+          onValidate={(key, validated) => void setSignalManualValidation(key, validated)}
+          onClear={(key) => void clearSignalManualValidation(key)}
+          busyKey={signalValidationBusy}
+        />
+
         {replayValidation && (
           <section className="panel replay-validation-panel">
             <div className="section-heading">
@@ -3708,6 +3988,26 @@ function App() {
                     <span className={`validation-badge ${signal.status}`}>{signal.status === "validated" ? "Validé" : signal.status === "plausible" ? "Plausible" : signal.status === "suspicious" ? "Suspect" : signal.status === "unavailable" ? "Indisponible" : "À confirmer"}</span>
                     <div><strong>{signal.label}</strong><code>{signal.key}</code>{signal.evidence.map((line) => <p key={line}>{line}</p>)}</div>
                     <small>{signal.sample_count.toLocaleString("fr-FR")} valeurs · {signal.transitions} transitions{signal.minimum !== null && signal.minimum !== undefined ? ` · ${signal.minimum}…${signal.maximum}` : ""}</small>
+                    {signal.status !== "unavailable" && (
+                      <div className="validation-manual-actions">
+                        {signal.manual_validation === true ? (
+                          <>
+                            <span className="manual-validation-tag confirmed">Confirmé manuellement</span>
+                            <button className="ghost-button" disabled={signalValidationBusy === signal.key} onClick={() => void clearSignalManualValidation(signal.key)}>Retirer</button>
+                          </>
+                        ) : signal.manual_validation === false ? (
+                          <>
+                            <span className="manual-validation-tag rejected">Invalidé manuellement</span>
+                            <button className="ghost-button" disabled={signalValidationBusy === signal.key} onClick={() => void clearSignalManualValidation(signal.key)}>Retirer</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="secondary-button" disabled={signalValidationBusy === signal.key} onClick={() => void setSignalManualValidation(signal.key, true)}>{signalValidationBusy === signal.key ? "…" : "Confirmer ce signal"}</button>
+                            <button className="ghost-button" disabled={signalValidationBusy === signal.key} onClick={() => void setSignalManualValidation(signal.key, false)}>Marquer invalide</button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -3898,7 +4198,29 @@ function App() {
               </div>
               <div className="adas-state-grid">
                 <div><span>Maintien dans la voie</span><strong className={point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>{laneAssistStatusLabel(point.lane_assist_status)}</strong><small>État brut {point.lane_assist_status ?? "—"} · {point.lka_active ? "activation demandée" : "aucune activation LXA"}</small></div>
-                <div><span>Régulation longitudinale</span><strong>{point.acc_requested ? "Demandée" : "Inactive"}</strong><small>Mode brut {point.acc_mode ?? "—"} · consigne {point.speed_setpoint_kph ?? 0} km/h</small></div>
+                <div className="cruise-validation-card">
+                  <div className="cruise-validation-heading">
+                    <span>Régulateur — candidats 0x208 / 0x50E</span>
+                    <strong className={point.cruise_active_candidate ? "success-text" : ""}>
+                      {cruiseXvvStateLabel(point.cruise_xvv_state)}
+                    </strong>
+                  </div>
+                  <div className="cruise-candidate-grid">
+                    <div className={`cruise-candidate-indicator${point.cruise_active_candidate ? " active" : ""}`}>
+                      <span>État XVV</span>
+                      <strong>{point.cruise_xvv_state ?? "—"}</strong>
+                      <small>0x208 Dyn_CMM · octet 4 · bits 2-3</small>
+                    </div>
+                    <div className={`cruise-candidate-indicator${point.cruise_active_candidate ? " active" : ""}`}>
+                      <span>Consigne</span>
+                      <strong>{typeof point.cruise_setpoint_kph === "number" ? `${point.cruise_setpoint_kph.toFixed(0)} km/h` : "—"}</strong>
+                      <small>0x50E Dat_CLIM · octet 6</small>
+                    </div>
+                  </div>
+                  <div className="cruise-validation-footer">
+                    <span>Détection comportementale <strong>{point.cruise_probable ? `oui · ${Math.round((point.cruise_confidence ?? 0) * 100)} %` : "non"}</strong></span>
+                  </div>
+                </div>
                 <div><span>Frein conducteur</span><strong className={point.brake_active ? "danger-text" : ""}>{point.brake_active ? "Appuyé" : "Relâché"}</strong><small>État système {point.brake_system_state ?? "—"} · pression brute {point.brake_pressure_raw?.toFixed(0) ?? "—"}</small></div>
                 <div><span>Effort au volant</span><strong>{point.driver_torque?.toFixed(0) ?? "—"}</strong><small>Valeur colonne non calibrée en N·m</small></div>
               </div>
@@ -4307,6 +4629,7 @@ function App() {
           <button className="studio-tool" onClick={() => void toggleStudioFullscreen()}>Plein écran</button>
         </header>
         {error && <div className="studio-error"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+        <ExperimentalSignalsPanel point={point} />
         <div className={`studio-board ${studioEditing ? "editing" : "locked"}`} ref={studioBoardRef}>
           {studioWidgets.map((widget) => (
             <article
@@ -5482,6 +5805,47 @@ function App() {
                 <div><code>{hexadecimal(selectedEcu.request_id)} → {hexadecimal(selectedEcu.response_id)}</code><span>Adressage diagnostic</span><small>{selectedEcu.network}</small></div>
                 {selectedEcu.probe_attempts?.map((attempt, index) => <div key={`${attempt.request_hex}-${index}`}><code>{attempt.request_hex}</code><span>{attempt.outcome}</span><small>{attempt.response_hex ?? attempt.error ?? "Aucune réponse"}</small></div>)}
               </details>}
+              {(selectedEcu.did_sweep_range || selectedEcu.did_sweep_error) && <div className="did-sweep-panel">
+                <div className="section-heading">
+                  <div><span className="eyebrow">Recherche approfondie du dernier scan</span><h3>Balayage automatique {selectedEcu.did_sweep_range}</h3></div>
+                </div>
+                {selectedEcu.did_sweep_error ? (
+                  <p className="inline-alert">{selectedEcu.did_sweep_error}</p>
+                ) : selectedEcu.did_sweep_hits && selectedEcu.did_sweep_hits.length > 0 ? (
+                  <div className="did-sweep-results">
+                    <p><strong>{selectedEcu.did_sweep_hits.length}</strong> réponse(s) exploitable(s) trouvée(s) automatiquement.</p>
+                    {selectedEcu.did_sweep_hits.map((hit) => (
+                      <div className="did-sweep-hit" key={hit.did}>
+                        <code>0x{hit.did.toString(16).toUpperCase().padStart(4, "0")}</code>
+                        <span>{hit.outcome === "positive" ? "Réponse positive" : `NRC 0x${hit.nrc?.toString(16).toUpperCase().padStart(2, "0")} ${hit.nrc_name ?? ""}`}</span>
+                        <small>{hit.raw_hex ?? hit.response_hex ?? "—"}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="inline-alert">Aucun identifiant supplémentaire trouvé sur cette plage lors du dernier scan.</p>
+                )}
+              </div>}
+              {LAB_MODE && <div className="did-sweep-panel">
+                <div className="section-heading">
+                  <div><span className="eyebrow">Exploration en lecture seule</span><h3>Balayage de DID (0x22)</h3><p>Envoie une lecture 0x22 pour chaque identifiant de la plage sur {selectedEcu.name}, afin de découvrir ceux réellement supportés au-delà de la liste standard.</p></div>
+                </div>
+                <div className="did-sweep-form">
+                  <label>Début<input value={didSweepStart} onChange={(event) => setDidSweepStart(event.target.value)} placeholder="F180" /></label>
+                  <label>Fin<input value={didSweepEnd} onChange={(event) => setDidSweepEnd(event.target.value)} placeholder="F1FF" /></label>
+                  <button className="secondary-button" onClick={() => void sweepSelectedEcuDids()} disabled={didSweepBusy}>{didSweepBusy ? "Balayage…" : "Lancer le balayage"}</button>
+                </div>
+                {didSweepResult && didSweepResult.ecu_key === selectedEcu.key && <div className="did-sweep-results">
+                  <p><strong>{didSweepResult.hits.length}</strong> réponse(s) exploitable(s) sur {didSweepResult.scanned_count} identifiant(s) testé(s) · {didSweepResult.unsupported_count} non supporté(s){didSweepResult.timeout_count > 0 && ` · ${didSweepResult.timeout_count} sans réponse`}</p>
+                  {didSweepResult.hits.length === 0 ? <p className="inline-alert">Aucun identifiant supplémentaire trouvé dans cette plage.</p> : didSweepResult.hits.map((hit) => (
+                    <div className="did-sweep-hit" key={hit.did}>
+                      <code>0x{hit.did.toString(16).toUpperCase().padStart(4, "0")}</code>
+                      <span>{hit.outcome === "positive" ? "Réponse positive" : `NRC 0x${hit.nrc?.toString(16).toUpperCase().padStart(2, "0")} ${hit.nrc_name ?? ""}`}</span>
+                      <small>{hit.raw_hex ?? hit.response_hex ?? "—"}</small>
+                    </div>
+                  ))}
+                </div>}
+              </div>}
             </div>}
 
             <details className="ecu-inventory-details">
@@ -5654,7 +6018,13 @@ function App() {
               <h2>Dernier scan des calculateurs</h2>
               {report && <p>{report.manufacturer} {report.model} · {report.vin ?? "VIN non rattaché"} · {formatIsoDate(report.scanned_at)}</p>}
             </div>
-            <div className="section-actions"><span className="locked-label">Effacement verrouillé</span><button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>{busy ? "Scan…" : "Nouveau scan"}</button></div>
+            <div className="section-actions">
+              <label className="extended-probe-toggle" title="Ajoute un balayage DID 0x0000-0x01FF sur les calculateurs moteur et télématique, à la recherche d'identifiants non documentés (injection, position GPS). Rallonge le scan.">
+                <input type="checkbox" checked={extendedProbeEnabled} onChange={(event) => setExtendedProbeEnabled(event.target.checked)} /> Recherche approfondie (injection, GPS)
+              </label>
+              <span className="locked-label">Effacement verrouillé</span>
+              <button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>{busy ? "Scan…" : "Nouveau scan"}</button>
+            </div>
           </div>
           {!report ? (
             <EmptyState
@@ -5686,13 +6056,25 @@ function App() {
                   text={dtcFilter === "active" ? "Ce scan ne contient aucune panne confirmée comme présente au moment de la lecture." : "Change de filtre pour consulter les autres états UDS."}
                 />
               ) : <div className="dtc-list">
-                {visibleDtcs.map(({ ecu, dtc }) => (
+                {visibleDtcs.map(({ ecu, dtc }) => {
+                  const snapshotKey = `${ecu.key}-${dtc.raw_hex}`;
+                  const snapshot = dtcSnapshotResults[snapshotKey];
+                  return (
                   <article className={`dtc-card ${dtc.state}`} key={`${ecu.key}-${dtc.raw_hex}-${dtc.status_hex}`}>
                     <div className="dtc-code"><code>{dtc.code}</code><span>{ecu.name}</span></div>
                     <div className="dtc-description">
                       <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
                       <p>{dtc.state_detail}</p>
                       <div className="tag-row"><span className={`dtc-state-tag ${dtc.state}`}>{dtc.state_label}</span>{dtc.status_labels.map((label) => <span key={label}>{label}</span>)}</div>
+                      {LAB_MODE && <>
+                        <button className="ghost-button" onClick={() => void readDtcSnapshot(ecu.key, dtc)} disabled={dtcSnapshotBusy === snapshotKey}>{dtcSnapshotBusy === snapshotKey ? "Lecture…" : "Lire la trame gelée (0x19/0x04)"}</button>
+                        {snapshot && (snapshot.error
+                          ? <p className="inline-alert">{snapshot.error}</p>
+                          : <div className="dtc-snapshot-result">
+                              <span>Enregistrement {snapshot.snapshot_record_number ?? "—"} · {snapshot.identifier_count ?? 0} identifiant(s)</span>
+                              <code>{snapshot.raw_data_hex || "Aucune donnée"}</code>
+                            </div>)}
+                      </>}
                     </div>
                     <div className="dtc-meta">
                       <span>{dtc.state_label}</span>
@@ -5700,7 +6082,8 @@ function App() {
                       <small>{dtc.catalogs.join(", ") || "Catalogue inconnu"}</small>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>}
             </>
           )}

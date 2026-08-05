@@ -2,7 +2,12 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
+data/sessions/
+*.jsonl
+*.sqlite
+*.db
+*.log
+*.replay.json
 backend/.env
 backend/.venv/
 frontend/node_modules/
@@ -11,8 +16,18 @@ firmware/esp32-gateway/.pio/
 firmware/esp32-gateway/include/secrets.hpp
 
 data/sessions/*.jsonl
+data/sessions/*.json
 data/sessions/*.vehicle.json
 !data/sessions/.gitkeep
 data/diagnostics/
 database/psa/proposals/*.yaml
 !database/psa/proposals/.gitkeep
+*.jsonl
+*.sqlite
+*.db
+*.replay.json
+*.bak
+*.bak-*
+*.auto-backup
+*.cors-backup
+diagbox_can_reverse_v4_6/

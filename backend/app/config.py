@@ -6,6 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Diagbox++ OpenDiag PSA"
+    environment: str = "development"
+    frontend_host: str = "127.0.0.1"
+    frontend_port: int = 5173
+    cors_allow_local_ports: bool = True
     transport: str = "virtual"
     serial_port: str = "/dev/ttyACM0"
     serial_baud: int = 921_600
@@ -33,6 +37,7 @@ class Settings(BaseSettings):
     database_dir: Path = Path("../database")
     session_dir: Path = Path("../data/sessions")
     sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
+    manual_signal_validations_file: Path = Path("../data/manual_signal_validations.json")
     live_sensor_registry_file: Path = Path("../data/live_sensor_registry.json")
     observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
     diagnostic_history_dir: Path = Path("../data/diagnostics")

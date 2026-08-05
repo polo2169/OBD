@@ -14,11 +14,27 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=(
+        r"^https?://"
+        r"(localhost|127\.0\.0\.1)"
+        r":[0-9]+$"
+        if settings.environment == "development"
+        and settings.cors_allow_local_ports
+        else None
+    ),
+    allow_origins=(
+        []
+        if settings.environment == "development"
+        and settings.cors_allow_local_ports
+        else [
+            f"http://{settings.frontend_host}:{settings.frontend_port}",
+        ]
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(router)

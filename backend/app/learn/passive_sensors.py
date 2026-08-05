@@ -27,6 +27,8 @@ FIAT_500_CAN_NOTES_URL = (
     "https://github.com/P1kachu/talking-with-cars/blob/master/notes/fiat-500.txt"
 )
 FIAT_ENGINE_CAN_NOTES_URL = "https://fiatpunto.com.pl/topic59422-50.html"
+FRONT_SENSOR_CANDIDATE_ID = 0x489  # non documenté ; candidat radar de stationnement avant
+
 FIAT_500_CANDIDATE_IDS = {
     0x0218A006,  # quatre vitesses de roue
     0x0628A001,  # états combinés accélérateur / embrayage
@@ -572,6 +574,32 @@ def passive_sensor_snapshot(
         is_selected = since_us is None or frame_timestamp > since_us
         if is_selected:
             selected_timestamps.append(frame_timestamp)
+        if arbitration_id == FRONT_SENSOR_CANDIDATE_ID:
+            data = bytes(frame["data"])
+            if is_selected and len(data) >= 5:
+                for byte_index in (0, 2, 4):
+                    signals.append(PassiveCanSignal(
+                        key=f"FRONT_SENSOR_CANDIDATE.BYTE{byte_index}_RAW",
+                        arbitration_id=arbitration_id,
+                        message="FRONT_SENSOR_CANDIDATE",
+                        signal=f"BYTE{byte_index}_RAW",
+                        display_name=f"Radar avant · octet {byte_index} (brut)",
+                        description=(
+                            "Octet non documenté de 0x489, actif par à-coups pendant deux "
+                            "essais dédiés au radar de stationnement avant ; la cadence de "
+                            "bascule semble suivre la proximité perçue. Candidat non validé."
+                        ),
+                        category="ADAS / caméra",
+                        value=data[byte_index],
+                        raw_value=data[byte_index],
+                        unit="brut",
+                        source_unit="octet brut",
+                        essential=False,
+                        updated_at_us=frame_timestamp,
+                        raw_hex=str(frame["raw_hex"]),
+                        confidence="vehicle_observed_candidate",
+                    ))
+            continue
         message = decoder.message_for_frame(arbitration_id, bool(frame["extended"]))
         if message is None:
             unknown_can_ids.append(arbitration_id)

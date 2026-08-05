@@ -1,0 +1,248 @@
+{
+  "accelerator_pct": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:04+00:00"
+  },
+  "accelerator_secondary_pct": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:58+00:00"
+  },
+  "ambient_temperature_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:16+00:00"
+  },
+  "atmospheric_pressure_hpa": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:22+00:00"
+  },
+  "battery_charge_pct": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:33+00:00"
+  },
+  "battery_temperature_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:11+00:00"
+  },
+  "battery_voltage_v": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:29:03+00:00"
+  },
+  "brake_active": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:41+00:00"
+  },
+  "brake_pressure_raw": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:43+00:00"
+  },
+  "brake_system_state": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:40+00:00"
+  },
+  "coolant_temperature_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:17+00:00"
+  },
+  "cruise_active_candidate": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:49+00:00"
+  },
+  "cruise_setpoint_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:07+00:00"
+  },
+  "current_gear": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:02+00:00"
+  },
+  "driver_torque": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:33+00:00"
+  },
+  "engine_load_pct": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:32+00:00"
+  },
+  "engine_rpm": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:38+00:00"
+  },
+  "engine_torque_nm": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:32+00:00"
+  },
+  "fuel_liters": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:26+00:00"
+  },
+  "fuel_liters_raw": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:29+00:00"
+  },
+  "idle_setpoint_rpm": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:28+00:00"
+  },
+  "intake_air_temperature_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:12+00:00"
+  },
+  "lateral_accel_ms2": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:22+00:00"
+  },
+  "longitudinal_accel_ms2": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:35+00:00"
+  },
+  "manifold_pressure_kpa": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:29:11+00:00"
+  },
+  "oil_pressure_switch": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:30+00:00"
+  },
+  "oil_temperature_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:15+00:00"
+  },
+  "passenger_door": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:53+00:00"
+  },
+  "passenger_seatbelt_state": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:53+00:00"
+  },
+  "reverse": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:31:18+00:00"
+  },
+  "speed_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:55+00:00"
+  },
+  "speed_setpoint_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:10+00:00"
+  },
+  "steering_angle_deg": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:25+00:00"
+  },
+  "steering_rate_deg_s": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:29:01+00:00"
+  },
+  "target_gear": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:01+00:00"
+  },
+  "throttle_position_pct": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:27:24+00:00"
+  },
+  "wheel_front_left_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:56+00:00"
+  },
+  "wheel_front_right_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:57+00:00"
+  },
+  "wheel_rear_left_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:28:58+00:00"
+  },
+  "wheel_rear_right_kph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:29:00+00:00"
+  },
+  "yaw_rate_deg_s": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T065635Z-bfd7b5b7",
+    "validated_at": "2026-08-05T21:29:02+00:00"
+  }
+}

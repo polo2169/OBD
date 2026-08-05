@@ -90,6 +90,7 @@ def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
 
 def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "session_dir", tmp_path)
+    monkeypatch.setattr(settings, "manual_signal_validations_file", tmp_path / "manual_signal_validations.json")
     session_id = "learn-20260731T150000Z-replay"
     decoder = get_opendbc_decoder()
 

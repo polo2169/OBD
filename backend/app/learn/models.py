@@ -391,6 +391,17 @@ class ReplaySample(BaseModel):
     acc_mode: int | None = None
     acc_requested: bool | None = None
     speed_setpoint_kph: float | None = None
+    cruise_probable: bool = False
+    cruise_confidence: float = 0.0
+    cruise_detection_state: str = "unavailable"
+    cruise_detection_reason: str | None = None
+    cruise_switch_candidate: bool | None = None
+    cruise_xvv_state: int | None = None
+    cruise_active_candidate: bool | None = None
+    cruise_setpoint_kph: float | None = None
+    front_sensor_b0_raw: int | None = None
+    front_sensor_b2_raw: int | None = None
+    front_sensor_b4_raw: int | None = None
     wheel_front_left_kph: float | None = None
     wheel_front_right_kph: float | None = None
     wheel_rear_left_kph: float | None = None
@@ -446,6 +457,8 @@ class ReplayData(BaseModel):
     max_speed_kph: float
     average_moving_speed_kph: float
     distance_km: float
+    estimated_fuel_consumption_l_100km: float | None = None
+    fuel_consumption_note: str | None = None
     gps_available: bool = False
     gps_point_count: int = 0
     route_method: str
@@ -468,6 +481,21 @@ class SignalValidation(BaseModel):
     maximum: float | None = None
     transitions: int = 0
     evidence: list[str] = Field(default_factory=list)
+    manual_validation: bool | None = None
+
+
+class ManualSignalValidationRequest(BaseModel):
+    validated: bool
+    note: str | None = Field(default=None, max_length=500)
+    session_id: str | None = Field(default=None, max_length=80)
+
+
+class ManualSignalValidation(BaseModel):
+    key: str
+    validated: bool
+    note: str | None = None
+    session_id: str | None = None
+    validated_at: str
 
 
 class ReplayValidation(BaseModel):

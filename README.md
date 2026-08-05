@@ -20,6 +20,9 @@ Starter kit open source pour construire un outil de diagnostic automobile modula
 - **Base YAML PSA** : véhicules, calculateurs, DIDs et DTC documentés ;
 - **Simulateur** : développement sans voiture.
 
+lien interressant : https://driver.top/exp/695220
+https://driver.top/exp/700838/
+
 ## État de cette version
 
 Fonctions disponibles :

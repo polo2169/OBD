@@ -9,7 +9,10 @@ from app.diagnostic.dtc_status import apply_dtc_classification, summarize_dtcs
 from app.diagnostic.history import finalize_scan
 from app.diagnostic.uds import (
     clear_diagnostic_information,
+    decode_dtc_status,
+    format_sae_dtc,
     read_data_by_identifier,
+    read_dtc_snapshot,
     read_dtcs_by_status_mask,
 )
 from app.models import (
@@ -17,7 +20,10 @@ from app.models import (
     ClearDtcResult,
     DebugSummary,
     DidReadResult,
+    DidSweepHit,
+    DidSweepResult,
     DtcReadResult,
+    DtcSnapshotResult,
     EcuDefinition,
     EcuScanResult,
     ScanReport,
@@ -216,6 +222,189 @@ def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
             trace.finish()
 
 
+def read_ecu_dtc_snapshot(
+    ecu_key: str,
+    dtc_raw_hex: str,
+    record_number: int = 0xFF,
+) -> DtcSnapshotResult:
+    kb = KnowledgeBase()
+    ecu = next((item for item in kb.ecus() if item.key == ecu_key), None)
+    if ecu is None:
+        raise KeyError(f"Calculateur inconnu : {ecu_key}.")
+    if ecu.request_id is None or ecu.response_id is None:
+        raise ValueError(f"Adresses non documentées pour {ecu.name}.")
+
+    dtc_bytes = bytes.fromhex(dtc_raw_hex)
+    code = format_sae_dtc(dtc_bytes[0], dtc_bytes[1]) if len(dtc_bytes) >= 2 else dtc_raw_hex
+    request_hex = f"1904{dtc_raw_hex.upper()}{record_number:02X}"
+
+    trace = SessionWriter() if settings.debug_sessions_enabled else None
+    transport = build_transport(_trace_sink(trace) if trace else None)
+    if trace:
+        trace.write({
+            "type": "dtc_snapshot_start",
+            "ecu": ecu_key,
+            "dtc_raw_hex": dtc_raw_hex,
+            "record_number": record_number,
+        })
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=settings.read_only,
+        ) as session:
+            try:
+                (
+                    response,
+                    status,
+                    snapshot_record_number,
+                    identifier_count,
+                    raw_data,
+                ) = read_dtc_snapshot(session, dtc_raw_hex, record_number)
+            except NegativeResponseException as exc:
+                result = DtcSnapshotResult(
+                    ecu_key=ecu_key,
+                    code=code,
+                    dtc_raw_hex=dtc_raw_hex.upper(),
+                    record_number_requested=record_number,
+                    request_hex=request_hex,
+                    response_hex=exc.response.original_payload.hex().upper(),
+                    nrc=exc.response.code,
+                    nrc_name=exc.response.code_name,
+                    error=f"NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+                )
+            else:
+                result = DtcSnapshotResult(
+                    ecu_key=ecu_key,
+                    code=code,
+                    dtc_raw_hex=dtc_raw_hex.upper(),
+                    record_number_requested=record_number,
+                    status=status,
+                    status_hex=f"{status:02X}" if status is not None else None,
+                    status_labels=decode_dtc_status(status) if status is not None else [],
+                    snapshot_record_number=snapshot_record_number,
+                    identifier_count=identifier_count,
+                    raw_data_hex=raw_data.hex().upper() if raw_data else None,
+                    request_hex=request_hex,
+                    response_hex=response.original_payload.hex().upper(),
+                )
+            if trace:
+                trace.write({
+                    "type": "dtc_snapshot_result",
+                    "ecu": ecu_key,
+                    "payload": result.model_dump(),
+                })
+            return result
+    finally:
+        if opened:
+            transport.close()
+        if trace:
+            trace.finish()
+
+
+MAX_DID_SWEEP_SPAN = 0x200
+
+
+def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult:
+    if not 0 <= did_start <= 0xFFFF or not 0 <= did_end <= 0xFFFF:
+        raise ValueError("Les DID doivent tenir sur deux octets (0x0000-0xFFFF).")
+    if did_end < did_start:
+        raise ValueError("did_end doit être supérieur ou égal à did_start.")
+    span = did_end - did_start + 1
+    if span > MAX_DID_SWEEP_SPAN:
+        raise ValueError(
+            f"Plage trop large ({span} identifiants) ; {MAX_DID_SWEEP_SPAN} au maximum par "
+            "appel pour rester dans un temps raisonnable. Balayer par tranches."
+        )
+
+    kb = KnowledgeBase()
+    ecu = next((item for item in kb.ecus() if item.key == ecu_key), None)
+    if ecu is None:
+        raise KeyError(f"Calculateur inconnu : {ecu_key}.")
+    if ecu.request_id is None or ecu.response_id is None:
+        raise ValueError(f"Adresses non documentées pour {ecu.name}.")
+
+    trace = SessionWriter() if settings.debug_sessions_enabled else None
+    transport = build_transport(_trace_sink(trace) if trace else None)
+    if trace:
+        trace.write({
+            "type": "did_sweep_start",
+            "ecu": ecu_key,
+            "did_start": did_start,
+            "did_end": did_end,
+        })
+
+    hits: list[DidSweepHit] = []
+    unsupported_count = 0
+    timeout_count = 0
+    scanned_count = 0
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=settings.read_only,
+        ) as session:
+            for did in range(did_start, did_end + 1):
+                scanned_count += 1
+                try:
+                    response, value_payload = read_data_by_identifier(session, did)
+                    hits.append(DidSweepHit(
+                        did=did,
+                        outcome="positive",
+                        raw_hex=value_payload.hex().upper(),
+                        response_hex=response.original_payload.hex().upper(),
+                    ))
+                except NegativeResponseException as exc:
+                    code = exc.response.code
+                    # 0x31 requestOutOfRange : réponse attendue pour un DID non supporté,
+                    # ce n'est pas une découverte intéressante.
+                    if code == 0x31:
+                        unsupported_count += 1
+                        continue
+                    hits.append(DidSweepHit(
+                        did=did,
+                        outcome="negative_response",
+                        nrc=code,
+                        nrc_name=exc.response.code_name,
+                        response_hex=exc.response.original_payload.hex().upper(),
+                    ))
+                except (TimeoutException, TimeoutError):
+                    timeout_count += 1
+    finally:
+        if opened:
+            transport.close()
+        if trace:
+            trace.write({
+                "type": "did_sweep_result",
+                "ecu": ecu_key,
+                "scanned_count": scanned_count,
+                "hit_count": len(hits),
+                "unsupported_count": unsupported_count,
+                "timeout_count": timeout_count,
+            })
+            trace.finish()
+
+    return DidSweepResult(
+        ecu_key=ecu_key,
+        did_start=did_start,
+        did_end=did_end,
+        scanned_count=scanned_count,
+        hits=hits,
+        unsupported_count=unsupported_count,
+        timeout_count=timeout_count,
+    )
+
+
 def _integer(value: int | str) -> int:
     return int(str(value), 0)
 
@@ -294,7 +483,17 @@ def _address_options(ecu: EcuDefinition) -> list[dict]:
     return unique
 
 
-def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> ScanReport:
+EXTENDED_PROBE_TARGETS: dict[str, tuple[int, int]] = {
+    "engine": (0x0000, 0x01FF),
+    "telematics": (0x0000, 0x01FF),
+}
+
+
+def scan_vehicle(
+    vehicle_profile: str | None = None,
+    vin: str | None = None,
+    extended_probe: bool = False,
+) -> ScanReport:
     kb = KnowledgeBase()
     profile_key = vehicle_profile or settings.vehicle_profile
     vehicle = kb.vehicle(profile_key)
@@ -533,6 +732,28 @@ def scan_vehicle(vehicle_profile: str | None = None, vin: str | None = None) -> 
     finally:
         if opened:
             transport.close()
+
+    if extended_probe:
+        by_key = {result.key: result for result in results}
+        for ecu_key, (did_start, did_end) in EXTENDED_PROBE_TARGETS.items():
+            ecu_result = by_key.get(ecu_key)
+            if ecu_result is None or not ecu_result.detected:
+                continue
+            try:
+                sweep = sweep_ecu_dids(ecu_key, did_start, did_end)
+            except (KeyError, ValueError) as exc:
+                ecu_result.did_sweep_error = str(exc)
+                continue
+            except (NegativeResponseException, TimeoutException) as exc:
+                ecu_result.did_sweep_error = f"Balayage interrompu : {exc}"
+                continue
+            ecu_result.did_sweep_hits = sweep.hits
+            ecu_result.did_sweep_range = f"0x{did_start:04X}-0x{did_end:04X}"
+        warnings.append(
+            "Recherche approfondie activée : balayage DID 0x0000-0x01FF sur les calculateurs "
+            "moteur et télématique pour découvrir des identifiants non documentés (injection, "
+            "position GPS). Résultats exploratoires, à confirmer manuellement."
+        )
 
     if not settings.read_only:
         warnings.append("Le filtre applicatif UDS lecture seule est désactivé.")

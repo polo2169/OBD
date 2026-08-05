@@ -72,6 +72,53 @@ class DtcReadResult(BaseModel):
     actionable: bool = False
 
 
+class DtcSnapshotRequest(BaseModel):
+    dtc_raw_hex: str = Field(min_length=6, max_length=6, pattern=r"^[0-9A-Fa-f]{6}$")
+    record_number: int = Field(default=0xFF, ge=0, le=0xFF)
+
+
+class DtcSnapshotResult(BaseModel):
+    ecu_key: str
+    code: str
+    dtc_raw_hex: str
+    record_number_requested: int
+    status: int | None = None
+    status_hex: str | None = None
+    status_labels: list[str] = Field(default_factory=list)
+    snapshot_record_number: int | None = None
+    identifier_count: int | None = None
+    raw_data_hex: str | None = None
+    request_hex: str
+    response_hex: str | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
+    error: str | None = None
+
+
+class DidSweepRequest(BaseModel):
+    did_start: int = Field(ge=0, le=0xFFFF)
+    did_end: int = Field(ge=0, le=0xFFFF)
+
+
+class DidSweepHit(BaseModel):
+    did: int
+    outcome: Literal["positive", "negative_response"]
+    raw_hex: str | None = None
+    response_hex: str | None = None
+    nrc: int | None = None
+    nrc_name: str | None = None
+
+
+class DidSweepResult(BaseModel):
+    ecu_key: str
+    did_start: int
+    did_end: int
+    scanned_count: int
+    hits: list[DidSweepHit] = Field(default_factory=list)
+    unsupported_count: int = 0
+    timeout_count: int = 0
+
+
 class ObservedDtcInput(BaseModel):
     code: str = Field(pattern=r"^[PpBbCcUu][0-9A-Fa-f]{4}$")
     ecu_key: str | None = Field(default=None, max_length=80)
@@ -161,6 +208,9 @@ class EcuScanResult(BaseModel):
     probe_attempts: list[dict] = Field(default_factory=list)
     raw_responses: list[str] = Field(default_factory=list)
     error: str | None = None
+    did_sweep_hits: list["DidSweepHit"] = Field(default_factory=list)
+    did_sweep_range: str | None = None
+    did_sweep_error: str | None = None
 
 
 class DtcSummary(BaseModel):
@@ -219,6 +269,7 @@ class ScanRequest(BaseModel):
         max_length=17,
         pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
     )
+    extended_probe: bool = False
 
 
 class VehicleSelectionRequest(BaseModel):

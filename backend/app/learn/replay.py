@@ -15,10 +15,14 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 17
+CACHE_VERSION = 23
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
+
+# Non documenté dans opendbc ; extrait en octets bruts, hors du pipeline de
+# décodage par message nommé. Candidat radar de stationnement avant, non validé.
+FRONT_SENSOR_CANDIDATE_ID = 0x489
 
 TARGET_IDS = {
     0x208,  # moteur
@@ -37,6 +41,7 @@ TARGET_IDS = {
     0x452,  # commandes conducteur
     0x488,  # températures moteur / huile / admission
     0x50D,  # intervention ABS
+    0x50E,  # régulateur - consigne de vitesse (Dat_CLIM)
     0x56E,  # pédale accélérateur
     0x572,  # retenue
     0x588,  # état pression d'huile / pression atmosphérique
@@ -60,6 +65,12 @@ STATE_FIELDS = tuple(
         "y_m",
         "heading_deg",
         "distance_m",
+        "cruise_probable",
+        "cruise_confidence",
+        "cruise_detection_state",
+        "cruise_detection_reason",
+        "cruise_switch_candidate",
+        "cruise_active_candidate",
     }
 )
 
@@ -124,6 +135,11 @@ FIELD_QUALITY = {
     "acc_mode": "opendbc_candidate",
     "acc_requested": "opendbc_candidate",
     "speed_setpoint_kph": "opendbc_candidate",
+    "cruise_xvv_state": "vehicle_observed_candidate",
+    "cruise_setpoint_kph": "vehicle_observed_candidate",
+    "front_sensor_b0_raw": "experimental_unvalidated_candidate",
+    "front_sensor_b2_raw": "experimental_unvalidated_candidate",
+    "front_sensor_b4_raw": "experimental_unvalidated_candidate",
     "wheel_front_left_kph": "opendbc_candidate",
     "wheel_front_right_kph": "opendbc_candidate",
     "wheel_rear_left_kph": "opendbc_candidate",
@@ -179,6 +195,8 @@ def _load_route_override(session_path: Path) -> tuple[list[tuple[float, float]],
     return coordinates, payload
 
 
+from .cruise_detector import CruiseDetector
+
 def _number(values: dict[str, dict[str, Any]], name: str) -> float | None:
     item = values.get(name)
     value = item.get("value") if item else None
@@ -200,9 +218,23 @@ def _rounded(value: Any, digits: int = 3) -> Any:
 
 
 def _snapshot(state: dict[str, Any], t_ms: int) -> ReplaySample:
+    # Les champs cruise_* sont calculés après la création des échantillons.
+    # Ils ne doivent pas être injectés depuis l'état CAN avec une valeur None,
+    # car cela écraserait les valeurs par défaut du modèle ReplaySample.
+    derived_fields = {
+        "cruise_probable",
+        "cruise_confidence",
+        "cruise_detection_state",
+        "cruise_detection_reason",
+    }
+
     return ReplaySample(
         t_ms=max(0, t_ms),
-        **{key: _rounded(state.get(key)) for key in STATE_FIELDS},
+        **{
+            key: _rounded(state.get(key))
+            for key in STATE_FIELDS
+            if key not in derived_fields
+        },
     )
 
 
@@ -211,6 +243,8 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["engine_rpm"] = _number(values, "P000_Com_nEng")
         state["accelerator_pct"] = _number(values, "P002_Com_rAPP")
         state["engine_torque_nm"] = _number(values, "P003_Com_trqActOut")
+        xvv_state = _number(values, "P037_VehV_stXVV")
+        state["cruise_xvv_state"] = int(xvv_state) if xvv_state is not None else None
     elif message == "Dyn2_CMM":
         current_gear = _number(values, "P152_Gearbx_stGear")
         state["current_gear"] = int(current_gear) if current_gear is not None and 0 <= current_gear <= 9 else None
@@ -234,6 +268,9 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["accelerator_secondary_pct"] = secondary_accelerator
         if state.get("accelerator_pct") is None:
             state["accelerator_pct"] = secondary_accelerator
+    elif message == "Dat_CLIM":
+        setpoint = _number(values, "P219_Com_xPrpReqRaw")
+        state["cruise_setpoint_kph"] = setpoint if setpoint is not None and setpoint < 255 else None
     elif message == "STEERING":
         state["driver_torque"] = _number(values, "DRIVER_TORQUE")
     elif message == "STEERING_ALT":
@@ -845,6 +882,52 @@ def _apply_confirmed_road_route(
     return route_distance, _route_bounds(points)
 
 
+
+def _detect_probable_cruise(points: list[ReplaySample]) -> bool:
+    """
+    Ajoute une estimation comportementale de l'état du régulateur.
+
+    Cette estimation ne remplace pas le décodage direct d'un signal CAN.
+    Elle sert à identifier les fenêtres susceptibles de contenir une
+    régulation de vitesse active.
+    """
+    detector = CruiseDetector(
+        sample_period_ms=SAMPLE_PERIOD_US // 1000,
+    )
+
+    populated = False
+
+    for point in points:
+        detection = detector.update(
+            speed_kph=point.speed_kph,
+            accelerator_d_pct=point.accelerator_pct,
+            accelerator_e_pct=point.accelerator_secondary_pct,
+            engine_load_pct=point.engine_load_pct,
+            throttle_pct=point.throttle_position_pct,
+            brake_active=point.brake_active,
+        )
+
+        point.cruise_probable = detection.probable
+        point.cruise_confidence = detection.confidence
+        point.cruise_detection_state = detection.state
+        point.cruise_detection_reason = detection.reason
+        point.cruise_switch_candidate = (
+            point.acc_mode != 0
+            if point.acc_mode is not None
+            else None
+        )
+        point.cruise_active_candidate = (
+            point.cruise_xvv_state == 2
+            if point.cruise_xvv_state is not None
+            else None
+        )
+
+        if detection.state != "unavailable":
+            populated = True
+
+    return populated
+
+
 def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
     events: list[ReplayEvent] = []
     previous: ReplaySample | None = None
@@ -860,6 +943,19 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="lights", label="Feux de route allumés" if point.high_beam else "Feux de route éteints", value=point.high_beam))
             if point.brake_active and not previous.brake_active:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="brake", label="Frein conducteur", value=True))
+            if point.cruise_probable != previous.cruise_probable:
+                events.append(
+                    ReplayEvent(
+                        t_ms=point.t_ms,
+                        kind="cruise",
+                        label=(
+                            "Régulateur probable actif"
+                            if point.cruise_probable
+                            else "Régulateur probable inactif"
+                        ),
+                        value=point.cruise_probable,
+                    )
+                )
             if point.current_gear is not None and point.current_gear != previous.current_gear:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="gear", label=f"Rapport {point.current_gear}", value=point.current_gear))
             if point.lane_departure and not previous.lane_departure:
@@ -892,6 +988,46 @@ def _filter_fuel_level(points: list[ReplaySample], time_constant_s: float = 120.
         previous_t_ms = point.t_ms
         populated = True
     return populated
+
+
+def _estimate_fuel_consumption(
+    points: list[ReplaySample],
+    distance_m: float,
+) -> tuple[float | None, str | None]:
+    """Trip-average consumption estimated from the filtered tank float level.
+
+    This is deliberately coarse: a float sender is not a flow meter, so the
+    estimate is only attempted over several kilometres without a refuel
+    during the capture, using the median of the first/last readings rather
+    than single endpoints to dampen sender noise.
+    """
+    distance_km = distance_m / 1000
+    if distance_km < 3.0:
+        return None, "Trajet trop court (moins de 3 km) pour une estimation fiable."
+
+    readings = [point.fuel_liters for point in points if point.fuel_liters is not None]
+    if len(readings) < 20:
+        return None, "Pas assez de mesures de niveau carburant sur cette capture."
+
+    sample = max(5, len(readings) // 20)
+    baseline = median(readings[:sample])
+    final = median(readings[-sample:])
+    consumed = baseline - final
+    if consumed <= 0:
+        return None, "Le niveau du réservoir n'a pas baissé pendant cette capture (plein ou remplissage possible)."
+
+    consumption = consumed / distance_km * 100
+    if not 1.0 <= consumption <= 30.0:
+        return None, (
+            f"Estimation hors plage plausible ({consumption:.1f} L/100km) : le flotteur n'est pas assez "
+            "précis sur ce trajet pour ce calcul."
+        )
+
+    return round(consumption, 1), (
+        f"Estimation basée sur le niveau filtré du flotteur : {baseline:.1f} L → {final:.1f} L sur "
+        f"{distance_km:.1f} km. Ce n'est pas un débitmètre instantané ; fiable uniquement sur plusieurs "
+        "kilomètres sans plein pendant l'essai."
+    )
 
 
 def _build_replay(path: Path, session_id: str) -> ReplayData:
@@ -986,6 +1122,23 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
                     decoded_frame_count += 1
                 continue
 
+            if arbitration_id == FRONT_SENSOR_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 5:
+                    state["front_sensor_b0_raw"] = data[0]
+                    state["front_sensor_b2_raw"] = data[2]
+                    state["front_sensor_b4_raw"] = data[4]
+                    available_fields.update({
+                        "front_sensor_b0_raw",
+                        "front_sensor_b2_raw",
+                        "front_sensor_b4_raw",
+                    })
+                    decoded_frame_count += 1
+                continue
+
             if arbitration_id not in TARGET_IDS:
                 continue
             try:
@@ -1015,6 +1168,17 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
     if _filter_fuel_level(points):
         available_fields.add("fuel_liters")
 
+    cruise_detection_available = _detect_probable_cruise(points)
+    if cruise_detection_available:
+        available_fields.update({
+            "cruise_probable",
+            "cruise_confidence",
+            "cruise_detection_state",
+            "cruise_detection_reason",
+            "cruise_switch_candidate",
+            "cruise_active_candidate",
+        })
+
     steering_zero, distance_m, route_bounds = _reconstruct_route(points)
     raw_distances = [point.distance_m for point in points]
     gps_points = _parse_gps_points(gps_events, first_frame_us, duration_ms)
@@ -1038,6 +1202,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             raw_distances,
         )
         route_method = "driver_confirmed_osrm"
+    estimated_fuel_consumption_l_100km, fuel_consumption_note = _estimate_fuel_consumption(points, distance_m)
     if used_gps_point_count:
         available_fields.update({"latitude", "longitude", "gps_accuracy_m"})
         if any(point.altitude_m is not None for point in gps_points):
@@ -1095,11 +1260,50 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         if gps_points:
             warnings.insert(0, "Des positions GPS ont été enregistrées, mais leur précision déclarée dépasse 1 000 m; elles restent disponibles dans l'export brut.")
 
+    if cruise_detection_available:
+        warnings.append(
+            "L’état cruise_probable est une détection comportementale "
+            "expérimentale fondée sur la pédale, la stabilité de la vitesse "
+            "et la charge moteur. Il ne constitue pas encore un décodage "
+            "direct du commodo ou du calculateur moteur."
+        )
+    if "cruise_xvv_state" in available_fields:
+        warnings.append(
+            "cruise_xvv_state (0x208 Dyn_CMM.P037_VehV_stXVV) est un candidat fort pour "
+            "le régulateur (0 = inactif, 2 = actif, 3 = transitoire), confirmé par "
+            "corrélation sur plusieurs essais, mais la définition opendbc reste non "
+            "validée officiellement pour cette Peugeot 308 T9 2018."
+        )
+    if "cruise_setpoint_kph" in available_fields:
+        warnings.append(
+            "cruise_setpoint_kph (0x50E Dat_CLIM.P219_Com_xPrpReqRaw) est un candidat fort "
+            "pour la consigne du régulateur (255 = inactif), confirmé sur 5 engagements "
+            "répartis sur 4 essais indépendants, mais non validé officiellement pour cette "
+            "Peugeot 308 T9 2018."
+        )
+    if "front_sensor_b4_raw" in available_fields:
+        warnings.append(
+            "front_sensor_b0/b2/b4_raw (0x489, non documenté) sont des candidats précoces pour "
+            "le radar de stationnement avant : une activité par à-coups a été observée sur deux "
+            "essais dédiés, avec une cadence qui semble suivre la proximité. Non validé, "
+            "affiché pour permettre une vérification en direct."
+        )
+
     field_quality = {
         key: value
         for key, value in FIELD_QUALITY.items()
         if key in available_fields or key in {"x_m", "y_m", "heading_deg", "distance_m"}
     }
+    if cruise_detection_available:
+        field_quality.update({
+            "cruise_probable": "experimental_behavioral_detection",
+            "cruise_confidence": "experimental_behavioral_detection",
+            "cruise_detection_state": "experimental_behavioral_detection",
+            "cruise_detection_reason": "experimental_behavioral_detection",
+            "cruise_switch_candidate": "opendbc_candidate",
+            "cruise_active_candidate": "opendbc_candidate",
+        })
+
     for field in obd_standardized_fields:
         field_quality[field] = "standardized_obd_mode_01"
     fiat_validated_fields = {"engine_rpm", "brake_active", "driver_door"}
@@ -1166,6 +1370,8 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         max_speed_kph=round(max_speed, 1),
         average_moving_speed_kph=round(sum(moving_speeds) / len(moving_speeds), 1) if moving_speeds else 0,
         distance_km=round(distance_m / 1000, 3),
+        estimated_fuel_consumption_l_100km=estimated_fuel_consumption_l_100km,
+        fuel_consumption_note=fuel_consumption_note,
         gps_available=bool(gps_points),
         gps_point_count=len(gps_points),
         route_method=route_method,

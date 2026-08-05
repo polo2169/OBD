@@ -26,7 +26,13 @@ from app.diagnostic.psa_advanced import (
     unlock_configuration,
 )
 from app.diagnostic.regression import compare_with_baseline
-from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
+from app.diagnostic.scanner import (
+    clear_ecu_dtcs,
+    read_ecu_did,
+    read_ecu_dtc_snapshot,
+    scan_vehicle,
+    sweep_ecu_dids,
+)
 from app.diagnostic.trace_import import import_diagnostic_trace
 from app.learn.capture import capture_manager
 from app.learn.models import CaptureStart, CaptureStatus, PassiveSensorSnapshot
@@ -38,6 +44,10 @@ from app.models import (
     ClearDtcResult,
     DiagnosticTraceImportRequest,
     DidReadResult,
+    DidSweepRequest,
+    DidSweepResult,
+    DtcSnapshotRequest,
+    DtcSnapshotResult,
     ObservedDtcInput,
     ObservedDtcResult,
     OperatingModeRequest,
@@ -339,6 +349,7 @@ def diagnostic_scan(request: ScanRequest | None = None) -> ScanReport:
         return scan_vehicle(
             request.vehicle_profile if request else None,
             request.vin if request else None,
+            request.extended_probe if request else False,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -568,6 +579,34 @@ def diagnostic_clear_dtcs(ecu_key: str, request: ClearDtcRequest) -> ClearDtcRes
             status_code=409,
             detail=f"Effacement refusé par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
         ) from exc
+
+
+@router.post("/diagnostic/ecus/{ecu_key}/dtcs/snapshot", response_model=DtcSnapshotResult)
+def diagnostic_read_dtc_snapshot(ecu_key: str, request: DtcSnapshotRequest) -> DtcSnapshotResult:
+    try:
+        return read_ecu_dtc_snapshot(ecu_key, request.dtc_raw_hex, request.record_number)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+
+@router.post("/diagnostic/ecus/{ecu_key}/dids/sweep", response_model=DidSweepResult)
+def diagnostic_sweep_dids(ecu_key: str, request: DidSweepRequest) -> DidSweepResult:
+    try:
+        return sweep_ecu_dids(ecu_key, request.did_start, request.did_end)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
 
 
 @router.get("/diagnostic/live")

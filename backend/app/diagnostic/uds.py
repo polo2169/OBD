@@ -66,6 +66,39 @@ def read_dtcs_by_status_mask(
     return response, payload[2], dtcs
 
 
+def read_dtc_snapshot(
+    session: UdsSession,
+    dtc_raw_hex: str,
+    record_number: int = 0xFF,
+) -> tuple[Response, int | None, int | None, int | None, bytes]:
+    """ReadDTCInformation 0x19/0x04 (reportDTCSnapshotRecordByDTCNumber).
+
+    The snapshot payload packs a variable number of data identifiers whose
+    individual lengths aren't self-describing in the UDS spec and aren't
+    documented anywhere for PSA ECUs, so the identifier count is reported
+    but the data itself is returned raw rather than guessed at.
+    """
+    dtc_bytes = bytes.fromhex(dtc_raw_hex)
+    if len(dtc_bytes) != 3:
+        raise ValueError("Le DTC doit tenir sur 3 octets (raw_hex d'un DtcReadResult).")
+    if not 0 <= record_number <= 0xFF:
+        raise ValueError("Le numéro d'enregistrement doit tenir sur un octet.")
+    response = session.send_request(
+        Request.from_payload(bytes([0x19, 0x04]) + dtc_bytes + bytes([record_number]))
+    )
+    payload = response.original_payload
+    if len(payload) < 5 or payload[:2] != b"\x59\x04":
+        raise ValueError("Réponse inattendue à ReadDTCInformation 0x19/0x04.")
+    if payload[2:5] != dtc_bytes:
+        raise ValueError("Le DTC retourné ne correspond pas à la demande.")
+    status = payload[5] if len(payload) > 5 else None
+    remainder = payload[6:]
+    snapshot_record_number = remainder[0] if remainder else None
+    identifier_count = remainder[1] if len(remainder) > 1 else None
+    raw_data = remainder[2:]
+    return response, status, snapshot_record_number, identifier_count, raw_data
+
+
 def clear_diagnostic_information(session: UdsSession, group: int = 0xFFFFFF) -> Response:
     if not 0 <= group <= 0xFFFFFF:
         raise ValueError("Le groupe DTC doit tenir sur trois octets.")
