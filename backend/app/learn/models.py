@@ -176,6 +176,7 @@ class PassiveCanSignal(BaseModel):
     display_name: str
     description: str
     category: str
+    ecu_family: str | None = None
     value: str | int | float | bool | None = None
     raw_value: str | int | float | bool | None = None
     unit: str | None = None
@@ -399,9 +400,21 @@ class ReplaySample(BaseModel):
     cruise_xvv_state: int | None = None
     cruise_active_candidate: bool | None = None
     cruise_setpoint_kph: float | None = None
+    climate_ac_active: bool | None = None
+    climate_ac_power_kw: float | None = None
+    interior_temp_candidate_c: float | None = None
+    climate_air_temp_candidate_c: float | None = None
     front_sensor_b0_raw: int | None = None
     front_sensor_b2_raw: int | None = None
     front_sensor_b4_raw: int | None = None
+    fiat_clock_hour_candidate: int | None = None
+    fiat_clock_minute_candidate: int | None = None
+    fiat_start_stop_state_raw: int | None = None
+    fiat_clutch_pedal_candidate: bool | None = None
+    fiat_battery_voltage_candidate_v: float | None = None
+    fiat_a1_fast_nibble_candidate: int | None = None
+    fiat_mode_flag_candidate: bool | None = None
+    fiat_mode_analog_candidate_raw: int | None = None
     wheel_front_left_kph: float | None = None
     wheel_front_right_kph: float | None = None
     wheel_rear_left_kph: float | None = None

@@ -60,6 +60,33 @@ def _category(message: str) -> str:
     return "Autres"
 
 
+def _ecu_family(message: str) -> str | None:
+    """Best-effort mapping from a decoded CAN message name to the vehicle.yaml
+    ``family`` it was broadcast by, so the ECU page can show it its own signals.
+    Only covers message-name patterns actually observed in the PSA DBC; unknown
+    or ambiguous messages (STEERING, ESP, NEW_MSG_*, DRIVER...) stay unattributed
+    rather than guessed.
+    """
+    upper = message.upper()
+    if any(token in upper for token in ("CMM", "EOBD", "OBD01")):
+        return "INJ"
+    if any(token in upper for token in ("_BV", "BVMP", "EASYMOVE")):
+        return "BOITEVIT"
+    if any(token in upper for token in ("FRE", "ABR", "VROUES", "CDS")):
+        return "ABRASR"
+    if "BSI" in upper or "MDD" in upper:
+        return "BMF_UDS_PSA"
+    if "CLIM" in upper:
+        return "CLIM"
+    if "DIRA" in upper:
+        return "DIRECTN"
+    if "ARTIV" in upper:
+        return "ARTIV"
+    if "RESTRAINT" in upper:
+        return "AIRBAG"
+    return None
+
+
 def _is_metadata_signal(name: str) -> bool:
     upper = name.upper()
     return (
@@ -328,6 +355,7 @@ def _hybrid_obd_signals(
             display_name=definition.name,
             description=definition.description,
             category=definition.group,
+            ecu_family="INJ",
             value=record.get("value"),
             raw_value=record.get("value"),
             unit=record.get("unit") or definition.unit,
@@ -375,6 +403,7 @@ def _custom_signals(signals: list[PassiveCanSignal], vin: str | None) -> list[Pa
             display_name=definition.label,
             description=definition.description or f"Capteur local dérivé de {definition.source_key}.",
             category=definition.category,
+            ecu_family=source.ecu_family,
             value=_display_value(source.raw_value, definition.factor, definition.offset),
             raw_value=source.raw_value,
             unit=definition.unit if definition.unit is not None else source.unit,
@@ -655,6 +684,7 @@ def passive_sensor_snapshot(
                     else default_description
                 ),
                 category=_category(message.name),
+                ecu_family=_ecu_family(message.name),
                 value=_display_value(raw_value, factor, offset),
                 raw_value=raw_value,
                 unit=(override.unit if override and override.unit is not None else decoded.get("unit")),

@@ -1,0 +1,16 @@
+{
+  "source": "https://github.com/Barracuda09/PyPSADiag",
+  "revision": "77e325e8ce4342525e84dd0cac1a74244b197e95",
+  "license": "GPL-2.0",
+  "imported": "2026-08-06",
+  "description": "Community PSA/Stellantis telecoding tool reference data (ECU zone/parameter definitions used for UDS coding, plus per-family DTC catalogs and the ISO 14229 failure-type table). Not specific to any vehicle profile in this project and not verified against real hardware here.",
+  "contents": {
+    "dtc/*.json": "Per-ECU-family DTC code to description lookup tables.",
+    "dtc_failure_types.json": "ISO 14229-1 failure-type sub-byte lookup (generic standard table).",
+    "ident_uds_ecu.json": "Generic PSA identification DID definitions (e.g. F080 ZA_ZONE) used across ECU families.",
+    "ecu_families.json": "Supplier-assigned ECU family code map (imported for reference, not yet wired into a decode path).",
+    "ecu_suppliers.json": "ECU supplier code map (imported for reference, not yet wired into a decode path).",
+    "ecu_definitions/<FAMILY>/*.json": "Per-ECU telecoding zone definitions (UDS zones 0x2100/0x2101): CFG_* configuration parameters with byte offset, bitmask and named option values."
+  },
+  "warning": "Community source, GPL-2.0. Telecoding zone/parameter names describe vehicle configuration options (feature present/absent), not live sensor values. Only used here for read-only interpretation of data already read via documented DIDs — never for writing/coding."
+}

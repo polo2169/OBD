@@ -1,10 +1,26 @@
 from dataclasses import dataclass
 
 from udsoncan import Request, Response
+from udsoncan.exceptions import NegativeResponseException, TimeoutException
 from udsoncan.services import ReadDataByIdentifier
 
 from app.diagnostic.isotp import UdsSession
 from app.transports.base import Transport
+
+
+def enter_extended_session(session: UdsSession) -> None:
+    """Best-effort DiagnosticSessionControl to the extended session (0x03).
+
+    Many PSA ECUs hide manufacturer-specific DIDs (e.g. telecoding zones)
+    behind this session even for reads. Still gated by authorize_uds, which
+    only allowlists sessions 0x01/0x03 — SecurityAccess (0x27) stays blocked
+    regardless of session. Failure here is non-fatal: the caller just falls
+    back to whatever the default session already exposes.
+    """
+    try:
+        session.request(bytes([0x10, 0x03]))
+    except (NegativeResponseException, TimeoutException, TimeoutError, PermissionError):
+        pass
 
 
 DTC_STATUS_LABELS = {
@@ -97,6 +113,41 @@ def read_dtc_snapshot(
     identifier_count = remainder[1] if len(remainder) > 1 else None
     raw_data = remainder[2:]
     return response, status, snapshot_record_number, identifier_count, raw_data
+
+
+def read_obd_dtcs(session: UdsSession, mode: int = 0x03) -> list[RawDtc]:
+    """Generic EOBD DTC read (Mode 03 stored / Mode 07 pending).
+
+    Unlike the PSA-style UDS 0x19 read, classic OBD Modes 03/07 carry no
+    per-DTC status byte or failure type: only the presence of a code. The
+    two-byte SAE J2012 encoding is shared with UDS 0x19, so format_sae_dtc
+    applies unchanged. Uses request_obd (raw ISO-TP), not the udsoncan
+    Request/Response wrapper: that library only models ISO 14229 services,
+    not legacy SAE J1979 OBD modes such as 0x03/0x07.
+    """
+    if mode not in (0x03, 0x07):
+        raise ValueError("Le mode OBD doit être 0x03 (mémorisés) ou 0x07 (en attente).")
+    payload = session.request_obd(bytes([mode]))
+    expected_service = mode + 0x40
+    if len(payload) < 1 or payload[0] != expected_service:
+        raise ValueError(f"Réponse inattendue au mode OBD 0x{mode:02X}.")
+    records = payload[1:]
+    if len(records) % 2:
+        raise ValueError(f"Réponse DTC OBD 0x{mode:02X} tronquée : nombre d'octets impair.")
+
+    dtcs: list[RawDtc] = []
+    for offset in range(0, len(records), 2):
+        first, second = records[offset:offset + 2]
+        if first == 0 and second == 0:
+            continue
+        dtcs.append(RawDtc(
+            code=format_sae_dtc(first, second),
+            raw_hex=bytes([first, second]).hex().upper(),
+            failure_type=0,
+            status=0,
+            status_labels=[],
+        ))
+    return dtcs
 
 
 def clear_diagnostic_information(session: UdsSession, group: int = 0xFFFFFF) -> Response:

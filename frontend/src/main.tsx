@@ -69,6 +69,23 @@ type TransportCatalog = {
   connection: TransportConnection;
 };
 
+type TelecodingParameterValue = {
+  key: string;
+  name: string;
+  byte: number;
+  raw_hex: string;
+  value?: string | null;
+};
+
+type TelecodingZoneInfo = {
+  did: number;
+  name: string;
+  family: string;
+  parameters: TelecodingParameterValue[];
+  source?: string | null;
+  confidence: string;
+};
+
 type DidValue = {
   did: number;
   name: string;
@@ -82,6 +99,7 @@ type DidValue = {
   nrc?: number | null;
   nrc_name?: string | null;
   error?: string | null;
+  telecoding?: TelecodingZoneInfo | null;
 };
 
 type ProbeAttempt = {
@@ -97,6 +115,7 @@ type DtcValue = {
   code: string;
   raw_hex: string;
   failure_type: number;
+  failure_type_label?: string | null;
   status: number;
   status_hex: string;
   status_labels: string[];
@@ -135,6 +154,7 @@ type DidSweepHit = {
   response_hex?: string | null;
   nrc?: number | null;
   nrc_name?: string | null;
+  telecoding?: TelecodingZoneInfo | null;
 };
 
 type DidSweepResult = {
@@ -843,9 +863,21 @@ type ReplaySample = {
   cruise_xvv_state?: number | null;
   cruise_active_candidate?: boolean | null;
   cruise_setpoint_kph?: number | null;
+  climate_ac_active?: boolean | null;
+  climate_ac_power_kw?: number | null;
+  interior_temp_candidate_c?: number | null;
+  climate_air_temp_candidate_c?: number | null;
   front_sensor_b0_raw?: number | null;
   front_sensor_b2_raw?: number | null;
   front_sensor_b4_raw?: number | null;
+  fiat_clock_hour_candidate?: number | null;
+  fiat_clock_minute_candidate?: number | null;
+  fiat_start_stop_state_raw?: number | null;
+  fiat_clutch_pedal_candidate?: boolean | null;
+  fiat_battery_voltage_candidate_v?: number | null;
+  fiat_a1_fast_nibble_candidate?: number | null;
+  fiat_mode_flag_candidate?: boolean | null;
+  fiat_mode_analog_candidate_raw?: number | null;
   wheel_front_left_kph?: number | null;
   wheel_front_right_kph?: number | null;
   wheel_rear_left_kph?: number | null;
@@ -1005,9 +1037,21 @@ const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "cruise_xvv_state", label: "Régulateur · état brut", unit: "code", minimum: 0, maximum: 3, color: "#f2cc60", note: "0x208 Dyn_CMM, octet 4 bits 2-3 : 0 inactif, 2 actif, 3 transitoire (bascule). Candidat confirmé par corrélation sur plusieurs essais.", experimental: true },
   { key: "cruise_active_candidate", label: "Régulateur", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "Actif quand cruise_xvv_state = 2.", status: true, experimental: true },
   { key: "cruise_setpoint_kph", label: "Régulateur · consigne", unit: "km/h", minimum: 0, maximum: 150, precision: 0, color: "#89d7ff", note: "0x50E Dat_CLIM.P219_Com_xPrpReqRaw (255 = inactif). Confirmé sur 5 engagements, 4 essais indépendants.", experimental: true },
+  { key: "climate_ac_active", label: "Climatisation active", unit: "état", minimum: 0, maximum: 1, color: "#59a8ff", note: "0x50E Dat_CLIM.P050_Com_stAC.", status: true },
+  { key: "climate_ac_power_kw", label: "Climatisation · puissance", unit: "kW", minimum: 0, maximum: 6.4, precision: 2, color: "#59a8ff", note: "0x50E Dat_CLIM.P210_Com_pwrACDem × 0.025." },
+  { key: "interior_temp_candidate_c", label: "Température intérieure (candidat)", unit: "°C", minimum: 0, maximum: 40, precision: 1, color: "#8fdcff", note: "0x3B8 octet 2, non documenté. Dérive lente et plage plausible sur un essai ; non validé.", experimental: true },
+  { key: "climate_air_temp_candidate_c", label: "Climatisation · air soufflé (candidat)", unit: "°C", minimum: 0, maximum: 40, precision: 1, color: "#8fdcff", note: "0x3B8 octet 3, non documenté. Toujours ≥ à la température intérieure candidate, souvent invalide (0xFF). Varie trop pour une simple consigne ; probablement l'air mélangé/soufflage. Non validé.", experimental: true },
   { key: "front_sensor_b0_raw", label: "Radar avant · octet 0", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 0, non documenté. Candidat très précoce, non validé.", experimental: true },
   { key: "front_sensor_b2_raw", label: "Radar avant · octet 2", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 2, non documenté. Candidat très précoce, non validé.", experimental: true },
   { key: "front_sensor_b4_raw", label: "Radar avant · octet 4", unit: "brut", minimum: 0, maximum: 32, color: "#ff8ec7", note: "0x489 octet 4, non documenté. Bascule par à-coups dont la cadence semble suivre la proximité sur deux essais dédiés ; à confirmer.", experimental: true },
+  { key: "fiat_clock_hour_candidate", label: "Fiat · horloge (heure)", unit: "h", minimum: 0, maximum: 23, color: "#89d7ff", note: "0x0C28A000 octet 0, BCD. Auto-validé : incrémente avec la minute.", experimental: true },
+  { key: "fiat_clock_minute_candidate", label: "Fiat · horloge (minute)", unit: "min", minimum: 0, maximum: 59, color: "#89d7ff", note: "0x0C28A000 octet 1, BCD. Incrémente de +1 toutes les 60s réelles observées.", experimental: true },
+  { key: "fiat_start_stop_state_raw", label: "Fiat · état Start&Stop", unit: "code", minimum: 0, maximum: 5, color: "#f2cc60", note: "0x0C1CA000 octet 1, brut. Un seul changement observé (coupure contact) ; à confirmer.", experimental: true },
+  { key: "fiat_clutch_pedal_candidate", label: "Fiat · pédale d'embrayage", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "0x0628A001 octet 5 = 0x10. Impulsions brèves cohérentes avec des changements de rapport.", status: true, experimental: true },
+  { key: "fiat_battery_voltage_candidate_v", label: "Fiat · tension batterie", unit: "V", minimum: 10, maximum: 15, precision: 1, color: "#62e39a", note: "0x0628A001 octet 3 × 0.1. Stable à 12.8V, avec de brefs écarts (11.6-13.8V) pile aux mêmes instants que la pédale d'embrayage.", experimental: true },
+  { key: "fiat_a1_fast_nibble_candidate", label: "Fiat · 0x0A18A001 nibble rapide", unit: "brut", minimum: 0, maximum: 15, color: "#ff8ec7", note: "Change toutes les 100-300 ms : trop rapide pour un rapport de boîte, signification inconnue.", experimental: true },
+  { key: "fiat_mode_flag_candidate", label: "Fiat · drapeau de mode", unit: "état", minimum: 0, maximum: 1, color: "#b384ff", note: "0x0A18A001 octet 4. Bascule par blocs de 1-2 minutes ; hypothèse : climatisation ou ralenti.", status: true, experimental: true },
+  { key: "fiat_mode_analog_candidate_raw", label: "Fiat · valeur liée au mode", unit: "brut", minimum: 0, maximum: 255, color: "#b384ff", note: "0x0A18A001 octet 5. Plage très différente selon le drapeau de mode ; signification inconnue.", experimental: true },
   { key: "longitudinal_accel_ms2", label: "Accélération longitudinale", unit: "m/s²", minimum: -4, maximum: 4, precision: 2, color: "#72c6ff", note: "Accélération calculée à partir des roues." },
   { key: "lateral_accel_ms2", label: "Accélération latérale", unit: "m/s²", minimum: -5, maximum: 5, precision: 2, color: "#ff8ec7", note: "Trame 0x3CD, échelle 0,05 m/s² validée par corrélation avec les quatre roues et le volant." },
   { key: "yaw_rate_deg_s", label: "Vitesse de lacet", unit: "°/s", minimum: -40, maximum: 40, precision: 1, color: "#63e6e2", note: "Trame 0x3CD, échelle 0,1°/s validée par deux références CAN indépendantes." },
@@ -1464,6 +1508,28 @@ function replayGraphGeometry(replay: ReplayData, definition: ReplayGaugeDefiniti
   return { path: commands.join(" "), minimum, maximum };
 }
 
+function TelecodingDetails({ zone }: { zone: TelecodingZoneInfo }) {
+  return (
+    <div className="telecoding-details">
+      <p className="telecoding-heading">{zone.name} <small>· famille {zone.family} · {zone.confidence}</small></p>
+      {zone.parameters.length === 0 ? (
+        <p className="inline-alert">Aucun paramètre de télécodage documenté pour cette valeur.</p>
+      ) : (
+        <ul className="telecoding-parameter-list">
+          {zone.parameters.map((param) => (
+            <li key={param.key}>
+              <code>{param.raw_hex}</code>
+              <span>{param.name}</span>
+              <strong>{param.value ?? "valeur non répertoriée"}</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+      {zone.source && <small>Source : {zone.source} (communauté, non vérifié sur ce véhicule)</small>}
+    </div>
+  );
+}
+
 function ExperimentalSignalsPanel({
   point,
   validation,
@@ -1672,6 +1738,11 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
       (integer("Dat_CLIM.P219_Com_xPrpReqRaw") ?? 255) >= 255
         ? null
         : integer("Dat_CLIM.P219_Com_xPrpReqRaw"),
+    climate_ac_active: logical("Dat_CLIM.P050_Com_stAC"),
+    climate_ac_power_kw:
+      numeric("Dat_CLIM.P210_Com_pwrACDem") !== null
+        ? Math.round(numeric("Dat_CLIM.P210_Com_pwrACDem") ?? 0) / 1000
+        : null,
     front_sensor_b0_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE0_RAW"),
     front_sensor_b2_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE2_RAW"),
     front_sensor_b4_raw: integer("FRONT_SENSOR_CANDIDATE.BYTE4_RAW"),
@@ -1939,6 +2010,11 @@ function App() {
   );
   const [vehicleIdentity, setVehicleIdentity] = useState<VehicleIdentityResult | null>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
+  const [obdDtcResult, setObdDtcResult] = useState<Ecu | null>(null);
+  const [obdDtcBusy, setObdDtcBusy] = useState(false);
+  const [udsProbeEcuKey, setUdsProbeEcuKey] = useState("body_computer");
+  const [udsProbeResult, setUdsProbeResult] = useState<DidValue | null>(null);
+  const [udsProbeBusy, setUdsProbeBusy] = useState(false);
   const [psaCatalog, setPsaCatalog] = useState<PsaAdvancedCatalog | null>(null);
   const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalog | null>(null);
   const [maintenanceCategory, setMaintenanceCategory] = useState("Toutes");
@@ -3626,6 +3702,40 @@ function App() {
     }
   }
 
+  async function readEngineObdDtcs() {
+    setObdDtcBusy(true);
+    setError("");
+    try {
+      const result = await api<Ecu>(
+        `/api/diagnostic/obd/dtcs?ecu_key=engine&vehicle_profile=${encodeURIComponent(identityProfileKey)}`,
+        { method: "POST" },
+      );
+      setObdDtcResult(result);
+    } catch (err) {
+      setObdDtcResult(null);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setObdDtcBusy(false);
+    }
+  }
+
+  async function testUdsPresence() {
+    setUdsProbeBusy(true);
+    setUdsProbeResult(null);
+    setError("");
+    try {
+      const result = await api<DidValue>(
+        `/api/diagnostic/ecus/${encodeURIComponent(udsProbeEcuKey)}/dids/0xF186?vehicle_profile=${encodeURIComponent(identityProfileKey)}`,
+        { method: "POST" },
+      );
+      setUdsProbeResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUdsProbeBusy(false);
+    }
+  }
+
   async function readPsaDid() {
     if (!psaVehicleCompatible) {
       setError("Le véhicule actif n’est pas un profil PSA compatible. Charge la Peugeot depuis le Garage avant toute lecture constructeur.");
@@ -4629,6 +4739,7 @@ function App() {
           <button className="studio-tool" onClick={() => void toggleStudioFullscreen()}>Plein écran</button>
         </header>
         {error && <div className="studio-error"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+        <div className="studio-live-area">
         <ExperimentalSignalsPanel point={point} />
         <div className={`studio-board ${studioEditing ? "editing" : "locked"}`} ref={studioBoardRef}>
           {studioWidgets.map((widget) => (
@@ -4663,6 +4774,7 @@ function App() {
             </article>
           ))}
           {studioWidgets.length === 0 && <div className="studio-empty-board"><strong>Dashboard vide</strong><span>Ajoute un instrument depuis la barre supérieure.</span></div>}
+        </div>
         </div>
       </div>
     );
@@ -5300,6 +5412,50 @@ function App() {
           {selectedIdentityProfile?.identity_scope === "identity_only" && <p className="inline-alert fiat-profile-note">Le profil Fiat est volontairement limité au VIN et aux informations OBD normalisées. Donne-moi ensuite l’année, la motorisation et si c’est une 500, 500X ou 500e pour construire le bon inventaire ECU.</p>}
         </section>
 
+        {selectedIdentityProfile?.identity_scope === "identity_only" && <section className="panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Diagnostic hors inventaire complet</span><h2>Lecture DTC OBD générique</h2><p>Modes EOBD standards 03 (mémorisés) et 07 (en attente) sur le calculateur moteur — adresse et protocole confirmés, indépendant du verrou d’identification.</p></div>
+            <button className="secondary-button" onClick={() => void readEngineObdDtcs()} disabled={obdDtcBusy || !identityReadReady}>{obdDtcBusy ? "Lecture…" : "Lire les DTC OBD (moteur)"}</button>
+          </div>
+          {obdDtcResult && (
+            obdDtcResult.dtcs.length === 0 ? (
+              <p className="inline-alert">Aucun code retourné.{obdDtcResult.dtc_error ? ` ${obdDtcResult.dtc_error}` : ""}</p>
+            ) : (
+              <div className="dtc-list">
+                {obdDtcResult.dtcs.map((dtc) => (
+                  <article className={`dtc-card ${dtc.state}`} key={`${dtc.raw_hex}-${dtc.state}`}>
+                    <div className="dtc-code"><code>{dtc.code}</code></div>
+                    <div className="dtc-description"><strong>{dtc.title ?? "Description spécifique inconnue"}</strong><p>{dtc.state_detail}</p></div>
+                    <div className="dtc-meta"><span>{dtc.state_label}</span></div>
+                  </article>
+                ))}
+              </div>
+            )
+          )}
+        </section>}
+
+        {selectedIdentityProfile?.identity_scope === "identity_only" && <section className="panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Prudence avant d’aller plus loin</span><h2>Test de présence UDS</h2><p>Une seule lecture DID standard (0xF186, session de diagnostic active) pour voir si le calculateur répond en UDS — sans supposer qu’il le fasse.</p></div>
+          </div>
+          <div className="dtc-clear-form">
+            <label>Calculateur
+              <select value={udsProbeEcuKey} onChange={(event) => { setUdsProbeEcuKey(event.target.value); setUdsProbeResult(null); }}>
+                <option value="body_computer">Body Computer / BSI Fiat (0x7B0/0x7C0)</option>
+                <option value="instrument_cluster">Combiné d'instruments Fiat (0x7B0/0x7C3)</option>
+              </select>
+            </label>
+            <button className="secondary-button" onClick={() => void testUdsPresence()} disabled={udsProbeBusy || !identityReadReady}>{udsProbeBusy ? "Test…" : "Tester"}</button>
+          </div>
+          {udsProbeResult && (
+            udsProbeResult.error ? (
+              <p className="inline-alert">Pas de réponse UDS exploitable : {udsProbeResult.error}. Cohérent avec un silence total, une adresse fausse pour ce véhicule, ou un protocole KWP2000 non géré par ce firmware.</p>
+            ) : (
+              <p className="inline-alert">Réponse UDS reçue : session active = {String(udsProbeResult.value)}. Ce calculateur parle bien UDS à cette adresse.</p>
+            )
+          )}
+        </section>}
+
         <section className="identity-layout">
           <article className={`panel vin-card ${displayedIdentity?.found ? "found" : ""}`}>
             <div className="section-heading"><div><span className="eyebrow">Vehicle Identification Number</span><h2>VIN</h2></div><span className={`status-pill ${displayedIdentity?.found ? "good" : "neutral"}`}><i /> {displayedIdentity?.found ? "Validé" : "Non lu"}</span></div>
@@ -5582,7 +5738,12 @@ function App() {
             <button className="primary-button" onClick={() => void readPsaDid()} disabled={psaBusy === "did" || !psaReadReady}>{psaBusy === "did" ? "Lecture…" : "Lire la zone"}</button>
           </div>
           <div className="psa-ecu-address"><span>{selectedPsaEcu?.family ?? "Famille inconnue"}</span><code>{hexadecimal(selectedPsaEcu?.request_id)} → {hexadecimal(selectedPsaEcu?.response_id)}</code><small>{selectedPsaEcu?.optional ? "Équipement optionnel" : "Calculateur attendu sur T9"}</small></div>
-          {psaDidResult && <div className="psa-zone-result"><div><span>DID 0x{psaDidResult.did.toString(16).toUpperCase().padStart(4, "0")}</span><strong>{String(psaDidResult.value ?? "Réponse vide")}</strong></div><code>{psaDidResult.raw_hex ?? "—"}</code><small>{psaDidResult.codec} · {psaDidResult.confidence}</small></div>}
+          {psaDidResult && <div className="psa-zone-result">
+            <div><span>DID 0x{psaDidResult.did.toString(16).toUpperCase().padStart(4, "0")}</span><strong>{String(psaDidResult.value ?? "Réponse vide")}</strong></div>
+            <code>{psaDidResult.raw_hex ?? "—"}</code>
+            <small>{psaDidResult.codec} · {psaDidResult.confidence}</small>
+            {psaDidResult.telecoding && <TelecodingDetails zone={psaDidResult.telecoding} />}
+          </div>}
         </section>}
 
         {psaSection === "expert" && <section className="psa-two-column">
@@ -5819,6 +5980,7 @@ function App() {
                         <code>0x{hit.did.toString(16).toUpperCase().padStart(4, "0")}</code>
                         <span>{hit.outcome === "positive" ? "Réponse positive" : `NRC 0x${hit.nrc?.toString(16).toUpperCase().padStart(2, "0")} ${hit.nrc_name ?? ""}`}</span>
                         <small>{hit.raw_hex ?? hit.response_hex ?? "—"}</small>
+                        {hit.telecoding && <TelecodingDetails zone={hit.telecoding} />}
                       </div>
                     ))}
                   </div>
@@ -5842,6 +6004,7 @@ function App() {
                       <code>0x{hit.did.toString(16).toUpperCase().padStart(4, "0")}</code>
                       <span>{hit.outcome === "positive" ? "Réponse positive" : `NRC 0x${hit.nrc?.toString(16).toUpperCase().padStart(2, "0")} ${hit.nrc_name ?? ""}`}</span>
                       <small>{hit.raw_hex ?? hit.response_hex ?? "—"}</small>
+                      {hit.telecoding && <TelecodingDetails zone={hit.telecoding} />}
                     </div>
                   ))}
                 </div>}
@@ -6019,8 +6182,8 @@ function App() {
               {report && <p>{report.manufacturer} {report.model} · {report.vin ?? "VIN non rattaché"} · {formatIsoDate(report.scanned_at)}</p>}
             </div>
             <div className="section-actions">
-              <label className="extended-probe-toggle" title="Ajoute un balayage DID 0x0000-0x01FF sur les calculateurs moteur et télématique, à la recherche d'identifiants non documentés (injection, position GPS). Rallonge le scan.">
-                <input type="checkbox" checked={extendedProbeEnabled} onChange={(event) => setExtendedProbeEnabled(event.target.checked)} /> Recherche approfondie (injection, GPS)
+              <label className="extended-probe-toggle" title="Ajoute un balayage DID sur les calculateurs moteur et télématique (0x0000-0x01FF, identifiants non documentés) ainsi que sur la caméra/CVM et le radar avant (0x2100-0x21FF, zones de télécodage). Rallonge le scan.">
+                <input type="checkbox" checked={extendedProbeEnabled} onChange={(event) => setExtendedProbeEnabled(event.target.checked)} /> Recherche approfondie (injection, GPS, caméra, radar)
               </label>
               <span className="locked-label">Effacement verrouillé</span>
               <button className="secondary-button" onClick={scan} disabled={busy || !diagnosticReady}>{busy ? "Scan…" : "Nouveau scan"}</button>
@@ -6067,6 +6230,7 @@ function App() {
                       <p>{dtc.state_detail}</p>
                       <div className="tag-row"><span className={`dtc-state-tag ${dtc.state}`}>{dtc.state_label}</span>{dtc.status_labels.map((label) => <span key={label}>{label}</span>)}</div>
                       {LAB_MODE && <>
+                        {dtc.failure_type_label && <small>Type de défaut : {dtc.failure_type_label} (0x{dtc.failure_type.toString(16).toUpperCase().padStart(2, "0")})</small>}
                         <button className="ghost-button" onClick={() => void readDtcSnapshot(ecu.key, dtc)} disabled={dtcSnapshotBusy === snapshotKey}>{dtcSnapshotBusy === snapshotKey ? "Lecture…" : "Lire la trame gelée (0x19/0x04)"}</button>
                         {snapshot && (snapshot.error
                           ? <p className="inline-alert">{snapshot.error}</p>

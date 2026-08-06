@@ -40,6 +40,23 @@ class EcuDefinition(BaseModel):
     dtc_status_masks: list[int] = Field(default_factory=list)
 
 
+class TelecodingParameterValue(BaseModel):
+    key: str
+    name: str
+    byte: int
+    raw_hex: str
+    value: str | None = None
+
+
+class TelecodingZoneInfo(BaseModel):
+    did: int
+    name: str
+    family: str
+    parameters: list[TelecodingParameterValue] = Field(default_factory=list)
+    source: str | None = None
+    confidence: str = "community_unverified_telecoding"
+
+
 class DidReadResult(BaseModel):
     did: int
     name: str
@@ -53,12 +70,14 @@ class DidReadResult(BaseModel):
     nrc: int | None = None
     nrc_name: str | None = None
     error: str | None = None
+    telecoding: TelecodingZoneInfo | None = None
 
 
 class DtcReadResult(BaseModel):
     code: str
     raw_hex: str
     failure_type: int
+    failure_type_label: str | None = None
     status: int
     status_hex: str
     status_labels: list[str] = Field(default_factory=list)
@@ -75,6 +94,7 @@ class DtcReadResult(BaseModel):
 class DtcSnapshotRequest(BaseModel):
     dtc_raw_hex: str = Field(min_length=6, max_length=6, pattern=r"^[0-9A-Fa-f]{6}$")
     record_number: int = Field(default=0xFF, ge=0, le=0xFF)
+    vehicle_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class DtcSnapshotResult(BaseModel):
@@ -98,6 +118,7 @@ class DtcSnapshotResult(BaseModel):
 class DidSweepRequest(BaseModel):
     did_start: int = Field(ge=0, le=0xFFFF)
     did_end: int = Field(ge=0, le=0xFFFF)
+    vehicle_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class DidSweepHit(BaseModel):
@@ -107,6 +128,7 @@ class DidSweepHit(BaseModel):
     response_hex: str | None = None
     nrc: int | None = None
     nrc_name: str | None = None
+    telecoding: TelecodingZoneInfo | None = None
 
 
 class DidSweepResult(BaseModel):

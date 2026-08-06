@@ -1,0 +1,220 @@
+{
+  "name": "DAE UDS",
+  "tx_id": "6B5",
+  "rx_id": "695",
+  "protocol": "uds",
+  "dtc_lookup": "data/dtc/DIRECTN.json",
+  "key_type": "multi",
+  "keys": {
+    "key1": "2105",
+    "key2": "2707"
+  },
+  "coding": true,
+  "errors": true,
+  "include_zone_object": "./data/IdentUDSECU.json",
+  "tabs": {
+    "ident": "Identification",
+    "tele": "Telecoding"
+  },
+  "zones": {
+    "2100": {
+      "id": "Configuration_Group_Data_List",
+      "tab": "tele",
+      "name": "Configuration group data list",
+      "byte": 0,
+      "type": "raw",
+      "form_type": "string"
+    },
+    "2101": {
+      "id": "Gauging_Group_Data_Values",
+      "name": "Gauging group data values",
+      "tab": "tele",
+      "type": "raw",
+      "form_type": "multi",
+      "CFG_EP0_DAE_UDS_LXA_003": {
+        "name": "Full lane keeping assistance function",
+        "byte": 1,
+        "type": "bool",
+        "form_type": "combobox",
+        "mask": "00100000",
+        "params": [
+          {
+            "name": "With lane keeping assistance function",
+            "mask": "00000000"
+          },
+          {
+            "name": "Without lane keeping assistance function",
+            "mask": "00100000"
+          }
+        ]
+      },
+      "CFG_EP1_DAE_UDS_MODE_DYN_003": {
+        "name": "Dynamic driving function",
+        "byte": 1,
+        "type": "bool",
+        "form_type": "combobox",
+        "mask": "00010000",
+        "params": [
+          {
+            "name": "With dynamic driving function",
+            "mask": "00000000"
+          },
+          {
+            "name": "Without dynamic driving function",
+            "mask": "00010000"
+          }
+        ]
+      },
+      "CFG_EP2_DAE_UDS_STTD_003": {
+        "name": "Stop and Start",
+        "byte": 1,
+        "type": "bool",
+        "form_type": "combobox",
+        "mask": "00000100",
+        "params": [
+          {
+            "name": "With Stop and Start",
+            "mask": "00000000"
+          },
+          {
+            "name": "Without Stop and Start",
+            "mask": "00000100"
+          }
+        ]
+      },
+      "CFG_EP3_DAE_UDS_CPK_003": {
+        "name": "Semi-automatic parking system",
+        "byte": 1,
+        "type": "bool",
+        "form_type": "combobox",
+        "mask": "00000001",
+        "params": [
+          {
+            "name": "With semi-automatic parking system",
+            "mask": "00000000"
+          },
+          {
+            "name": "Without semi-automatic parking system",
+            "mask": "00000001"
+          }
+        ]
+      },
+      "CFG_EP4_DAE_UDS_CAV_003": {
+        "name": "Type of steering wheel angle sensor",
+        "byte": 2,
+        "type": "hex",
+        "form_type": "combobox",
+        "mask": "11111111",
+        "params": [
+          {
+            "name": "Without steering wheel angle sensor",
+            "value": "FE"
+          },
+          {
+            "name": "With steering wheel angle estimator",
+            "value": "FD"
+          },
+          {
+            "name": "With steering wheel angle sensor",
+            "value": "FB"
+          },
+          {
+            "name": "With virtual steering wheel angle sensor",
+            "value": "F7"
+          }
+        ]
+      },
+      "CFG_EP5_DAE_UDS_CPR_003": {
+        "name": "Bodywork",
+        "read_only": true,
+        "byte": 3,
+        "type": "hex",
+        "form_type": "combobox",
+        "mask": "1111111111111111",
+        "params": [
+          {
+            "name": "Peugeot 408",
+            "value": "FFFB"
+          }
+        ]
+      },
+      "CFG_EP6_DAE_UDS_MPR_003": {
+        "name": "Engine",
+        "read_only": true,
+        "byte": 5,
+        "type": "hex",
+        "form_type": "combobox",
+        "mask": "11111111111111111111111111111111",
+        "params": [
+          {
+            "name": "1.2t (EB2ADTS)",
+            "value": "FFFEFFFF"
+          },
+          {
+            "name": "1.6t",
+            "value": "FFFFFFFB"
+          }
+        ]
+      },
+      "CFG_EP7_DAE_UDS_BVPR_003": {
+        "name": "Type of gearbox",
+        "read_only": true,
+        "byte": 9,
+        "type": "hex",
+        "form_type": "combobox",
+        "mask": "1111111111111111",
+        "params": [
+          {
+            "name": "ATN8",
+            "value": "FF7F"
+          }
+        ]
+      },
+      "CFG_EP8_DAE_UDS_DPPR_003": {
+        "name": "Tyre size",
+        "byte": 11,
+        "type": "hex",
+        "form_type": "combobox",
+        "mask": "11111111111111111111111111111111",
+        "params": [
+          {
+            "name": "15 inches",
+            "value": "FEFFFFFF"
+          },
+          {
+            "name": "16 inches",
+            "value": "FDFFFFFF"
+          },
+          {
+            "name": "17 inches",
+            "value": "FBFFFFFF"
+          },
+          {
+            "name": "18 inches",
+            "value": "F7FFFFFF"
+          },
+          {
+            "name": "FFFEFFFF",
+            "value": "FFFEFFFF"
+          },
+          {
+            "name": "FFFFFEFF",
+            "value": "FFFFFEFF"
+          },
+          {
+            "name": "EFFFFFFF",
+            "value": "EFFFFFFF"
+          },
+          {
+            "name": "20 inches",
+            "value": "DFFFFFFF"
+          },
+          {
+            "name": "FFFFFF7F",
+            "value": "FFFFFF7F"
+          }
+        ]
+      }
+    }
+  }
+}

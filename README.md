@@ -22,6 +22,7 @@ Starter kit open source pour construire un outil de diagnostic automobile modula
 
 lien interressant : https://driver.top/exp/695220
 https://driver.top/exp/700838/
+https://github.com/Barracuda09/PyPSADiag
 
 ## État de cette version
 

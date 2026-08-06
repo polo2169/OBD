@@ -172,3 +172,17 @@
   source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#writing-counter
   confidence: community_documented
   access: read_only
+
+"0x2100":
+  name: "Telecodage : liste des groupes de configuration (Configuration_Group_Data_List)"
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only
+
+"0x2101":
+  name: "Telecodage : valeurs des groupes de mesure (Gauging_Group_Data_Values)"
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only

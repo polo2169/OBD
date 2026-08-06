@@ -236,11 +236,16 @@ def authorize_uds(
 def authorize_obd(payload: bytes) -> SafetyDecision:
     if not payload:
         return SafetyDecision(False, "Payload OBD vide.")
-    if payload[0] not in {0x01, 0x09}:
-        return SafetyDecision(
-            False,
-            f"Mode OBD 0x{payload[0]:02X} non autorisé dans le mode capteurs.",
-        )
-    if len(payload) != 2:
-        return SafetyDecision(False, "Une requête PID OBD doit contenir le mode et le PID.")
-    return SafetyDecision(True, "Lecture PID OBD autorisée.")
+    mode = payload[0]
+    if mode in {0x01, 0x09}:
+        if len(payload) != 2:
+            return SafetyDecision(False, "Une requête PID OBD doit contenir le mode et le PID.")
+        return SafetyDecision(True, "Lecture PID OBD autorisée.")
+    if mode in {0x03, 0x07}:
+        if len(payload) != 1:
+            return SafetyDecision(False, "Une requête DTC OBD (mode 03/07) ne prend aucun paramètre.")
+        return SafetyDecision(True, "Lecture DTC OBD autorisée.")
+    return SafetyDecision(
+        False,
+        f"Mode OBD 0x{mode:02X} non autorisé dans le mode capteurs.",
+    )

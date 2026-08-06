@@ -123,7 +123,7 @@ class VirtualVehicleTransport(Transport):
         self._reset_response()
 
     def _handle_request(self, request_id: int, uds: bytes) -> None:
-        if uds[:1] in {b"\x01", b"\x09"}:
+        if uds[:1] in {b"\x01", b"\x03", b"\x07", b"\x09"}:
             decision = authorize_obd(uds)
         elif self.safety_profile == "psa_lab":
             decision = authorize_psa_lab_uds(request_id, uds)

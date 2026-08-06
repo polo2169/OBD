@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 23
+CACHE_VERSION = 27
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -23,6 +23,14 @@ STEERING_RATIO = 15.3
 # Non documenté dans opendbc ; extrait en octets bruts, hors du pipeline de
 # décodage par message nommé. Candidat radar de stationnement avant, non validé.
 FRONT_SENSOR_CANDIDATE_ID = 0x489
+
+# Non documenté. Octets 2/4/5 quasi identiques entre eux, dérive lente et
+# plage plausible (8.9-22.1°C sur un essai) : candidat température intérieure
+# ou ambiante. Octet 3 toujours >= aux autres, souvent figé à 0xFF (motif
+# "invalide" déjà vu ailleurs dans ce projet) mais varie aussi largement
+# (5.9-25.4°C) quand il est valide : ne ressemble pas à une consigne stable,
+# plus probablement une température d'air mélangé/soufflage. Non validé.
+CLIMATE_CANDIDATE_ID = 0x3B8
 
 TARGET_IDS = {
     0x208,  # moteur
@@ -137,9 +145,21 @@ FIELD_QUALITY = {
     "speed_setpoint_kph": "opendbc_candidate",
     "cruise_xvv_state": "vehicle_observed_candidate",
     "cruise_setpoint_kph": "vehicle_observed_candidate",
+    "climate_ac_active": "opendbc_candidate",
+    "climate_ac_power_kw": "opendbc_candidate",
+    "interior_temp_candidate_c": "experimental_unvalidated_candidate",
+    "climate_air_temp_candidate_c": "experimental_unvalidated_candidate",
     "front_sensor_b0_raw": "experimental_unvalidated_candidate",
     "front_sensor_b2_raw": "experimental_unvalidated_candidate",
     "front_sensor_b4_raw": "experimental_unvalidated_candidate",
+    "fiat_clock_hour_candidate": "fiat_500_vehicle_observed_candidate",
+    "fiat_clock_minute_candidate": "fiat_500_vehicle_observed_candidate",
+    "fiat_start_stop_state_raw": "experimental_unvalidated_candidate",
+    "fiat_clutch_pedal_candidate": "experimental_unvalidated_candidate",
+    "fiat_battery_voltage_candidate_v": "fiat_500_vehicle_observed_candidate",
+    "fiat_a1_fast_nibble_candidate": "experimental_unvalidated_candidate",
+    "fiat_mode_flag_candidate": "experimental_unvalidated_candidate",
+    "fiat_mode_analog_candidate_raw": "experimental_unvalidated_candidate",
     "wheel_front_left_kph": "opendbc_candidate",
     "wheel_front_right_kph": "opendbc_candidate",
     "wheel_rear_left_kph": "opendbc_candidate",
@@ -271,6 +291,9 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
     elif message == "Dat_CLIM":
         setpoint = _number(values, "P219_Com_xPrpReqRaw")
         state["cruise_setpoint_kph"] = setpoint if setpoint is not None and setpoint < 255 else None
+        state["climate_ac_active"] = _boolean(values, "P050_Com_stAC")
+        power_watts = _number(values, "P210_Com_pwrACDem")
+        state["climate_ac_power_kw"] = round(power_watts / 1000, 3) if power_watts is not None else None
     elif message == "STEERING":
         state["driver_torque"] = _number(values, "DRIVER_TORQUE")
     elif message == "STEERING_ALT":
@@ -404,6 +427,10 @@ FIAT_500_REPLAY_IDS = {
     0x0618A001,
     0x0810A000,
     0x0A18A000,
+    0x0C28A000,
+    0x0C1CA000,
+    0x0628A001,
+    0x0A18A001,
 }
 
 
@@ -425,6 +452,11 @@ def _update_obd_state(values: list[dict[str, Any]], state: dict[str, Any]) -> se
 
 def _fiat_wheel_speed(raw: int) -> float:
     return 0.0 if raw <= 0x002C else round(raw / 16.0, 2)
+
+
+def _fiat_bcd_byte(value: int) -> int | None:
+    high, low = value >> 4, value & 0x0F
+    return high * 10 + low if high <= 9 and low <= 9 else None
 
 
 def _update_fiat_500_state(
@@ -472,6 +504,35 @@ def _update_fiat_500_state(
         state["parking_brake"] = bool(data[0] & 0x20)
         state["driver_door"] = bool(data[2] & 0x08)
         updated.update({"parking_brake", "driver_door"})
+    elif arbitration_id == 0x0C28A000 and len(data) >= 2:
+        # Horloge véhicule : octet 0 = heure BCD, octet 1 = minute BCD.
+        # Auto-validé par l'incrément d'exactement +1 minute toutes les 60 s réelles.
+        hour = _fiat_bcd_byte(data[0])
+        minute = _fiat_bcd_byte(data[1])
+        if hour is not None and 0 <= hour <= 23:
+            state["fiat_clock_hour_candidate"] = hour
+            updated.add("fiat_clock_hour_candidate")
+        if minute is not None and 0 <= minute <= 59:
+            state["fiat_clock_minute_candidate"] = minute
+            updated.add("fiat_clock_minute_candidate")
+    elif arbitration_id == 0x0C1CA000 and len(data) >= 3:
+        state["fiat_start_stop_state_raw"] = data[1]
+        updated.add("fiat_start_stop_state_raw")
+    elif arbitration_id == 0x0628A001 and len(data) >= 6:
+        state["fiat_clutch_pedal_candidate"] = data[5] == 0x10
+        state["fiat_battery_voltage_candidate_v"] = round(data[3] * 0.1, 1)
+        updated.update({"fiat_clutch_pedal_candidate", "fiat_battery_voltage_candidate_v"})
+    elif arbitration_id == 0x0A18A001 and len(data) >= 7:
+        # Nibble bas de l'octet 3 : change toutes les 100-300 ms, bien trop vite
+        # pour un rapport de boîte. Signification réelle non identifiée.
+        state["fiat_a1_fast_nibble_candidate"] = data[3] & 0x0F
+        state["fiat_mode_flag_candidate"] = bool(data[4])
+        state["fiat_mode_analog_candidate_raw"] = data[5]
+        updated.update({
+            "fiat_a1_fast_nibble_candidate",
+            "fiat_mode_flag_candidate",
+            "fiat_mode_analog_candidate_raw",
+        })
     return updated
 
 
@@ -1119,6 +1180,19 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
                 if updated:
                     available_fields.update(updated)
                     fiat_observed_fields.update(updated)
+                    decoded_frame_count += 1
+                continue
+
+            if arbitration_id == CLIMATE_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 6:
+                    state["interior_temp_candidate_c"] = round(data[2] * 0.1, 1)
+                    setpoint_raw = data[3]
+                    state["climate_air_temp_candidate_c"] = round(setpoint_raw * 0.1, 1) if setpoint_raw != 0xFF else None
+                    available_fields.update({"interior_temp_candidate_c", "climate_air_temp_candidate_c"})
                     decoded_frame_count += 1
                 continue
 

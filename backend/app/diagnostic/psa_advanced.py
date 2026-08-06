@@ -8,7 +8,7 @@ from udsoncan.exceptions import NegativeResponseException
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.isotp import UdsSession
-from app.diagnostic.uds import read_data_by_identifier
+from app.diagnostic.uds import enter_extended_session, read_data_by_identifier
 from app.learn.capture import capture_manager
 from app.models import (
     DidReadResult,
@@ -17,6 +17,8 @@ from app.models import (
     PsaSeedKeyResult,
     PsaUnlockRequest,
     PsaUnlockResult,
+    TelecodingParameterValue,
+    TelecodingZoneInfo,
 )
 from app.safety import authorize_psa_lab_uds
 from app.session import SessionWriter
@@ -237,6 +239,7 @@ def advanced_catalog() -> dict:
     kb = KnowledgeBase()
     ecus = []
     for ecu in kb.ecus():
+        zones = kb.telecoding_zones_for_family(ecu.family)
         ecus.append({
             "key": ecu.key,
             "name": ecu.name,
@@ -246,6 +249,10 @@ def advanced_catalog() -> dict:
             "protocol": ecu.protocol,
             "optional": ecu.optional,
             "security_keys": SECURITY_KEY_CANDIDATES.get(ecu.key, []),
+            "telecoding_zones": [
+                {"did": zone_id, "name": zone.get("name", zone_id)}
+                for zone_id, zone in sorted(zones.items())
+            ][:12],
         })
     return {
         "enabled": settings.psa_advanced_enabled,
@@ -324,6 +331,7 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
     if not 0 <= did <= 0xFFFF:
         raise ValueError("Le DID doit tenir sur deux octets.")
     ecu = _find_ecu(ecu_key)
+    kb = KnowledgeBase()
     trace = SessionWriter() if settings.debug_sessions_enabled else None
     transport = build_transport(_trace_sink(trace) if trace else None)
     opened = False
@@ -337,9 +345,21 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
             timeout=settings.diagnostic_timeout,
             read_only=True,
         ) as session:
+            enter_extended_session(session)
             response, value = read_data_by_identifier(session, did)
         printable = value.decode("ascii", errors="replace").strip("\x00 ")
         mostly_printable = bool(printable) and sum(character.isprintable() for character in printable) / len(printable) > 0.85
+        telecoding = None
+        zone = kb.describe_telecoding_zone(ecu.family, did)
+        if zone is not None:
+            parameters = kb.decode_telecoding_parameters(zone, value)
+            telecoding = TelecodingZoneInfo(
+                did=did,
+                name=zone.get("name", f"Zone 0x{did:04X}"),
+                family=ecu.family or "",
+                parameters=[TelecodingParameterValue(**item) for item in parameters],
+                source=kb.pypsadiag_source(),
+            )
         return DidReadResult(
             did=did,
             name=f"Zone PSA / DID 0x{did:04X}",
@@ -348,6 +368,7 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
             raw_hex=value.hex().upper(),
             source=PSA_DIAG_SOURCE,
             confidence="raw_vehicle_response",
+            telecoding=telecoding,
         )
     finally:
         if opened:

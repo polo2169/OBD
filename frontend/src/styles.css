@@ -1159,8 +1159,19 @@ button:disabled { opacity: .5; cursor: wait; }
   box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
 }
 .studio-error button { padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; }
+.studio-live-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.studio-live-area .experimental-signals-panel {
+  flex: 0 0 auto;
+  max-height: 26vh;
+  overflow-y: auto;
+}
 .studio-board {
   position: relative;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   background-color: #0a0f12;
@@ -2186,6 +2197,7 @@ button:disabled { opacity: .5; cursor: wait; }
 
 .did-sweep-hit {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -2198,6 +2210,51 @@ button:disabled { opacity: .5; cursor: wait; }
 .did-sweep-hit small {
   margin-left: auto;
   opacity: 0.7;
+}
+
+.telecoding-details {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 180, 95, 0.28);
+  background: rgba(255, 180, 95, 0.06);
+  font-size: 0.72rem;
+}
+
+.telecoding-heading {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.telecoding-heading small {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.telecoding-parameter-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.telecoding-parameter-list li {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.telecoding-parameter-list code {
+  color: var(--accent);
+}
+
+.telecoding-parameter-list strong {
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .dtc-snapshot-result {

@@ -83,6 +83,12 @@
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:02+00:00"
   },
+  "driver_door": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260802T163518Z-69a46fc2",
+    "validated_at": "2026-08-05T23:02:14+00:00"
+  },
   "driver_torque": {
     "validated": true,
     "note": null,
@@ -106,6 +112,18 @@
     "note": null,
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:32+00:00"
+  },
+  "fiat_clock_hour_candidate": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260802T163518Z-69a46fc2",
+    "validated_at": "2026-08-05T23:02:04+00:00"
+  },
+  "fiat_clock_minute_candidate": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260802T163518Z-69a46fc2",
+    "validated_at": "2026-08-05T23:02:05+00:00"
   },
   "fuel_liters": {
     "validated": true,
@@ -160,6 +178,12 @@
     "note": null,
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:15+00:00"
+  },
+  "parking_brake": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260802T163518Z-69a46fc2",
+    "validated_at": "2026-08-05T23:02:41+00:00"
   },
   "passenger_door": {
     "validated": true,

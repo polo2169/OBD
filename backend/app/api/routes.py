@@ -30,6 +30,7 @@ from app.diagnostic.scanner import (
     clear_ecu_dtcs,
     read_ecu_did,
     read_ecu_dtc_snapshot,
+    read_engine_obd_dtcs,
     scan_vehicle,
     sweep_ecu_dids,
 )
@@ -48,6 +49,7 @@ from app.models import (
     DidSweepResult,
     DtcSnapshotRequest,
     DtcSnapshotResult,
+    EcuScanResult,
     ObservedDtcInput,
     ObservedDtcResult,
     OperatingModeRequest,
@@ -471,13 +473,27 @@ def diagnostic_vehicle_identity(request: VehicleIdentityRequest) -> VehicleIdent
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/diagnostic/ecus/{ecu_key}/dids/sweep", response_model=DidSweepResult)
+def diagnostic_sweep_dids(ecu_key: str, request: DidSweepRequest) -> DidSweepResult:
+    try:
+        return sweep_ecu_dids(ecu_key, request.did_start, request.did_end, request.vehicle_profile)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+
 @router.post("/diagnostic/ecus/{ecu_key}/dids/{did}", response_model=DidReadResult)
-def diagnostic_read_did(ecu_key: str, did: str) -> DidReadResult:
+def diagnostic_read_did(ecu_key: str, did: str, vehicle_profile: str | None = Query(default=None)) -> DidReadResult:
     try:
         normalized = did.strip().lower()
         base = 16 if normalized.startswith("0x") or any(c in "abcdef" for c in normalized) else 10
         did_value = int(normalized, base)
-        result = read_ecu_did(ecu_key, did_value)
+        result = read_ecu_did(ecu_key, did_value, vehicle_profile)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=exc.args[0]) from exc
     except PermissionError as exc:
@@ -584,7 +600,7 @@ def diagnostic_clear_dtcs(ecu_key: str, request: ClearDtcRequest) -> ClearDtcRes
 @router.post("/diagnostic/ecus/{ecu_key}/dtcs/snapshot", response_model=DtcSnapshotResult)
 def diagnostic_read_dtc_snapshot(ecu_key: str, request: DtcSnapshotRequest) -> DtcSnapshotResult:
     try:
-        return read_ecu_dtc_snapshot(ecu_key, request.dtc_raw_hex, request.record_number)
+        return read_ecu_dtc_snapshot(ecu_key, request.dtc_raw_hex, request.record_number, request.vehicle_profile)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=exc.args[0]) from exc
     except PermissionError as exc:
@@ -595,14 +611,16 @@ def diagnostic_read_dtc_snapshot(ecu_key: str, request: DtcSnapshotRequest) -> D
         raise HTTPException(status_code=504, detail=str(exc)) from exc
 
 
-@router.post("/diagnostic/ecus/{ecu_key}/dids/sweep", response_model=DidSweepResult)
-def diagnostic_sweep_dids(ecu_key: str, request: DidSweepRequest) -> DidSweepResult:
+@router.post("/diagnostic/obd/dtcs", response_model=EcuScanResult)
+def diagnostic_read_obd_dtcs(
+    ecu_key: str = Query(default="engine"),
+    vehicle_profile: str | None = Query(default=None),
+) -> EcuScanResult:
+    """Generic EOBD Mode 03/07 DTC read. Independent of scan_vehicle's PSA-only gate."""
     try:
-        return sweep_ecu_dids(ecu_key, request.did_start, request.did_end)
+        return read_engine_obd_dtcs(ecu_key, vehicle_profile)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=exc.args[0]) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except TimeoutException as exc:

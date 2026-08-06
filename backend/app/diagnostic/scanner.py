@@ -10,10 +10,12 @@ from app.diagnostic.history import finalize_scan
 from app.diagnostic.uds import (
     clear_diagnostic_information,
     decode_dtc_status,
+    enter_extended_session,
     format_sae_dtc,
     read_data_by_identifier,
     read_dtc_snapshot,
     read_dtcs_by_status_mask,
+    read_obd_dtcs,
 )
 from app.models import (
     ClearDtcRequest,
@@ -27,6 +29,8 @@ from app.models import (
     EcuDefinition,
     EcuScanResult,
     ScanReport,
+    TelecodingParameterValue,
+    TelecodingZoneInfo,
 )
 from app.session import SessionWriter
 from app.transports.factory import build_transport
@@ -107,6 +111,7 @@ def _decode_dtcs(
             code=item.code,
             raw_hex=item.raw_hex,
             failure_type=item.failure_type,
+            failure_type_label=kb.failure_type_label(item.failure_type),
             status=item.status,
             status_hex=f"{item.status:02X}",
             status_labels=item.status_labels,
@@ -145,7 +150,26 @@ def _read_dtc_snapshot(
     raise ValueError("Lecture DTC impossible : " + "; ".join(errors))
 
 
-def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
+def _describe_telecoding(
+    kb: KnowledgeBase,
+    ecu: EcuDefinition,
+    did: int,
+    value_payload: bytes,
+) -> TelecodingZoneInfo | None:
+    zone = kb.describe_telecoding_zone(ecu.family, did)
+    if zone is None:
+        return None
+    parameters = kb.decode_telecoding_parameters(zone, value_payload)
+    return TelecodingZoneInfo(
+        did=did,
+        name=zone.get("name", f"Zone 0x{did:04X}"),
+        family=ecu.family or "",
+        parameters=[TelecodingParameterValue(**item) for item in parameters],
+        source=kb.pypsadiag_source(),
+    )
+
+
+def read_ecu_did(ecu_key: str, did: int, vehicle_profile: str | None = None) -> DidReadResult:
     kb = KnowledgeBase()
     definition = kb.dids().get(did)
     if definition is None:
@@ -153,7 +177,7 @@ def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
     if definition.get("access", "read_only") != "read_only":
         raise PermissionError(f"DID 0x{did:04X} non classé en lecture seule.")
 
-    ecu = next((item for item in kb.ecus() if item.key == ecu_key), None)
+    ecu = next((item for item in kb.ecus(vehicle_profile) if item.key == ecu_key), None)
     if ecu is None:
         raise KeyError(f"Calculateur inconnu : {ecu_key}.")
     if ecu.request_id is None or ecu.response_id is None:
@@ -174,6 +198,7 @@ def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
         ) as session:
+            enter_extended_session(session)
             try:
                 response, value_payload = read_data_by_identifier(session, did)
             except NegativeResponseException as exc:
@@ -207,6 +232,7 @@ def read_ecu_did(ecu_key: str, did: int) -> DidReadResult:
                         confidence=definition.get("confidence", "experimental"),
                         request_hex=f"22{did:04X}",
                         response_hex=response.original_payload.hex().upper(),
+                        telecoding=_describe_telecoding(kb, ecu, did, value_payload),
                     )
             if trace:
                 trace.write({
@@ -226,9 +252,10 @@ def read_ecu_dtc_snapshot(
     ecu_key: str,
     dtc_raw_hex: str,
     record_number: int = 0xFF,
+    vehicle_profile: str | None = None,
 ) -> DtcSnapshotResult:
     kb = KnowledgeBase()
-    ecu = next((item for item in kb.ecus() if item.key == ecu_key), None)
+    ecu = next((item for item in kb.ecus(vehicle_profile) if item.key == ecu_key), None)
     if ecu is None:
         raise KeyError(f"Calculateur inconnu : {ecu_key}.")
     if ecu.request_id is None or ecu.response_id is None:
@@ -310,7 +337,12 @@ def read_ecu_dtc_snapshot(
 MAX_DID_SWEEP_SPAN = 0x200
 
 
-def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult:
+def sweep_ecu_dids(
+    ecu_key: str,
+    did_start: int,
+    did_end: int,
+    vehicle_profile: str | None = None,
+) -> DidSweepResult:
     if not 0 <= did_start <= 0xFFFF or not 0 <= did_end <= 0xFFFF:
         raise ValueError("Les DID doivent tenir sur deux octets (0x0000-0xFFFF).")
     if did_end < did_start:
@@ -323,7 +355,7 @@ def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult
         )
 
     kb = KnowledgeBase()
-    ecu = next((item for item in kb.ecus() if item.key == ecu_key), None)
+    ecu = next((item for item in kb.ecus(vehicle_profile) if item.key == ecu_key), None)
     if ecu is None:
         raise KeyError(f"Calculateur inconnu : {ecu_key}.")
     if ecu.request_id is None or ecu.response_id is None:
@@ -354,6 +386,7 @@ def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
         ) as session:
+            enter_extended_session(session)
             for did in range(did_start, did_end + 1):
                 scanned_count += 1
                 try:
@@ -363,6 +396,7 @@ def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult
                         outcome="positive",
                         raw_hex=value_payload.hex().upper(),
                         response_hex=response.original_payload.hex().upper(),
+                        telecoding=_describe_telecoding(kb, ecu, did, value_payload),
                     ))
                 except NegativeResponseException as exc:
                     code = exc.response.code
@@ -402,6 +436,102 @@ def sweep_ecu_dids(ecu_key: str, did_start: int, did_end: int) -> DidSweepResult
         hits=hits,
         unsupported_count=unsupported_count,
         timeout_count=timeout_count,
+    )
+
+
+_OBD_DTC_MODE_LABELS = {
+    0x03: ("active", "Actif", "Code mémorisé (Mode OBD 03)."),
+    0x07: ("not_tested", "En attente", "Code en attente, moniteur pas encore confirmé (Mode OBD 07)."),
+}
+
+
+def read_engine_obd_dtcs(ecu_key: str = "engine", vehicle_profile: str | None = None) -> EcuScanResult:
+    """Generic EOBD Mode 03/07 DTC read, independent of the PSA-style UDS 0x19 scan.
+
+    Deliberately bypasses the `identity_scope: identity_only` gate on
+    `scan_vehicle`: it only ever talks to the one ECU the caller names, using
+    plain standardized OBD services, not the unconfirmed UDS/KWP addresses
+    some vehicle profiles still carry for body/cluster calculators.
+    """
+    kb = KnowledgeBase()
+    profile_key = vehicle_profile or settings.vehicle_profile
+    ecu = next((item for item in kb.ecus(profile_key) if item.key == ecu_key), None)
+    if ecu is None:
+        raise KeyError(f"Calculateur inconnu : {ecu_key}.")
+    if ecu.request_id is None or ecu.response_id is None:
+        raise ValueError(f"Adresses non documentées pour {ecu.name}.")
+
+    trace = SessionWriter() if settings.debug_sessions_enabled else None
+    transport = build_transport(_trace_sink(trace) if trace else None)
+    if trace:
+        trace.write({"type": "obd_dtc_read_start", "ecu": ecu_key})
+
+    dtcs: list[DtcReadResult] = []
+    errors: list[str] = []
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=settings.read_only,
+        ) as session:
+            for mode, (state, state_label, state_detail) in _OBD_DTC_MODE_LABELS.items():
+                try:
+                    raw_dtcs = read_obd_dtcs(session, mode)
+                except NegativeResponseException as exc:
+                    errors.append(f"mode 0x{mode:02X}: NRC 0x{exc.response.code:02X} {exc.response.code_name}")
+                    continue
+                except (TimeoutException, TimeoutError, ValueError, PermissionError) as exc:
+                    errors.append(f"mode 0x{mode:02X}: {exc}")
+                    continue
+                for item in raw_dtcs:
+                    definition = kb.lookup_dtc(item.code, ecu.dtc_catalogs)
+                    dtcs.append(DtcReadResult(
+                        code=item.code,
+                        raw_hex=item.raw_hex,
+                        failure_type=0,
+                        status=0,
+                        status_hex="00",
+                        status_labels=[],
+                        title=definition.get("title"),
+                        catalogs=definition.get("catalogs", []),
+                        source=definition.get("source"),
+                        confidence=definition.get("confidence", "raw_only"),
+                        state=state,
+                        state_label=state_label,
+                        state_detail=state_detail,
+                        actionable=state == "active",
+                    ))
+    finally:
+        if opened:
+            transport.close()
+        if trace:
+            trace.write({
+                "type": "obd_dtc_read_result",
+                "ecu": ecu_key,
+                "dtc_count": len(dtcs),
+                "errors": errors,
+            })
+            trace.finish()
+
+    return EcuScanResult(
+        key=ecu.key,
+        name=ecu.name,
+        detected=True,
+        request_id=ecu.request_id,
+        response_id=ecu.response_id,
+        family=ecu.family,
+        network=ecu.network,
+        confidence=ecu.confidence,
+        optional=ecu.optional,
+        source=ecu.source,
+        dtcs=dtcs,
+        dtc_request_hex="03 / 07",
+        dtc_error="; ".join(errors) or None,
     )
 
 
@@ -486,6 +616,10 @@ def _address_options(ecu: EcuDefinition) -> list[dict]:
 EXTENDED_PROBE_TARGETS: dict[str, tuple[int, int]] = {
     "engine": (0x0000, 0x01FF),
     "telematics": (0x0000, 0x01FF),
+    # Telecoding zone range (Configuration_Group_Data_List / Gauging_Group_Data_Values):
+    # surfaces PyPSADiag CFG_* decode automatically for ECU families it documents.
+    "front_camera": (0x2100, 0x21FF),
+    "front_radar": (0x2100, 0x21FF),
 }
 
 
@@ -601,6 +735,12 @@ def scan_vehicle(
                         if method and method.startswith("10") and probe_raw and probe_raw.startswith("50"):
                             active_session = int(probe_raw[2:4], 16)
                             active_session_source = "diagnostic_session_control"
+
+                        # The probe stops at the first payload that gets any response, and
+                        # "1001" (default session) is tried before "1003" — so it never
+                        # actually reaches extended session. Many PSA ECUs gate manufacturer
+                        # identification DIDs behind it even for reads, so ask explicitly here.
+                        enter_extended_session(session)
 
                         for did in identification_dids:
                             definition = did_definitions.get(did, {})
