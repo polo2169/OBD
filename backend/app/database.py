@@ -251,6 +251,11 @@ class KnowledgeBase:
                 "byte": byte_offset,
                 "raw_hex": f"{raw_byte:02X}",
                 "value": matched,
+                "options": [
+                    option.get("name")
+                    for option in param.get("params", [])
+                    if option.get("name") and option.get("mask") is not None
+                ],
             })
         return decoded
 

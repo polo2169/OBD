@@ -3,21 +3,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 
-from udsoncan.exceptions import NegativeResponseException
+from udsoncan.exceptions import NegativeResponseException, TimeoutException
 
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.isotp import UdsSession
-from app.diagnostic.uds import enter_extended_session, read_data_by_identifier
+from app.diagnostic.uds import (
+    ecu_reset,
+    enter_extended_session,
+    read_data_by_identifier,
+    write_data_by_identifier,
+)
 from app.learn.capture import capture_manager
 from app.models import (
     DidReadResult,
+    EcuResetRequest,
+    EcuResetResult,
     PsaActionRequest,
     PsaActionResult,
     PsaSeedKeyResult,
     PsaUnlockRequest,
     PsaUnlockResult,
     TelecodingParameterValue,
+    TelecodingWriteRequest,
+    TelecodingWriteResult,
     TelecodingZoneInfo,
 )
 from app.safety import authorize_psa_lab_uds
@@ -258,6 +267,8 @@ def advanced_catalog() -> dict:
         "enabled": settings.psa_advanced_enabled,
         "security_access_enabled": settings.psa_security_access_enabled,
         "actuator_enabled": settings.psa_actuator_enabled,
+        "ecu_reset_enabled": settings.psa_ecu_reset_enabled,
+        "telecoding_write_enabled": settings.psa_telecoding_write_enabled,
         "read_only": settings.read_only,
         "can_tx_enabled": settings.can_tx_enabled,
         "required_firmware_policy": "psa_lab_named_actions",
@@ -377,6 +388,23 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
             trace.finish()
 
 
+def _unlock_security(session: UdsSession, application_key_hex: str) -> tuple[str, str, bytes]:
+    """Seed/key handshake shared by unlock_configuration and write_telecoding_parameter.
+
+    Leaves the security level unlocked on the already-open session — the caller
+    decides what to do next (close, or immediately read/write while unlocked).
+    """
+    seed_response = session.request(bytes.fromhex("2703"))
+    if len(seed_response) != 6 or seed_response[:2] != bytes.fromhex("6703"):
+        raise ValueError("Réponse seed PSA inattendue.")
+    seed_hex = seed_response[2:].hex().upper()
+    response_key = compute_psa_seed_key(seed_hex, application_key_hex)
+    unlock_response = session.request(bytes.fromhex("2704") + bytes.fromhex(response_key))
+    if unlock_response[:2] != bytes.fromhex("6704"):
+        raise ValueError("Réponse de déverrouillage PSA inattendue.")
+    return seed_hex, response_key, unlock_response
+
+
 def unlock_configuration(ecu_key: str, request: PsaUnlockRequest) -> PsaUnlockResult:
     if not settings.psa_security_access_enabled:
         raise PermissionError("Accès sécurité PSA verrouillé : PSA_SECURITY_ACCESS_ENABLED=false.")
@@ -410,14 +438,7 @@ def unlock_configuration(ecu_key: str, request: PsaUnlockRequest) -> PsaUnlockRe
             safety_policy=policy,
         ) as session:
             session.request(bytes.fromhex("1003"))
-            seed_response = session.request(bytes.fromhex("2703"))
-            if len(seed_response) != 6 or seed_response[:2] != bytes.fromhex("6703"):
-                raise ValueError("Réponse seed PSA inattendue.")
-            seed_hex = seed_response[2:].hex().upper()
-            response_key = compute_psa_seed_key(seed_hex, request.application_key_hex)
-            unlock_response = session.request(bytes.fromhex("2704") + bytes.fromhex(response_key))
-            if unlock_response[:2] != bytes.fromhex("6704"):
-                raise ValueError("Réponse de déverrouillage PSA inattendue.")
+            seed_hex, response_key, unlock_response = _unlock_security(session, request.application_key_hex)
         result = PsaUnlockResult(
             ecu_key=ecu_key,
             unlocked=True,
@@ -501,6 +522,178 @@ def execute_named_action(action_key: str, request: PsaActionRequest) -> PsaActio
         return result
     except NegativeResponseException:
         raise
+    finally:
+        if opened:
+            transport.close()
+        trace.finish()
+
+
+def reset_ecu(ecu_key: str, request: EcuResetRequest) -> EcuResetResult:
+    """ECUReset (hardReset 0x11/0x01) — available on all 15 catalog ECUs, unlike
+    telecoding write which needs a security-access unlock only wired for BSI/télématique."""
+    if not settings.psa_ecu_reset_enabled:
+        raise PermissionError("Redémarrage ECU verrouillé : PSA_ECU_RESET_ENABLED=false.")
+    expected_confirmation = f"REDEMARRER {ecu_key.upper()}"
+    _require_lab_preconditions(
+        ecu_key,
+        request.confirmation,
+        expected_confirmation,
+        vehicle_stationary=request.vehicle_stationary,
+        ignition_on_engine_off=request.ignition_on_engine_off,
+        stable_battery_voltage=request.stable_battery_voltage,
+        workshop_or_private_site=request.workshop_or_private_site,
+    )
+    ecu = _find_ecu(ecu_key)
+
+    trace = SessionWriter()
+    transport = build_transport(_trace_sink(trace), safety_profile="psa_lab")
+    opened = False
+    response_hex: str | None = None
+    message = "Commande de redémarrage envoyée."
+    try:
+        transport.open()
+        opened = True
+        policy = lambda payload: authorize_psa_lab_uds(ecu.request_id, payload)
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=False,
+            safety_policy=policy,
+        ) as session:
+            enter_extended_session(session)
+            try:
+                response = ecu_reset(session)
+                response_hex = response.original_payload.hex().upper()
+                message = "Redémarrage confirmé par le calculateur (réponse 0x51/0x01)."
+            except (TimeoutException, TimeoutError):
+                message = (
+                    "Commande envoyée mais le calculateur est resté silencieux — normal si le "
+                    "redémarrage l'a coupé avant qu'il ait pu répondre."
+                )
+        result = EcuResetResult(
+            ecu_key=ecu_key,
+            reset=True,
+            response_hex=response_hex,
+            message=message,
+            session_id=trace.id,
+        )
+        trace.write({"type": "ecu_reset_result", "payload": result.model_dump()})
+        return result
+    finally:
+        if opened:
+            transport.close()
+        trace.finish()
+
+
+def write_telecoding_parameter(ecu_key: str, request: TelecodingWriteRequest) -> TelecodingWriteResult:
+    """Read-modify-write-verify a single documented telecoding option.
+
+    Experimental: never confirmed on a real vehicle. Only reachable for BSI and
+    télématique — the only ECUs with a wired security-access unlock today. The
+    client can only choose from options already enumerated in the PyPSADiag
+    catalog (by name); it never gets to send an arbitrary byte.
+    """
+    if not settings.psa_telecoding_write_enabled:
+        raise PermissionError("Écriture télécodage verrouillée : PSA_TELECODING_WRITE_ENABLED=false.")
+    if not settings.psa_security_access_enabled:
+        raise PermissionError("Écriture télécodage impossible : PSA_SECURITY_ACCESS_ENABLED=false.")
+    expected_confirmation = f"TELECODER {ecu_key.upper()}"
+    _require_lab_preconditions(
+        ecu_key,
+        request.confirmation,
+        expected_confirmation,
+        vehicle_stationary=request.vehicle_stationary,
+        ignition_on_engine_off=request.ignition_on_engine_off,
+        stable_battery_voltage=request.stable_battery_voltage,
+        workshop_or_private_site=request.workshop_or_private_site,
+    )
+    ecu = _find_ecu(ecu_key)
+    if ecu.request_id not in {0x752, 0x764}:
+        raise PermissionError("Écriture télécodage limitée au BSI et au calculateur télématique.")
+
+    kb = KnowledgeBase()
+    zone = kb.describe_telecoding_zone(ecu.family, request.did)
+    if zone is None:
+        raise KeyError(f"Zone de télécodage 0x{request.did:04X} non documentée pour {ecu.family}.")
+    parameter = zone.get("parameters", {}).get(request.parameter_key)
+    if parameter is None:
+        raise KeyError(f"Paramètre inconnu : {request.parameter_key}.")
+    byte_offset = parameter.get("byte", 0)
+    field_mask_str = parameter.get("mask")
+    if not isinstance(field_mask_str, str):
+        raise ValueError("Paramètre sans masque documenté : écriture impossible.")
+    field_mask = int(field_mask_str, 2)
+    option = next(
+        (item for item in parameter.get("params", []) if item.get("name") == request.option_name),
+        None,
+    )
+    if option is None or option.get("mask") is None:
+        raise KeyError(f"Option inconnue pour {request.parameter_key} : {request.option_name}.")
+    option_mask = int(option["mask"], 2)
+
+    trace = SessionWriter()
+    transport = build_transport(_trace_sink(trace), safety_profile="psa_lab")
+    opened = False
+    try:
+        transport.open()
+        opened = True
+        policy = lambda payload: authorize_psa_lab_uds(ecu.request_id, payload)
+        with UdsSession(
+            transport,
+            ecu.request_id,
+            ecu.response_id,
+            timeout=settings.diagnostic_timeout,
+            read_only=False,
+            safety_policy=policy,
+        ) as session:
+            session.request(bytes.fromhex("1003"))
+            _unlock_security(session, request.application_key_hex)
+
+            _, before_bytes = read_data_by_identifier(session, request.did)
+            if byte_offset >= len(before_bytes):
+                raise ValueError(
+                    "Décalage d'octet du paramètre hors de la zone lue — catalogue incohérent "
+                    "avec la réponse du véhicule, écriture annulée."
+                )
+            before_decoded = kb.decode_telecoding_parameters(zone, before_bytes)
+            previous_value = next(
+                (item["value"] for item in before_decoded if item["key"] == request.parameter_key),
+                None,
+            )
+
+            patched = bytearray(before_bytes)
+            patched[byte_offset] = (patched[byte_offset] & ~field_mask) | option_mask
+            write_data_by_identifier(session, request.did, bytes(patched))
+
+            _, after_bytes = read_data_by_identifier(session, request.did)
+            after_decoded = kb.decode_telecoding_parameters(zone, after_bytes)
+            new_value = next(
+                (item["value"] for item in after_decoded if item["key"] == request.parameter_key),
+                None,
+            )
+
+        verified = new_value == request.option_name
+        result = TelecodingWriteResult(
+            ecu_key=ecu_key,
+            did=request.did,
+            parameter_key=request.parameter_key,
+            requested_option=request.option_name,
+            previous_value=previous_value,
+            new_value=new_value,
+            verified=verified,
+            raw_before_hex=before_bytes.hex().upper(),
+            raw_after_hex=after_bytes.hex().upper(),
+            message=(
+                "Écriture confirmée par relecture."
+                if verified
+                else "Écriture envoyée mais la relecture ne correspond pas à la valeur demandée — à vérifier manuellement."
+            ),
+            session_id=trace.id,
+        )
+        trace.write({"type": "telecoding_write_result", "payload": result.model_dump()})
+        return result
     finally:
         if opened:
             transport.close()

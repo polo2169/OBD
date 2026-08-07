@@ -75,6 +75,7 @@ type TelecodingParameterValue = {
   byte: number;
   raw_hex: string;
   value?: string | null;
+  options: string[];
 };
 
 type TelecodingZoneInfo = {
@@ -454,6 +455,7 @@ type VehicleIdentityResult = {
 };
 
 type PsaSecurityKey = { variant: string; key_hex: string };
+type PsaTelecodingZoneRef = { did: string; name: string };
 type PsaAdvancedEcu = {
   key: string;
   name: string;
@@ -463,6 +465,7 @@ type PsaAdvancedEcu = {
   protocol: string;
   optional: boolean;
   security_keys: PsaSecurityKey[];
+  telecoding_zones: PsaTelecodingZoneRef[];
 };
 type PsaAdvancedAction = {
   key: string;
@@ -485,6 +488,8 @@ type PsaAdvancedCatalog = {
   enabled: boolean;
   security_access_enabled: boolean;
   actuator_enabled: boolean;
+  ecu_reset_enabled: boolean;
+  telecoding_write_enabled: boolean;
   read_only: boolean;
   can_tx_enabled: boolean;
   required_firmware_policy: string;
@@ -492,6 +497,26 @@ type PsaAdvancedCatalog = {
   ecus: PsaAdvancedEcu[];
   actions: PsaAdvancedAction[];
   sources: string[];
+};
+type EcuResetResult = {
+  ecu_key: string;
+  reset: boolean;
+  response_hex?: string | null;
+  message: string;
+  session_id?: string | null;
+};
+type TelecodingWriteResult = {
+  ecu_key: string;
+  did: number;
+  parameter_key: string;
+  requested_option: string;
+  previous_value?: string | null;
+  new_value?: string | null;
+  verified: boolean;
+  raw_before_hex: string;
+  raw_after_hex: string;
+  message: string;
+  session_id?: string | null;
 };
 type PsaSeedKeyResult = {
   seed_hex: string;
@@ -567,6 +592,7 @@ type PassiveCanSignal = {
   display_name: string;
   description: string;
   category: string;
+  ecu_family?: string | null;
   value?: string | number | boolean | null;
   raw_value?: string | number | boolean | null;
   unit?: string | null;
@@ -1227,10 +1253,47 @@ const defaultStudioWidgets: StudioWidget[] = [
   { id: "studio-battery", kind: "gauge", key: "battery_voltage_v", x: 9, y: 8, w: 3, h: 3 },
 ];
 
-type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery" | "database" | "security";
+const ECU_LIVE_VIEW_KEYS = [
+  "gearbox",
+  "abs_esp",
+  "bsi",
+  "airbag",
+  "power_steering",
+  "instrument_cluster",
+  "climate_control",
+  "front_camera",
+  "parking_assistance",
+  "telematics",
+  "gear_selector",
+  "rain_light_sensor",
+  "front_radar",
+  "tire_pressure",
+] as const;
+type EcuLiveView = typeof ECU_LIVE_VIEW_KEYS[number];
+
+const ECU_LIVE_CATALOG: Record<EcuLiveView, { name: string; glyph: string }> = {
+  gearbox: { name: "Boîte de vitesses pilotée / automatique", glyph: "BV" },
+  abs_esp: { name: "ABS / ESP", glyph: "ABS" },
+  bsi: { name: "Boîtier de servitude intelligent", glyph: "BSI" },
+  airbag: { name: "Airbags / prétensionneurs", glyph: "SRS" },
+  power_steering: { name: "Direction assistée électrique", glyph: "DIR" },
+  instrument_cluster: { name: "Combiné d'instruments", glyph: "CBI" },
+  climate_control: { name: "Climatisation", glyph: "CLI" },
+  front_camera: { name: "Caméra vidéo multifonction", glyph: "CAM" },
+  parking_assistance: { name: "Aide au stationnement", glyph: "PARK" },
+  telematics: { name: "Autoradio / télématique", glyph: "NAC" },
+  gear_selector: { name: "Commande électrique de boîte / sélecteur", glyph: "SEL" },
+  rain_light_sensor: { name: "Capteur de pluie et luminosité", glyph: "PLU" },
+  front_radar: { name: "Radar avant / régulation adaptative", glyph: "RAD" },
+  tire_pressure: { name: "Surveillance pression pneumatiques", glyph: "TPMS" },
+};
+
+const SAFETY_CRITICAL_ECU_KEYS = new Set(["abs_esp", "airbag", "bsi", "front_camera", "power_steering"]);
+
+type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery" | "database" | "security" | EcuLiveView;
 type NavModule = "diagnostic" | "atelier" | "learn";
 
-const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery", "database", "security"];
+const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery", "database", "security", ...ECU_LIVE_VIEW_KEYS];
 const LAB_MODE = new URLSearchParams(window.location.search).get("lab") === "1"
   || import.meta.env.VITE_LAB_MODE === "true";
 
@@ -1319,6 +1382,11 @@ const viewTitles: Record<View, { eyebrow: string; title: string; description: st
     title: "Security & Workflow",
     description: "Préconditions, autorisations, journalisation, contrôle et rapports pour chaque opération.",
   },
+  ...Object.fromEntries(ECU_LIVE_VIEW_KEYS.map((key) => [key, {
+    eyebrow: "Calculateur · lecture seule",
+    title: ECU_LIVE_CATALOG[key].name,
+    description: "Signaux CAN décodés attribués à ce calculateur et zones UDS en direct, sans écriture ni commande.",
+  }])) as Record<EcuLiveView, { eyebrow: string; title: string; description: string }>,
 };
 
 const markerPresets = [
@@ -1947,7 +2015,7 @@ function App() {
   const [openNavModule, setOpenNavModule] = useState<NavModule | null>(() => {
     const initial = initialView();
     if (["ecus", "sensors", "dtcs", "identity"].includes(initial)) return "diagnostic";
-    if (["injection", "maintenance", "studio"].includes(initial)) return "atelier";
+    if ((["injection", "maintenance", "studio", ...ECU_LIVE_VIEW_KEYS] as View[]).includes(initial)) return "atelier";
     if (["discovery", "inventory", "replay"].includes(initial)) return "learn";
     return null;
   });
@@ -1985,8 +2053,8 @@ function App() {
   const [dtcClearResult, setDtcClearResult] = useState<ClearDtcResult | null>(null);
   const [dtcSnapshotBusy, setDtcSnapshotBusy] = useState("");
   const [dtcSnapshotResults, setDtcSnapshotResults] = useState<Record<string, DtcSnapshotResult>>({});
-  const [didSweepStart, setDidSweepStart] = useState("F180");
-  const [didSweepEnd, setDidSweepEnd] = useState("F1FF");
+  const [didSweepStart, setDidSweepStart] = useState("0000");
+  const [didSweepEnd, setDidSweepEnd] = useState("01FF");
   const [didSweepBusy, setDidSweepBusy] = useState(false);
   const [didSweepResult, setDidSweepResult] = useState<DidSweepResult | null>(null);
   const [observedDtcs, setObservedDtcs] = useState<ObservedDtc[]>([]);
@@ -2016,6 +2084,9 @@ function App() {
   const [udsProbeResult, setUdsProbeResult] = useState<DidValue | null>(null);
   const [udsProbeBusy, setUdsProbeBusy] = useState(false);
   const [psaCatalog, setPsaCatalog] = useState<PsaAdvancedCatalog | null>(null);
+  const [ecuWatchValues, setEcuWatchValues] = useState<Record<string, DidValue>>({});
+  const [ecuLiveReport, setEcuLiveReport] = useState<Ecu | null>(null);
+  const [ecuLiveReportBusy, setEcuLiveReportBusy] = useState(false);
   const [maintenanceCatalog, setMaintenanceCatalog] = useState<MaintenanceCatalog | null>(null);
   const [maintenanceCategory, setMaintenanceCategory] = useState("Toutes");
   const [psaEcuKey, setPsaEcuKey] = useState("bsi");
@@ -2038,6 +2109,16 @@ function App() {
   });
   const [psaBusy, setPsaBusy] = useState("");
   const [psaFeedback, setPsaFeedback] = useState("");
+  const [ecuResetConfirmation, setEcuResetConfirmation] = useState("");
+  const [ecuResetBusy, setEcuResetBusy] = useState(false);
+  const [ecuResetResult, setEcuResetResult] = useState<EcuResetResult | null>(null);
+  const [telecodingWriteApplicationKey, setTelecodingWriteApplicationKey] = useState("D91C");
+  const [telecodingWriteDid, setTelecodingWriteDid] = useState("");
+  const [telecodingWriteParameterKey, setTelecodingWriteParameterKey] = useState("");
+  const [telecodingWriteOptionName, setTelecodingWriteOptionName] = useState("");
+  const [telecodingWriteConfirmation, setTelecodingWriteConfirmation] = useState("");
+  const [telecodingWriteBusy, setTelecodingWriteBusy] = useState(false);
+  const [telecodingWriteResult, setTelecodingWriteResult] = useState<TelecodingWriteResult | null>(null);
   const [psaSection, setPsaSection] = useState<"read" | "actions" | "expert">(() => {
     const requested = new URLSearchParams(window.location.search).get("mode");
     return requested === "actions" || requested === "expert" ? requested : "read";
@@ -2208,7 +2289,10 @@ function App() {
   }, [capture?.active, capture?.session_id, captureGpsEnabled]);
 
   useEffect(() => {
-    if (!["sensors", "inventory", "ecus", "psa", "studio"].includes(view) || !capture?.active) return;
+    if (
+      !(["sensors", "inventory", "ecus", "psa", "studio", ...ECU_LIVE_VIEW_KEYS] as View[]).includes(view)
+      || !capture?.active
+    ) return;
     const timer = window.setInterval(refreshPassiveSensors, 200);
     return () => window.clearInterval(timer);
   }, [view, capture?.active]);
@@ -2466,6 +2550,46 @@ function App() {
       .filter(({ sensors }) => sensors.length > 0);
   }, [diagnosticSensorCatalog]);
   const engineDtcs = report?.ecus.find((ecu) => ecu.key === "engine")?.dtcs ?? [];
+
+  useEffect(() => {
+    setEcuWatchValues({});
+    setDidSweepResult(null);
+    setEcuLiveReport(null);
+    setEcuResetConfirmation("");
+    setEcuResetResult(null);
+    setTelecodingWriteDid("");
+    setTelecodingWriteParameterKey("");
+    setTelecodingWriteOptionName("");
+    setTelecodingWriteConfirmation("");
+    setTelecodingWriteResult(null);
+    setDtcClearConfirmation("");
+    setDtcClearResult(null);
+  }, [view]);
+
+  useEffect(() => {
+    if (!(ECU_LIVE_VIEW_KEYS as readonly View[]).includes(view)) return;
+    const zones = psaCatalog?.ecus.find((item) => item.key === view)?.telecoding_zones ?? [];
+    if (!psaVehicleCompatible || !diagnosticReady || zones.length === 0) return;
+    let cancelled = false;
+    let index = 0;
+    const tick = async () => {
+      if (cancelled) return;
+      const zone = zones[index % zones.length];
+      index += 1;
+      try {
+        const result = await api<DidValue>(
+          `/api/diagnostic/psa/ecus/${encodeURIComponent(view)}/dids/0x${zone.did}`,
+          { method: "POST" },
+        );
+        if (!cancelled) setEcuWatchValues((previous) => ({ ...previous, [zone.did]: result }));
+      } catch {
+        // Lecture ponctuelle échouée (NRC/timeout) : on garde la dernière valeur connue.
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 1200);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [view, psaCatalog, psaVehicleCompatible, diagnosticReady]);
   const sensorCategories = useMemo(
     () => ["Essentiels", "Toutes", ...Array.from(new Set(passiveSensors?.signals.map((signal) => signal.category) ?? []))],
     [passiveSensors],
@@ -3519,14 +3643,14 @@ function App() {
     }
   }
 
-  async function clearSelectedEcuDtcs() {
-    if (!dtcClearEcuKey) return;
+  async function clearSelectedEcuDtcs(ecuKey: string | undefined = dtcClearEcuKey) {
+    if (!ecuKey) return;
     setDtcClearBusy(true);
     setDtcClearResult(null);
     setError("");
     try {
       const result = await api<ClearDtcResult>(
-        `/api/diagnostic/ecus/${encodeURIComponent(dtcClearEcuKey)}/dtcs/clear`,
+        `/api/diagnostic/ecus/${encodeURIComponent(ecuKey)}/dtcs/clear`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3565,8 +3689,8 @@ function App() {
     }
   }
 
-  async function sweepSelectedEcuDids() {
-    if (!selectedEcu) return;
+  async function sweepSelectedEcuDids(ecuKey: string | undefined = selectedEcu?.key) {
+    if (!ecuKey) return;
     const start = parseInt(didSweepStart.trim().replace(/^0x/i, ""), 16);
     const end = parseInt(didSweepEnd.trim().replace(/^0x/i, ""), 16);
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
@@ -3578,7 +3702,7 @@ function App() {
     setError("");
     try {
       const result = await api<DidSweepResult>(
-        `/api/diagnostic/ecus/${encodeURIComponent(selectedEcu.key)}/dids/sweep`,
+        `/api/diagnostic/ecus/${encodeURIComponent(ecuKey)}/dids/sweep`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3590,6 +3714,79 @@ function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setDidSweepBusy(false);
+    }
+  }
+
+  async function readEcuLiveReport(ecuKey: string) {
+    setEcuLiveReportBusy(true);
+    setError("");
+    try {
+      const profile = selectedDiagnosticVehicle?.vehicle_profile ?? identityProfileKey;
+      const result = await api<Ecu>(
+        `/api/diagnostic/ecus/${encodeURIComponent(ecuKey)}/report?vehicle_profile=${encodeURIComponent(profile)}`,
+        { method: "POST" },
+      );
+      setEcuLiveReport(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEcuLiveReportBusy(false);
+    }
+  }
+
+  async function resetSelectedEcu(ecuKey: string) {
+    setEcuResetBusy(true);
+    setEcuResetResult(null);
+    setError("");
+    try {
+      const result = await api<EcuResetResult>(`/api/diagnostic/psa/ecus/${encodeURIComponent(ecuKey)}/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation: ecuResetConfirmation,
+          ...effectivePsaLabChecks,
+        }),
+      });
+      setEcuResetResult(result);
+      setEcuResetConfirmation("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEcuResetBusy(false);
+    }
+  }
+
+  async function writeSelectedTelecodingParameter(ecuKey: string) {
+    const did = parseInt(telecodingWriteDid.replace(/^0x/i, ""), 16);
+    if (!Number.isFinite(did)) {
+      setError("Choisis d’abord une zone (DID) valide.");
+      return;
+    }
+    setTelecodingWriteBusy(true);
+    setTelecodingWriteResult(null);
+    setError("");
+    try {
+      const result = await api<TelecodingWriteResult>(
+        `/api/diagnostic/psa/ecus/${encodeURIComponent(ecuKey)}/telecoding-write`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            application_key_hex: telecodingWriteApplicationKey.trim(),
+            confirmation: telecodingWriteConfirmation,
+            did,
+            parameter_key: telecodingWriteParameterKey,
+            option_name: telecodingWriteOptionName,
+            ...effectivePsaLabChecks,
+          }),
+        },
+      );
+      setTelecodingWriteResult(result);
+      setTelecodingWriteConfirmation("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTelecodingWriteBusy(false);
     }
   }
 
@@ -5615,12 +5812,324 @@ function App() {
           <p className="inline-alert">Les « corrections injecteurs » ne sont pas les corrections de richesse OBD B1/B2. Elles seront affichées cylindre par cylindre seulement après identification et validation des DID PSA, moteur tournant dans des conditions maîtrisées.</p>
         </section>
 
+        <section className="panel dtc-clear-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">UDS 0x11 · redémarrage matériel</span><h2>Redémarrer le calculateur moteur</h2><p>Envoie un ECUReset (hardReset). Le calculateur redémarre et reste injoignable quelques secondes ; le moteur doit être arrêté avant d’envoyer cette commande.</p></div>
+            <span className={`status-pill ${psaCatalog?.ecu_reset_enabled ? "warning" : "neutral"}`}><i /> {psaCatalog?.ecu_reset_enabled ? "Armé par configuration" : "Verrouillé"}</span>
+          </div>
+          <div className="dtc-clear-form">
+            <div className="dtc-clear-checks">
+              <label><input type="checkbox" disabled={liveSafetyEvidence.speedKnown} checked={effectivePsaLabChecks.vehicle_stationary} onChange={(event) => setPsaLabChecks((current) => ({ ...current, vehicle_stationary: event.target.checked }))} /> Véhicule immobilisé</label>
+              <label><input type="checkbox" disabled={liveSafetyEvidence.rpmKnown} checked={effectivePsaLabChecks.ignition_on_engine_off} onChange={(event) => setPsaLabChecks((current) => ({ ...current, ignition_on_engine_off: event.target.checked }))} /> Contact mis, moteur arrêté</label>
+              <label><input type="checkbox" disabled={liveSafetyEvidence.batteryKnown} checked={effectivePsaLabChecks.stable_battery_voltage} onChange={(event) => setPsaLabChecks((current) => ({ ...current, stable_battery_voltage: event.target.checked }))} /> Tension batterie stable</label>
+              <label><input type="checkbox" checked={effectivePsaLabChecks.workshop_or_private_site} onChange={(event) => setPsaLabChecks((current) => ({ ...current, workshop_or_private_site: event.target.checked }))} /> Atelier ou site privé</label>
+            </div>
+            <label>Confirmation exacte<input value={ecuResetConfirmation} onChange={(event) => setEcuResetConfirmation(event.target.value)} placeholder="REDEMARRER ENGINE" /></label>
+            <button
+              className="danger-button"
+              onClick={() => void resetSelectedEcu("engine")}
+              disabled={!psaCatalog?.ecu_reset_enabled || !psaVehicleCompatible || !diagnosticReady || !psaLabChecksComplete || ecuResetConfirmation !== "REDEMARRER ENGINE" || ecuResetBusy}
+            >{ecuResetBusy ? "Redémarrage…" : "Redémarrer le calculateur moteur"}</button>
+          </div>
+          {!psaCatalog?.ecu_reset_enabled && <p className="inline-alert">Verrou actif : `PSA_ECU_RESET_ENABLED=false`.</p>}
+          {ecuResetResult && ecuResetResult.ecu_key === "engine" && <div className={`regression-result ${ecuResetResult.reset ? "good" : "warning"}`}><strong>{ecuResetResult.reset ? "Commande envoyée" : "Échec"}</strong><span>{ecuResetResult.message}</span>{LAB_MODE && ecuResetResult.response_hex && <code>RX {ecuResetResult.response_hex}</code>}</div>}
+        </section>
+
+        <section className="panel dtc-clear-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Maintenance unitaire contrôlée</span><h2>Effacer la mémoire DTC du calculateur moteur</h2><p>Le backend lit les défauts avant, exige un acquittement positif, puis relit immédiatement le même ECU pour vérifier.</p></div>
+            <span className={`status-pill ${status?.dtc_clear_enabled ? "warning" : "neutral"}`}><i /> {status?.dtc_clear_enabled ? "Armé par configuration" : "Verrouillé"}</span>
+          </div>
+          <div className="dtc-clear-form">
+            <div className="dtc-clear-checks">
+              <label><input type="checkbox" checked={dtcClearChecks.vehicle_stationary} onChange={(event) => setDtcClearChecks((current) => ({ ...current, vehicle_stationary: event.target.checked }))} /> Véhicule immobilisé</label>
+              <label><input type="checkbox" checked={dtcClearChecks.ignition_on_engine_off} onChange={(event) => setDtcClearChecks((current) => ({ ...current, ignition_on_engine_off: event.target.checked }))} /> Contact mis, moteur arrêté</label>
+              <label><input type="checkbox" checked={dtcClearChecks.stable_battery_voltage} onChange={(event) => setDtcClearChecks((current) => ({ ...current, stable_battery_voltage: event.target.checked }))} /> Tension batterie stable</label>
+              <label><input type="checkbox" checked={dtcClearChecks.report_saved} onChange={(event) => setDtcClearChecks((current) => ({ ...current, report_saved: event.target.checked }))} /> Rapport avant effacement sauvegardé</label>
+            </div>
+            <label>Confirmation exacte<input value={dtcClearConfirmation} onChange={(event) => setDtcClearConfirmation(event.target.value)} placeholder="EFFACER ENGINE" /></label>
+            <button
+              className="danger-button"
+              onClick={() => void clearSelectedEcuDtcs("engine")}
+              disabled={!status?.dtc_clear_enabled || dtcClearConfirmation !== "EFFACER ENGINE" || !Object.values(dtcClearChecks).every(Boolean) || dtcClearBusy}
+            >{dtcClearBusy ? "Lecture, effacement, contrôle…" : "Effacer cet ECU et vérifier"}</button>
+          </div>
+          {!status?.dtc_clear_enabled && <p className="inline-alert">Verrou actif : `DTC_CLEAR_ENABLED=false`.</p>}
+          {dtcClearResult && dtcClearResult.ecu_key === "engine" && <div className={`regression-result ${dtcClearResult.verified ? "good" : "warning"}`}><strong>{dtcClearResult.verified ? "Effacement contrôlé" : "Effacement accepté, contrôle incomplet"}</strong><span>{dtcClearResult.message}</span><small>{dtcClearResult.before_dtcs.length} avant · {dtcClearResult.after_dtcs.length} après</small>{LAB_MODE && <code>TX {dtcClearResult.request_hex} / RX {dtcClearResult.response_hex ?? "—"}</code>}</div>}
+        </section>
+
         <section className="panel injection-dtc-panel">
           <div className="section-heading">
             <div><span className="eyebrow">Calculateur moteur / injection</span><h2>Défauts liés au moteur</h2><p>{report ? `${engineDtcs.length} défaut(s) remonté(s) au dernier inventaire ECU.` : "Lance l’inventaire ECU pour lire la mémoire de défauts du calculateur moteur."}</p></div>
             <button className="secondary-button" onClick={() => setView("ecus")}>{report ? "Voir l'inventaire" : "Préparer le scan ECU"}</button>
           </div>
           {engineDtcs.length > 0 ? <div className="injection-dtc-list">{engineDtcs.map((dtc) => <article key={`${dtc.code}-${dtc.raw_hex}`}><code>{dtc.code}</code><div><strong>{dtc.title ?? "Défaut injection non décodé"}</strong><span>{dtc.status_labels.join(" · ") || `Statut ${dtc.status_hex}`}</span></div></article>)}</div> : <p className="injection-empty-dtc">{report ? "Aucun DTC moteur remonté lors du dernier scan." : "Aucune lecture du calculateur moteur dans cette session."}</p>}
+        </section>
+      </div>
+    );
+  }
+
+  function renderEcuLive(ecuKey: EcuLiveView) {
+    const catalog = ECU_LIVE_CATALOG[ecuKey];
+    const psaEcuInfo = psaCatalog?.ecus.find((item) => item.key === ecuKey) ?? null;
+    const scannedEcu = report?.ecus.find((item) => item.key === ecuKey) ?? null;
+    const activeReport = ecuLiveReport?.key === ecuKey ? ecuLiveReport : null;
+    const ecuInfo = activeReport ?? scannedEcu;
+    const ecuDtcs = ecuInfo?.dtcs ?? [];
+    const identification = ecuInfo?.identification ?? [];
+    const sparePartNumber = identification.find((item) => item.did === 0xF187 && !item.error);
+    const liveSignals = (passiveSensors?.signals ?? []).filter(
+      (signal) => psaEcuInfo?.family && signal.ecu_family === psaEcuInfo.family,
+    );
+    const zones = psaEcuInfo?.telecoding_zones ?? [];
+    const watchReady = psaVehicleCompatible && diagnosticReady && zones.length > 0;
+    const psaReadReady = psaVehicleCompatible && diagnosticReady;
+    const canWriteTelecoding = ecuKey === "bsi" || ecuKey === "telematics";
+    const updateLabCheck = (key: keyof typeof psaLabChecks, checked: boolean) => {
+      setPsaLabChecks((current) => ({ ...current, [key]: checked }));
+    };
+    const telecodingWriteZoneOptions = ecuWatchValues[telecodingWriteDid]?.telecoding?.parameters ?? [];
+    const selectedTelecodingParameter = telecodingWriteZoneOptions.find(
+      (item) => item.key === telecodingWriteParameterKey,
+    );
+
+    return (
+      <div className="injection-page">
+        <section className="panel injection-gate">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Lecture en direct · aucune commande d'actionneur</span>
+              <h2>{catalog.name}</h2>
+              <p>Signaux CAN décodés attribués à ce calculateur, complétés par une petite liste de zones UDS surveillées en continu. Lecture seule.</p>
+            </div>
+            <span className={`status-pill ${ecuInfo?.detected ? "good" : "neutral"}`}><i /> {ecuInfo?.detected ? (activeReport ? "Détecté · lecture directe" : "Détecté au dernier scan") : "Statut inconnu"}</span>
+          </div>
+          <div className="diagnostic-preflight">
+            <div><span>Famille</span><strong>{psaEcuInfo?.family ?? "—"}</strong></div>
+            <div><span>Adressage diagnostic</span><strong>{psaEcuInfo?.request_id ? `0x${psaEcuInfo.request_id.toString(16).toUpperCase()} → 0x${psaEcuInfo.response_id?.toString(16).toUpperCase()}` : "Non documenté"}</strong></div>
+            <div><span>Zones UDS connues</span><strong>{zones.length || "—"}</strong></div>
+            <div><span>Surveillance UDS</span><strong>{watchReady ? "Active" : psaVehicleCompatible ? "En attente" : "Indisponible (non PSA)"}</strong></div>
+          </div>
+          {!psaVehicleCompatible && <p className="inline-alert">Le véhicule actif n’est pas un profil PSA compatible : seuls les signaux CAN décodés ci-dessous restent disponibles, pas la surveillance UDS.</p>}
+        </section>
+
+        <section className="injection-summary-grid">
+          <article><span>Signaux CAN attribués</span><strong>{liveSignals.length}</strong><small>Décodage OpenDBC, catégorisé par calculateur</small></article>
+          <article><span>Zones UDS surveillées</span><strong>{zones.length}</strong><small>Catalogue PyPSADiag connu pour {psaEcuInfo?.family ?? "cette famille"}</small></article>
+          <article><span>Valeurs UDS reçues</span><strong>{Object.keys(ecuWatchValues).length}</strong><small>Depuis l’ouverture de cette page</small></article>
+          <article><span>Défauts</span><strong>{ecuDtcs.length}</strong><small>{activeReport ? "Lecture directe" : "Dernier inventaire ECU"}</small></article>
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Identification UDS · F18x</span>
+              <h2>Référence &amp; identification</h2>
+              <p>Lecture directe de ce seul calculateur (pas un scan complet) : version logicielle, numéro de série, et référence pièce constructeur pour commander le bon échange standard.</p>
+            </div>
+            <button className="primary-button" onClick={() => void readEcuLiveReport(ecuKey)} disabled={ecuLiveReportBusy || !diagnosticReady}>{ecuLiveReportBusy ? "Lecture…" : "Lire les défauts et la référence"}</button>
+          </div>
+          {sparePartNumber && (
+            <div className="psa-zone-result">
+              <div><span>Référence pièce constructeur</span><strong>{String(sparePartNumber.value)}</strong></div>
+              <code>DID 0xF187</code>
+              <small>À communiquer telle quelle à un vendeur de pièces PSA pour l’échange standard.</small>
+            </div>
+          )}
+          {identification.length > 0 ? (
+            <div className="ecu-identification-list">
+              {identification.filter((item) => !item.error).map((item) => (
+                <article key={item.did}>
+                  <span>{item.name}</span>
+                  <strong>{String(item.value ?? "—")}</strong>
+                  <small>{item.source ?? "Lecture véhicule"} · confiance {item.confidence}</small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="inline-alert">{diagnosticReady ? "Aucune identification lue pour l’instant — lance la lecture ci-dessus." : "Connecte l’ESP32 et valide la liaison diagnostic pour lire ce calculateur."}</p>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">CAN passif décodé</span><h2>Signaux en direct</h2><p>{liveSignals.length ? "Rafraîchi automatiquement pendant une capture active." : "Démarre une capture (Live Data) pour voir les signaux attribués à ce calculateur."}</p></div>
+            <button className="secondary-button" onClick={() => setView("sensors")}>Voir tous les signaux</button>
+          </div>
+          {liveSignals.length === 0 ? (
+            <EmptyState title="Aucun signal attribué" text="Soit ce calculateur ne diffuse rien sur le bus observé, soit ses messages ne sont pas encore rattachés à sa famille dans le décodeur." />
+          ) : (
+            <div className="sensor-live-table">
+              {liveSignals.map((signal) => (
+                <article className={`sensor-live-row ${signal.confidence} ${signal.customized ? "customized" : ""}`} key={signal.key}>
+                  <div className="sensor-live-name">
+                    <span>{signal.category}{signal.essential ? " · essentiel" : ""}</span>
+                    <strong>{signal.display_name}</strong>
+                    <p>{signal.description}</p>
+                  </div>
+                  <div className="sensor-live-value">
+                    <strong>{String(signal.value ?? "—")}</strong>
+                    <span>{signal.unit || "sans unité"}</span>
+                  </div>
+                  <div className="sensor-live-source">
+                    <code>CAN constructeur décodé</code>
+                    <span>{signal.confidence === "validated" ? "Validé sur le véhicule" : "Définition OpenDBC à confirmer"}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="panel did-sweep-panel">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">UDS 0x22 · zones connues</span>
+              <h2>Surveillance des zones</h2>
+              <p>{zones.length ? `Interroge en boucle (1 zone toutes les 1,2 s) les ${zones.length} zone(s) documentée(s) pour ${psaEcuInfo?.family ?? "ce calculateur"} chez PyPSADiag.` : "Aucune zone UDS documentée pour cette famille de calculateur — seul le balayage manuel ci-dessous peut en découvrir."}</p>
+            </div>
+          </div>
+          {zones.length > 0 && (
+            <div className="did-sweep-results">
+              {zones.map((zone) => {
+                const value = ecuWatchValues[zone.did];
+                return (
+                  <div className="did-sweep-hit" key={zone.did}>
+                    <code>0x{zone.did}</code>
+                    <span>{zone.name}</span>
+                    <small>{value ? (value.error ?? value.raw_hex ?? String(value.value ?? "—")) : watchReady ? "En attente de lecture…" : "Surveillance inactive"}</small>
+                    {value?.telecoding && <TelecodingDetails zone={value.telecoding} />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="inline-alert">Aucune zone connue ci-dessus ne contient de mesure analogique (température, tension) — le télécodage PyPSADiag ne documente que des drapeaux de configuration. Un balayage large peut révéler un DID non documenté dont la valeur brute varie de façon plausible (ex. octet qui évolue avec la chaleur moteur) ; ce serait alors un candidat à confirmer manuellement, pas une valeur validée.</p>
+          <div className="did-sweep-form">
+            <label>Début<input value={didSweepStart} onChange={(event) => setDidSweepStart(event.target.value)} placeholder="0000" /></label>
+            <label>Fin<input value={didSweepEnd} onChange={(event) => setDidSweepEnd(event.target.value)} placeholder="01FF" /></label>
+            <button className="secondary-button" onClick={() => void sweepSelectedEcuDids(ecuKey)} disabled={didSweepBusy || !psaVehicleCompatible}>{didSweepBusy ? "Balayage…" : "Lancer un balayage DID"}</button>
+          </div>
+          {didSweepResult && didSweepResult.ecu_key === ecuKey && (
+            <div className="did-sweep-results">
+              <p><strong>{didSweepResult.hits.length}</strong> réponse(s) exploitable(s) sur {didSweepResult.scanned_count} identifiant(s) testé(s) · {didSweepResult.unsupported_count} non supporté(s){didSweepResult.timeout_count > 0 && ` · ${didSweepResult.timeout_count} sans réponse`}</p>
+              {didSweepResult.hits.length === 0 ? <p className="inline-alert">Aucun identifiant supplémentaire trouvé dans cette plage.</p> : didSweepResult.hits.map((hit) => (
+                <div className="did-sweep-hit" key={hit.did}>
+                  <code>0x{hit.did.toString(16).toUpperCase().padStart(4, "0")}</code>
+                  <span>{hit.outcome === "positive" ? "Réponse positive" : `NRC 0x${hit.nrc?.toString(16).toUpperCase().padStart(2, "0")} ${hit.nrc_name ?? ""}`}</span>
+                  <small>{hit.raw_hex ?? hit.response_hex ?? "—"}</small>
+                  {hit.telecoding && <TelecodingDetails zone={hit.telecoding} />}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="panel dtc-clear-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">UDS 0x11 · redémarrage matériel</span><h2>Redémarrer ce calculateur</h2><p>Envoie un ECUReset (hardReset). Le calculateur redémarre et reste injoignable quelques secondes ; ses fonctions s’interrompent brièvement pendant le reboot.</p></div>
+            <span className={`status-pill ${psaCatalog?.ecu_reset_enabled ? "warning" : "neutral"}`}><i /> {psaCatalog?.ecu_reset_enabled ? "Armé par configuration" : "Verrouillé"}</span>
+          </div>
+          <div className="dtc-clear-form">
+            <div className="dtc-clear-checks">
+              <label><input type="checkbox" disabled={liveSafetyEvidence.speedKnown} checked={effectivePsaLabChecks.vehicle_stationary} onChange={(event) => updateLabCheck("vehicle_stationary", event.target.checked)} /> Véhicule immobilisé</label>
+              <label><input type="checkbox" disabled={liveSafetyEvidence.rpmKnown} checked={effectivePsaLabChecks.ignition_on_engine_off} onChange={(event) => updateLabCheck("ignition_on_engine_off", event.target.checked)} /> Contact mis, moteur arrêté</label>
+              <label><input type="checkbox" disabled={liveSafetyEvidence.batteryKnown} checked={effectivePsaLabChecks.stable_battery_voltage} onChange={(event) => updateLabCheck("stable_battery_voltage", event.target.checked)} /> Tension batterie stable</label>
+              <label><input type="checkbox" checked={effectivePsaLabChecks.workshop_or_private_site} onChange={(event) => updateLabCheck("workshop_or_private_site", event.target.checked)} /> Atelier ou site privé</label>
+            </div>
+            <label>Confirmation exacte<input value={ecuResetConfirmation} onChange={(event) => setEcuResetConfirmation(event.target.value)} placeholder={`REDEMARRER ${ecuKey.toUpperCase()}`} /></label>
+            <button
+              className="danger-button"
+              onClick={() => void resetSelectedEcu(ecuKey)}
+              disabled={!psaCatalog?.ecu_reset_enabled || !psaReadReady || !psaLabChecksComplete || ecuResetConfirmation !== `REDEMARRER ${ecuKey.toUpperCase()}` || ecuResetBusy}
+            >{ecuResetBusy ? "Redémarrage…" : "Redémarrer ce calculateur"}</button>
+          </div>
+          {!psaCatalog?.ecu_reset_enabled && <p className="inline-alert">Verrou actif : `PSA_ECU_RESET_ENABLED=false`.</p>}
+          {ecuResetResult && ecuResetResult.ecu_key === ecuKey && <div className={`regression-result ${ecuResetResult.reset ? "good" : "warning"}`}><strong>{ecuResetResult.reset ? "Commande envoyée" : "Échec"}</strong><span>{ecuResetResult.message}</span>{LAB_MODE && ecuResetResult.response_hex && <code>RX {ecuResetResult.response_hex}</code>}</div>}
+        </section>
+
+        <section className="panel dtc-clear-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">Maintenance unitaire contrôlée</span><h2>Effacer la mémoire DTC de ce calculateur</h2><p>Le backend lit les défauts avant, exige un acquittement positif, puis relit immédiatement le même ECU pour vérifier.</p></div>
+            <span className={`status-pill ${status?.dtc_clear_enabled ? "warning" : "neutral"}`}><i /> {status?.dtc_clear_enabled ? "Armé par configuration" : "Verrouillé"}</span>
+          </div>
+          <div className="dtc-clear-form">
+            <div className="dtc-clear-checks">
+              <label><input type="checkbox" checked={dtcClearChecks.vehicle_stationary} onChange={(event) => setDtcClearChecks((current) => ({ ...current, vehicle_stationary: event.target.checked }))} /> Véhicule immobilisé</label>
+              <label><input type="checkbox" checked={dtcClearChecks.ignition_on_engine_off} onChange={(event) => setDtcClearChecks((current) => ({ ...current, ignition_on_engine_off: event.target.checked }))} /> Contact mis, moteur arrêté</label>
+              <label><input type="checkbox" checked={dtcClearChecks.stable_battery_voltage} onChange={(event) => setDtcClearChecks((current) => ({ ...current, stable_battery_voltage: event.target.checked }))} /> Tension batterie stable</label>
+              <label><input type="checkbox" checked={dtcClearChecks.report_saved} onChange={(event) => setDtcClearChecks((current) => ({ ...current, report_saved: event.target.checked }))} /> Rapport avant effacement sauvegardé</label>
+            </div>
+            <label>Confirmation exacte<input value={dtcClearConfirmation} onChange={(event) => setDtcClearConfirmation(event.target.value)} placeholder={`EFFACER ${ecuKey.toUpperCase()}`} /></label>
+            <button
+              className="danger-button"
+              onClick={() => void clearSelectedEcuDtcs(ecuKey)}
+              disabled={!status?.dtc_clear_enabled || dtcClearConfirmation !== `EFFACER ${ecuKey.toUpperCase()}` || !Object.values(dtcClearChecks).every(Boolean) || dtcClearBusy}
+            >{dtcClearBusy ? "Lecture, effacement, contrôle…" : "Effacer cet ECU et vérifier"}</button>
+          </div>
+          {!status?.dtc_clear_enabled && <p className="inline-alert">Verrou actif : `DTC_CLEAR_ENABLED=false`.{SAFETY_CRITICAL_ECU_KEYS.has(ecuKey) && " Ce calculateur exige en plus `SAFETY_ECU_CLEAR_ENABLED=true`."}</p>}
+          {status?.dtc_clear_enabled && SAFETY_CRITICAL_ECU_KEYS.has(ecuKey) && !status?.safety_ecu_clear_enabled && <p className="inline-alert">Ce calculateur est classé sensible : `SAFETY_ECU_CLEAR_ENABLED=true` requis en plus de `DTC_CLEAR_ENABLED`.</p>}
+          {dtcClearResult && dtcClearResult.ecu_key === ecuKey && <div className={`regression-result ${dtcClearResult.verified ? "good" : "warning"}`}><strong>{dtcClearResult.verified ? "Effacement contrôlé" : "Effacement accepté, contrôle incomplet"}</strong><span>{dtcClearResult.message}</span><small>{dtcClearResult.before_dtcs.length} avant · {dtcClearResult.after_dtcs.length} après</small>{LAB_MODE && <code>TX {dtcClearResult.request_hex} / RX {dtcClearResult.response_hex ?? "—"}</code>}</div>}
+        </section>
+
+        {canWriteTelecoding && (
+          <section className="panel dtc-clear-panel">
+            <div className="section-heading">
+              <div><span className="eyebrow">UDS 0x2E · expérimental, jamais validé sur véhicule réel</span><h2>Modifier l’équipement (télécodage)</h2><p>Écrit une option documentée du catalogue PyPSADiag dans une zone déjà déverrouillée par accès sécurité. Aucune valeur brute libre : uniquement les options listées ci-dessous.</p></div>
+              <span className={`status-pill ${psaCatalog?.telecoding_write_enabled ? "warning" : "neutral"}`}><i /> {psaCatalog?.telecoding_write_enabled ? "Armé par configuration" : "Verrouillé"}</span>
+            </div>
+            <p className="inline-alert">Écriture réelle sur le calculateur. Une mauvaise valeur peut désactiver une fonction (y compris de sécurité). Choisis d’abord une zone déjà lue par la surveillance ci-dessus.</p>
+            <div className="dtc-clear-form">
+              <label>Zone (DID)<select value={telecodingWriteDid} onChange={(event) => { setTelecodingWriteDid(event.target.value); setTelecodingWriteParameterKey(""); setTelecodingWriteOptionName(""); }}>
+                <option value="">Choisir une zone</option>
+                {zones.map((zone) => <option value={zone.did} key={zone.did}>0x{zone.did} · {zone.name}</option>)}
+              </select></label>
+              <label>Paramètre<select value={telecodingWriteParameterKey} disabled={!telecodingWriteZoneOptions.length} onChange={(event) => { setTelecodingWriteParameterKey(event.target.value); setTelecodingWriteOptionName(""); }}>
+                <option value="">{telecodingWriteZoneOptions.length ? "Choisir un paramètre" : "En attente de lecture de cette zone…"}</option>
+                {telecodingWriteZoneOptions.map((param) => <option value={param.key} key={param.key}>{param.name}</option>)}
+              </select></label>
+              <label>Nouvelle valeur<select value={telecodingWriteOptionName} disabled={!selectedTelecodingParameter} onChange={(event) => setTelecodingWriteOptionName(event.target.value)}>
+                <option value="">{selectedTelecodingParameter ? `Actuel : ${selectedTelecodingParameter.value ?? "—"}` : "Choisir un paramètre d’abord"}</option>
+                {selectedTelecodingParameter?.options.map((name) => <option value={name} key={name}>{name}</option>)}
+              </select></label>
+              <label>Clé application<input value={telecodingWriteApplicationKey} onChange={(event) => setTelecodingWriteApplicationKey(event.target.value)} placeholder="D91C" /></label>
+              <div className="dtc-clear-checks">
+                <label><input type="checkbox" disabled={liveSafetyEvidence.speedKnown} checked={effectivePsaLabChecks.vehicle_stationary} onChange={(event) => updateLabCheck("vehicle_stationary", event.target.checked)} /> Véhicule immobilisé</label>
+                <label><input type="checkbox" disabled={liveSafetyEvidence.rpmKnown} checked={effectivePsaLabChecks.ignition_on_engine_off} onChange={(event) => updateLabCheck("ignition_on_engine_off", event.target.checked)} /> Contact mis, moteur arrêté</label>
+                <label><input type="checkbox" disabled={liveSafetyEvidence.batteryKnown} checked={effectivePsaLabChecks.stable_battery_voltage} onChange={(event) => updateLabCheck("stable_battery_voltage", event.target.checked)} /> Tension batterie stable</label>
+                <label><input type="checkbox" checked={effectivePsaLabChecks.workshop_or_private_site} onChange={(event) => updateLabCheck("workshop_or_private_site", event.target.checked)} /> Atelier ou site privé</label>
+              </div>
+              <label>Confirmation exacte<input value={telecodingWriteConfirmation} onChange={(event) => setTelecodingWriteConfirmation(event.target.value)} placeholder={`TELECODER ${ecuKey.toUpperCase()}`} /></label>
+              <button
+                className="danger-button"
+                onClick={() => void writeSelectedTelecodingParameter(ecuKey)}
+                disabled={
+                  !psaCatalog?.telecoding_write_enabled
+                  || !psaReadReady
+                  || !psaLabChecksComplete
+                  || !telecodingWriteOptionName
+                  || telecodingWriteConfirmation !== `TELECODER ${ecuKey.toUpperCase()}`
+                  || telecodingWriteBusy
+                }
+              >{telecodingWriteBusy ? "Écriture…" : "Écrire cette valeur"}</button>
+            </div>
+            {!psaCatalog?.telecoding_write_enabled && <p className="inline-alert">Verrou actif : `PSA_TELECODING_WRITE_ENABLED=false` (nécessite aussi `PSA_SECURITY_ACCESS_ENABLED=true`).</p>}
+            {telecodingWriteResult && telecodingWriteResult.ecu_key === ecuKey && (
+              <div className={`regression-result ${telecodingWriteResult.verified ? "good" : "warning"}`}>
+                <strong>{telecodingWriteResult.verified ? "Écriture confirmée par relecture" : "Écriture envoyée, à vérifier"}</strong>
+                <span>{telecodingWriteResult.message} {telecodingWriteResult.previous_value ?? "—"} → {telecodingWriteResult.new_value ?? "—"}</span>
+                {LAB_MODE && <code>{telecodingWriteResult.raw_before_hex} → {telecodingWriteResult.raw_after_hex}</code>}
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="panel injection-dtc-panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">{catalog.name}</span><h2>Défauts liés à ce calculateur</h2><p>{ecuInfo ? `${ecuDtcs.length} défaut(s) ${activeReport ? "lu(s) à l’instant" : "remonté(s) au dernier inventaire ECU"}.` : "Lance l’inventaire ECU ou le bouton « Lire les défauts et la référence » ci-dessus."}</p></div>
+            <button className="secondary-button" onClick={() => setView("ecus")}>{report ? "Voir l'inventaire complet" : "Préparer le scan ECU"}</button>
+          </div>
+          {ecuDtcs.length > 0 ? <div className="injection-dtc-list">{ecuDtcs.map((dtc) => <article key={`${dtc.code}-${dtc.raw_hex}`}><code>{dtc.code}</code><div><strong>{dtc.title ?? "Défaut non décodé"}</strong><span>{dtc.status_labels.join(" · ") || `Statut ${dtc.status_hex}`}</span></div></article>)}</div> : <p className="injection-empty-dtc">{ecuInfo ? "Aucun DTC actif pour ce calculateur." : "Aucune lecture de ce calculateur dans cette session."}</p>}
         </section>
       </div>
     );
@@ -6620,6 +7129,15 @@ function App() {
           <button className={`nav-disclosure ${openNavModule === "atelier" ? "open" : ""}`} onClick={() => setOpenNavModule((open) => open === "atelier" ? null : "atelier")} aria-expanded={openNavModule === "atelier"}><span>⌁</span><strong>Atelier</strong><b>⌄</b></button>
           {openNavModule === "atelier" && <div className="nav-submenu">
             <NavButton active={view === "injection"} glyph="INJ" label="Moteur / injection" onClick={() => { setError(""); setView("injection"); }} />
+            {ECU_LIVE_VIEW_KEYS.map((key) => (
+              <NavButton
+                key={key}
+                active={view === key}
+                glyph={ECU_LIVE_CATALOG[key].glyph}
+                label={ECU_LIVE_CATALOG[key].name}
+                onClick={() => { setError(""); setView(key); }}
+              />
+            ))}
             <NavButton active={view === "maintenance"} glyph="WF" label="Procédures métier" onClick={() => { setError(""); setView("maintenance"); }} count={maintenanceCatalog?.service_count} />
             <NavButton active={view === "studio"} glyph="◉" label="Tableaux de bord" onClick={() => setView("studio")} />
           </div>}
@@ -6666,6 +7184,7 @@ function App() {
           {view === "inventory" && renderSensorInventory()}
           {view === "identity" && renderVehicleIdentity()}
           {view === "injection" && renderInjection()}
+          {(ECU_LIVE_VIEW_KEYS as readonly View[]).includes(view) && renderEcuLive(view as EcuLiveView)}
           {view === "maintenance" && renderMaintenance()}
           {view === "ecus" && renderEcus()}
           {view === "dtcs" && renderDtcs()}

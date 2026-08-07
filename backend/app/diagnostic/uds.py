@@ -169,6 +169,28 @@ def read_data_by_identifier(session: UdsSession, did: int) -> tuple[Response, by
     return response, response.original_payload[len(prefix):]
 
 
+def ecu_reset(session: UdsSession, reset_type: int = 0x01) -> Response:
+    """ECUReset 0x11. reset_type 0x01 = hardReset, the only value the PSA lab
+    safety allowlist accepts (see PSA_LAB_ECU_RESET_PAYLOAD in app/safety.py)."""
+    request = Request.from_payload(bytes([0x11, reset_type]))
+    response = session.send_request(request)
+    if not response.original_payload.startswith(bytes([0x51, reset_type])):
+        raise ValueError("Réponse de redémarrage ECU inattendue.")
+    return response
+
+
+def write_data_by_identifier(session: UdsSession, did: int, value: bytes) -> Response:
+    """WriteDataByIdentifier 0x2E. Built by hand rather than via udsoncan's
+    WriteDataByIdentifier.make_request(), which requires a didconfig codec we
+    have no use for here — we already have the exact raw bytes to write."""
+    request = Request.from_payload(b"\x2E" + did.to_bytes(2, "big") + value)
+    response = session.send_request(request)
+    prefix = b"\x6E" + did.to_bytes(2, "big")
+    if response.original_payload != prefix:
+        raise ValueError(f"Réponse d'écriture inattendue pour le DID 0x{did:04X}.")
+    return response
+
+
 def request(
     transport: Transport,
     request_id: int,

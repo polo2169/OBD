@@ -46,6 +46,7 @@ class TelecodingParameterValue(BaseModel):
     byte: int
     raw_hex: str
     value: str | None = None
+    options: list[str] = Field(default_factory=list)
 
 
 class TelecodingZoneInfo(BaseModel):
@@ -400,6 +401,48 @@ class PsaActionResult(BaseModel):
     started_response_hex: str | None = None
     stopped_response_hex: str | None = None
     duration_ms: int
+    message: str
+    session_id: str | None = None
+
+
+class EcuResetRequest(BaseModel):
+    confirmation: str
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+
+
+class EcuResetResult(BaseModel):
+    ecu_key: str
+    reset: bool
+    response_hex: str | None = None
+    message: str
+    session_id: str | None = None
+
+
+class TelecodingWriteRequest(BaseModel):
+    application_key_hex: str = Field(pattern=r"^[0-9A-Fa-f]{4}$")
+    confirmation: str
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+    did: int = Field(ge=0, le=0xFFFF)
+    parameter_key: str
+    option_name: str
+
+
+class TelecodingWriteResult(BaseModel):
+    ecu_key: str
+    did: int
+    parameter_key: str
+    requested_option: str
+    previous_value: str | None = None
+    new_value: str | None = None
+    verified: bool
+    raw_before_hex: str
+    raw_after_hex: str
     message: str
     session_id: str | None = None
 

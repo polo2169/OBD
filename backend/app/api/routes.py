@@ -23,13 +23,16 @@ from app.diagnostic.psa_advanced import (
     calculate_seed_key,
     execute_named_action,
     read_raw_did,
+    reset_ecu,
     unlock_configuration,
+    write_telecoding_parameter,
 )
 from app.diagnostic.regression import compare_with_baseline
 from app.diagnostic.scanner import (
     clear_ecu_dtcs,
     read_ecu_did,
     read_ecu_dtc_snapshot,
+    read_ecu_report,
     read_engine_obd_dtcs,
     scan_vehicle,
     sweep_ecu_dids,
@@ -49,6 +52,8 @@ from app.models import (
     DidSweepResult,
     DtcSnapshotRequest,
     DtcSnapshotResult,
+    EcuResetRequest,
+    EcuResetResult,
     EcuScanResult,
     ObservedDtcInput,
     ObservedDtcResult,
@@ -62,6 +67,8 @@ from app.models import (
     ScanReport,
     ScanRequest,
     SensorSnapshot,
+    TelecodingWriteRequest,
+    TelecodingWriteResult,
     TransportConnectRequest,
     VehicleIdentityRequest,
     VehicleIdentityResult,
@@ -506,6 +513,19 @@ def diagnostic_read_did(ecu_key: str, did: str, vehicle_profile: str | None = Qu
     return result
 
 
+@router.post("/diagnostic/ecus/{ecu_key}/report", response_model=EcuScanResult)
+def diagnostic_read_ecu_report(ecu_key: str, vehicle_profile: str | None = Query(default=None)) -> EcuScanResult:
+    """Identification (incl. spare part number) + DTC read for one ECU, without a full vehicle scan."""
+    try:
+        return read_ecu_report(ecu_key, vehicle_profile)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+
 @router.get("/diagnostic/psa/catalog")
 def diagnostic_psa_catalog() -> dict:
     return advanced_catalog()
@@ -575,6 +595,44 @@ def diagnostic_psa_action(action_key: str, request: PsaActionRequest) -> PsaActi
         raise HTTPException(
             status_code=409,
             detail=f"Action refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
+
+
+@router.post("/diagnostic/psa/ecus/{ecu_key}/reset", response_model=EcuResetResult)
+def diagnostic_ecu_reset(ecu_key: str, request: EcuResetRequest) -> EcuResetResult:
+    try:
+        return reset_ecu(ecu_key, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Redémarrage refusé par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
+
+
+@router.post("/diagnostic/psa/ecus/{ecu_key}/telecoding-write", response_model=TelecodingWriteResult)
+def diagnostic_telecoding_write(ecu_key: str, request: TelecodingWriteRequest) -> TelecodingWriteResult:
+    try:
+        return write_telecoding_parameter(ecu_key, request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Écriture refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
         ) from exc
 
 

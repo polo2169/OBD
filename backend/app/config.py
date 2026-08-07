@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     psa_security_access_enabled: bool = False
     psa_actuator_enabled: bool = False
     psa_actuator_max_duration_ms: int = 3_000
+    psa_ecu_reset_enabled: bool = False
+    psa_telecoding_write_enabled: bool = False
     database_dir: Path = Path("../database")
     session_dir: Path = Path("../data/sessions")
     sensor_overrides_file: Path = Path("../data/sensor_overrides.json")

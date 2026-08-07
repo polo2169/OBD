@@ -41,6 +41,7 @@ PSA_LAB_ACTION_PAYLOADS = {
     bytes.fromhex("2FD6700350"),  # camera lateral view
 }
 PSA_LAB_DTC_CLEAR_PAYLOAD = bytes.fromhex("14FFFFFF")
+PSA_LAB_ECU_RESET_PAYLOAD = bytes.fromhex("1101")
 PSA_LAB_SECURITY_REQUEST_IDS = {0x752, 0x764}
 
 
@@ -192,6 +193,16 @@ def authorize_psa_lab_uds(arbitration_id: int, payload: bytes) -> SafetyDecision
         and payload in PSA_LAB_ACTION_PAYLOADS
     ):
         return SafetyDecision(True, "Commande NAC nommée autorisée par l'allowlist PSA lab.")
+
+    if service == 0x11:
+        if payload == PSA_LAB_ECU_RESET_PAYLOAD:
+            return SafetyDecision(True, "Redémarrage ECU (hardReset 0x11/0x01) autorisé en mode maintenance.")
+        return SafetyDecision(False, "Seul le redémarrage matériel exact 0x11/0x01 est autorisé en mode PSA lab.")
+
+    if service == 0x2E and arbitration_id in PSA_LAB_SECURITY_REQUEST_IDS:
+        if len(payload) >= 4:
+            return SafetyDecision(True, "Écriture de télécodage BSI/télématique autorisée en mode maintenance.")
+        return SafetyDecision(False, "Payload d'écriture télécodage trop court (service + DID + données).")
 
     return SafetyDecision(
         False,
