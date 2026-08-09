@@ -149,6 +149,12 @@
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:12+00:00"
   },
+  "interior_temp_candidate_c": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260807T103425Z-213d3f34",
+    "validated_at": "2026-08-07T15:19:59+00:00"
+  },
   "lateral_accel_ms2": {
     "validated": true,
     "note": null,

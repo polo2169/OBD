@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, Literal
 from bisect import bisect_right
 import json
 import math
@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 27
+CACHE_VERSION = 29
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -26,11 +26,32 @@ FRONT_SENSOR_CANDIDATE_ID = 0x489
 
 # Non documenté. Octets 2/4/5 quasi identiques entre eux, dérive lente et
 # plage plausible (8.9-22.1°C sur un essai) : candidat température intérieure
-# ou ambiante. Octet 3 toujours >= aux autres, souvent figé à 0xFF (motif
-# "invalide" déjà vu ailleurs dans ce projet) mais varie aussi largement
-# (5.9-25.4°C) quand il est valide : ne ressemble pas à une consigne stable,
-# plus probablement une température d'air mélangé/soufflage. Non validé.
+# ou ambiante, non validé. Octet 0 et octet 3 sont en fait deux copies
+# redondantes de régime moteur et pédale accélérateur (formule exacte
+# retrouvée par corrélation, cf accelerator_pct_3b8_candidate /
+# engine_rpm_3b8_candidate) : ce n'est donc pas de la climatisation.
 CLIMATE_CANDIDATE_ID = 0x3B8
+
+# Non documenté. Octet 1 = copie de la pédale accélérateur (formule exacte
+# byte ≈ pct × 2, confirmée par corrélation). Octet 3 corrèle avec la vitesse
+# et le rapport engagé mais avec seulement 4-5 valeurs distinctes : hypothèse
+# d'une table de limite couple/vitesse par rapport, non confirmée.
+ENGINE_ACCEL_SHADOW_CANDIDATE_ID = 0x2E8
+
+# Non documenté. Octet 5 anti-corrélé au régime moteur (r≈-0.79) mais avec
+# seulement 5-7 valeurs distinctes sur un essai : hypothèse d'un état moteur
+# discret (ralenti, Start&Stop, verrouillage convertisseur), non confirmée.
+ENGINE_STATE_CANDIDATE_ID = 0x57C
+
+# Non documenté. Octet 0 corrèle modérément avec la vitesse (r≈0.5) : piste
+# faible, non confirmée.
+SPEED_CANDIDATE_ID = 0x389
+
+# Non documenté. Octet 7 bascule 0/1 de façon identique dans deux essais
+# dédiés portière arrière gauche et portière arrière droite : hypothèse d'un
+# indicateur générique "au moins une porte arrière ouverte", non confirmée
+# individuellement (contrairement à 0x412 octet 6 bits 0x20/0x40, validés).
+REAR_DOOR_AJAR_CANDIDATE_ID = 0x78D
 
 TARGET_IDS = {
     0x208,  # moteur
@@ -79,6 +100,8 @@ STATE_FIELDS = tuple(
         "cruise_detection_reason",
         "cruise_switch_candidate",
         "cruise_active_candidate",
+        "cruise_setpoint_direction",
+        "cruise_setpoint_step_kph",
     }
 )
 
@@ -111,6 +134,9 @@ FIELD_QUALITY = {
     "parking_brake": "opendbc_candidate",
     "driver_door": "opendbc_candidate",
     "passenger_door": "opendbc_candidate",
+    "rear_left_door": "validated_dedicated_test_0x412_byte6_0x20",
+    "rear_right_door": "validated_dedicated_test_0x412_byte6_0x40",
+    "rear_door_ajar_candidate": "experimental_unvalidated_candidate",
     "front_wiper_status": "opendbc_candidate",
     "fuel_liters_raw": "vehicle_signal_slosh_affected",
     "fuel_liters": "filtered_vehicle_signal",
@@ -142,16 +168,22 @@ FIELD_QUALITY = {
     "lka_active": "opendbc_candidate",
     "acc_mode": "opendbc_candidate",
     "acc_requested": "opendbc_candidate",
+    "lvv_requested": "opendbc_candidate",
     "speed_setpoint_kph": "opendbc_candidate",
     "cruise_xvv_state": "vehicle_observed_candidate",
     "cruise_setpoint_kph": "vehicle_observed_candidate",
     "climate_ac_active": "opendbc_candidate",
     "climate_ac_power_kw": "opendbc_candidate",
     "interior_temp_candidate_c": "experimental_unvalidated_candidate",
-    "climate_air_temp_candidate_c": "experimental_unvalidated_candidate",
     "front_sensor_b0_raw": "experimental_unvalidated_candidate",
     "front_sensor_b2_raw": "experimental_unvalidated_candidate",
     "front_sensor_b4_raw": "experimental_unvalidated_candidate",
+    "engine_rpm_3b8_candidate": "validated_exact_formula_0x3b8_byte0",
+    "accelerator_pct_3b8_candidate": "validated_exact_formula_0x3b8_byte3",
+    "accelerator_pct_2e8_candidate": "validated_exact_formula_0x2e8_byte1",
+    "engine_state_57c_candidate_raw": "experimental_unvalidated_candidate",
+    "gear_torque_table_2e8_candidate_raw": "experimental_unvalidated_candidate",
+    "speed_389_candidate_raw": "experimental_unvalidated_candidate",
     "fiat_clock_hour_candidate": "fiat_500_vehicle_observed_candidate",
     "fiat_clock_minute_candidate": "fiat_500_vehicle_observed_candidate",
     "fiat_start_stop_state_raw": "experimental_unvalidated_candidate",
@@ -258,7 +290,7 @@ def _snapshot(state: dict[str, Any], t_ms: int) -> ReplaySample:
     )
 
 
-def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[str, Any]) -> None:
+def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[str, Any], data: bytes | None = None) -> None:
     if message == "Dyn_CMM":
         state["engine_rpm"] = _number(values, "P000_Com_nEng")
         state["accelerator_pct"] = _number(values, "P002_Com_rAPP")
@@ -329,6 +361,11 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["low_fuel_warning"] = _boolean(values, "P012_Com_bFlMin")
         fuel_level_fault = _number(values, "P086_Com_stFlLvlDia")
         state["fuel_level_fault_state"] = int(fuel_level_fault) if fuel_level_fault is not None else None
+        if data is not None and len(data) >= 7:
+            # Bits non documentés dans le DBC (seuls DRIVER_DOOR/PASSENGER_DOOR y sont
+            # définis) ; confirmés par deux essais dédiés porte arrière gauche/droite.
+            state["rear_left_door"] = bool(data[6] & 0x20)
+            state["rear_right_door"] = bool(data[6] & 0x40)
     elif message == "HS2_DAT_MDD_CMD_452":
         signal = _number(values, "TURN_SIGNAL_STATUS")
         if signal is not None:
@@ -337,6 +374,7 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["speed_setpoint_kph"] = _number(values, "SPEED_SETPOINT")
         state["acc_mode"] = int(_number(values, "LONGITUDINAL_REGULATION_TYPE") or 0)
         state["acc_requested"] = _boolean(values, "RVV_ACC_ACTIVATION_REQ")
+        state["lvv_requested"] = _boolean(values, "LVV_ACTIVATION_REQ")
     elif message == "HS2_DAT7_BSI_612":
         state["low_beam"] = _boolean(values, "ETAT_FEUX_CROIST")
         state["high_beam"] = _boolean(values, "ETAT_FEUX_ROUTE")
@@ -989,6 +1027,37 @@ def _detect_probable_cruise(points: list[ReplaySample]) -> bool:
     return populated
 
 
+def _detect_cruise_setpoint_direction(points: list[ReplaySample]) -> bool:
+    """Détecte les appuis +/- du commodo régulateur à partir des sauts de
+    cruise_setpoint_kph (0x50E Dat_CLIM.P219_Com_xPrpReqRaw).
+
+    Aucun bit dédié à la direction n'a été identifié sur le bus observé : le
+    commodo remonte directement la nouvelle consigne, et le sens de l'appui
+    est déduit du signe de la variation d'une trame à l'autre. Confirmé sur
+    les essais learn-20260805T1553xx (paliers de ±1 à ±2 km/h par trame).
+    """
+    populated = False
+    direction: Literal["up", "down"] | None = None
+    step: float | None = None
+    previous_setpoint: float | None = None
+    for point in points:
+        setpoint = point.cruise_setpoint_kph
+        if setpoint is None:
+            direction = None
+            step = None
+            previous_setpoint = None
+        else:
+            if previous_setpoint is not None and setpoint != previous_setpoint:
+                delta = setpoint - previous_setpoint
+                direction = "up" if delta > 0 else "down"
+                step = round(delta, 1)
+                populated = True
+            previous_setpoint = setpoint
+        point.cruise_setpoint_direction = direction
+        point.cruise_setpoint_step_kph = step
+    return populated
+
+
 def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
     events: list[ReplayEvent] = []
     previous: ReplaySample | None = None
@@ -1017,6 +1086,18 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
                         value=point.cruise_probable,
                     )
                 )
+            if (
+                point.cruise_setpoint_kph is not None
+                and previous.cruise_setpoint_kph is not None
+                and point.cruise_setpoint_kph != previous.cruise_setpoint_kph
+            ):
+                delta = point.cruise_setpoint_kph - previous.cruise_setpoint_kph
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="cruise",
+                    label=f"Régulateur {'+' if delta > 0 else '-'} ({previous.cruise_setpoint_kph:.0f}→{point.cruise_setpoint_kph:.0f} km/h)",
+                    value=delta,
+                ))
             if point.current_gear is not None and point.current_gear != previous.current_gear:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="gear", label=f"Rapport {point.current_gear}", value=point.current_gear))
             if point.lane_departure and not previous.lane_departure:
@@ -1190,9 +1271,61 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
                     data = b""
                 if len(data) >= 6:
                     state["interior_temp_candidate_c"] = round(data[2] * 0.1, 1)
-                    setpoint_raw = data[3]
-                    state["climate_air_temp_candidate_c"] = round(setpoint_raw * 0.1, 1) if setpoint_raw != 0xFF else None
-                    available_fields.update({"interior_temp_candidate_c", "climate_air_temp_candidate_c"})
+                    state["engine_rpm_3b8_candidate"] = round((255 - data[0]) * 32)
+                    state["accelerator_pct_3b8_candidate"] = round((255 - data[3]) / 2, 1)
+                    available_fields.update({
+                        "interior_temp_candidate_c",
+                        "engine_rpm_3b8_candidate",
+                        "accelerator_pct_3b8_candidate",
+                    })
+                    decoded_frame_count += 1
+                continue
+
+            if arbitration_id == ENGINE_ACCEL_SHADOW_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 4:
+                    state["accelerator_pct_2e8_candidate"] = round(data[1] / 2, 1)
+                    state["gear_torque_table_2e8_candidate_raw"] = data[3]
+                    available_fields.update({
+                        "accelerator_pct_2e8_candidate",
+                        "gear_torque_table_2e8_candidate_raw",
+                    })
+                    decoded_frame_count += 1
+                continue
+
+            if arbitration_id == ENGINE_STATE_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 6:
+                    state["engine_state_57c_candidate_raw"] = data[5]
+                    available_fields.add("engine_state_57c_candidate_raw")
+                    decoded_frame_count += 1
+                continue
+
+            if arbitration_id == SPEED_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 1:
+                    state["speed_389_candidate_raw"] = data[0]
+                    available_fields.add("speed_389_candidate_raw")
+                    decoded_frame_count += 1
+                continue
+
+            if arbitration_id == REAR_DOOR_AJAR_CANDIDATE_ID:
+                try:
+                    data = bytes.fromhex(str(event.get("data_hex") or ""))
+                except ValueError:
+                    data = b""
+                if len(data) >= 8:
+                    state["rear_door_ajar_candidate"] = bool(data[7])
+                    available_fields.add("rear_door_ajar_candidate")
                     decoded_frame_count += 1
                 continue
 
@@ -1227,7 +1360,7 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             if message is None or values is None or error is not None:
                 continue
             decoded_frame_count += 1
-            _update_state(message.name, values, state)
+            _update_state(message.name, values, state, data)
             available_fields.update(key for key in STATE_FIELDS if state.get(key) is not None)
 
     if first_frame_us is None or last_frame_us is None:
@@ -1252,6 +1385,10 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "cruise_switch_candidate",
             "cruise_active_candidate",
         })
+
+    cruise_setpoint_steps_available = _detect_cruise_setpoint_direction(points)
+    if cruise_setpoint_steps_available:
+        available_fields.update({"cruise_setpoint_direction", "cruise_setpoint_step_kph"})
 
     steering_zero, distance_m, route_bounds = _reconstruct_route(points)
     raw_distances = [point.distance_m for point in points]
@@ -1355,12 +1492,68 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "répartis sur 4 essais indépendants, mais non validé officiellement pour cette "
             "Peugeot 308 T9 2018."
         )
+    if cruise_setpoint_steps_available:
+        warnings.append(
+            "cruise_setpoint_direction et cruise_setpoint_step_kph détectent "
+            "automatiquement les appuis + et - du commodo régulateur à partir des sauts "
+            "de cruise_setpoint_kph : aucun bit dédié à la direction n'a été identifié "
+            "sur le bus observé, la détection est donc déduite du signe de la variation."
+        )
     if "front_sensor_b4_raw" in available_fields:
         warnings.append(
             "front_sensor_b0/b2/b4_raw (0x489, non documenté) sont des candidats précoces pour "
             "le radar de stationnement avant : une activité par à-coups a été observée sur deux "
             "essais dédiés, avec une cadence qui semble suivre la proximité. Non validé, "
             "affiché pour permettre une vérification en direct."
+        )
+    if "rear_left_door" in available_fields or "rear_right_door" in available_fields:
+        warnings.append(
+            "rear_left_door/rear_right_door (0x412 Dat_BSI, octet 6, bits 0x20/0x40, non "
+            "documentés dans opendbc) sont validés par deux essais dédiés porte arrière "
+            "gauche/droite (fermé-ouvert-fermé répété, avec DRIVER_DOOR/PASSENGER_DOOR/"
+            "PARKING_BRAKE constants pendant les tests)."
+        )
+    if "rear_door_ajar_candidate" in available_fields:
+        warnings.append(
+            "rear_door_ajar_candidate (0x78D, non documenté, octet 7) bascule à l'identique "
+            "sur les essais porte arrière gauche et droite : hypothèse d'un indicateur "
+            "générique « au moins une porte arrière ouverte », non confirmée individuellement."
+        )
+    if "engine_rpm_3b8_candidate" in available_fields:
+        warnings.append(
+            "engine_rpm_3b8_candidate (0x3B8, non documenté, octet 0) suit une formule exacte "
+            "rpm ≈ (255 − octet) × 32 par rapport au régime moteur validé, sur l'ensemble de "
+            "la plage observée (0-2450 tr/min) : copie redondante probable pour un autre ECU."
+        )
+    if "accelerator_pct_3b8_candidate" in available_fields:
+        warnings.append(
+            "accelerator_pct_3b8_candidate (0x3B8, non documenté, octet 3) suit une formule "
+            "exacte pct ≈ (255 − octet) / 2 par rapport à la pédale accélérateur validée. "
+            "Corrige l'hypothèse précédente « climatisation air soufflé » pour cet octet."
+        )
+    if "accelerator_pct_2e8_candidate" in available_fields:
+        warnings.append(
+            "accelerator_pct_2e8_candidate (0x2E8, non documenté, octet 1) suit une formule "
+            "exacte octet ≈ pct × 2 par rapport à la pédale accélérateur validée : deuxième "
+            "copie redondante trouvée sur un identifiant CAN distinct."
+        )
+    if "engine_state_57c_candidate_raw" in available_fields:
+        warnings.append(
+            "engine_state_57c_candidate_raw (0x57C, non documenté, octet 5) est anti-corrélé "
+            "au régime moteur (r≈-0.79) mais ne prend que 5-7 valeurs distinctes : hypothèse "
+            "d'un état moteur discret (ralenti, Start&Stop…), non confirmée."
+        )
+    if "gear_torque_table_2e8_candidate_raw" in available_fields:
+        warnings.append(
+            "gear_torque_table_2e8_candidate_raw (0x2E8, non documenté, octet 3) corrèle "
+            "modérément avec la vitesse et le rapport engagé (r≈0.66-0.68) mais avec "
+            "seulement 4-5 valeurs distinctes : hypothèse d'une table liée au rapport, "
+            "non confirmée."
+        )
+    if "speed_389_candidate_raw" in available_fields:
+        warnings.append(
+            "speed_389_candidate_raw (0x389, non documenté, octet 0) corrèle modérément avec "
+            "la vitesse (r≈0.5) : piste faible, non confirmée."
         )
 
     field_quality = {
@@ -1376,6 +1569,11 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "cruise_detection_reason": "experimental_behavioral_detection",
             "cruise_switch_candidate": "opendbc_candidate",
             "cruise_active_candidate": "opendbc_candidate",
+        })
+    if cruise_setpoint_steps_available:
+        field_quality.update({
+            "cruise_setpoint_direction": "vehicle_observed_candidate",
+            "cruise_setpoint_step_kph": "vehicle_observed_candidate",
         })
 
     for field in obd_standardized_fields:

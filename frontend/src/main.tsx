@@ -849,6 +849,9 @@ type ReplaySample = {
   parking_brake?: boolean | null;
   driver_door?: boolean | null;
   passenger_door?: boolean | null;
+  rear_left_door?: boolean | null;
+  rear_right_door?: boolean | null;
+  rear_door_ajar_candidate?: boolean | null;
   front_wiper_status?: number | null;
   fuel_liters_raw?: number | null;
   fuel_liters?: number | null;
@@ -880,6 +883,7 @@ type ReplaySample = {
   lka_active?: boolean | null;
   acc_mode?: number | null;
   acc_requested?: boolean | null;
+  lvv_requested?: boolean | null;
   speed_setpoint_kph?: number | null;
   cruise_probable?: boolean | null;
   cruise_confidence?: number | null;
@@ -889,13 +893,20 @@ type ReplaySample = {
   cruise_xvv_state?: number | null;
   cruise_active_candidate?: boolean | null;
   cruise_setpoint_kph?: number | null;
+  cruise_setpoint_direction?: "up" | "down" | null;
+  cruise_setpoint_step_kph?: number | null;
   climate_ac_active?: boolean | null;
   climate_ac_power_kw?: number | null;
   interior_temp_candidate_c?: number | null;
-  climate_air_temp_candidate_c?: number | null;
   front_sensor_b0_raw?: number | null;
   front_sensor_b2_raw?: number | null;
   front_sensor_b4_raw?: number | null;
+  engine_rpm_3b8_candidate?: number | null;
+  accelerator_pct_3b8_candidate?: number | null;
+  accelerator_pct_2e8_candidate?: number | null;
+  engine_state_57c_candidate_raw?: number | null;
+  gear_torque_table_2e8_candidate_raw?: number | null;
+  speed_389_candidate_raw?: number | null;
   fiat_clock_hour_candidate?: number | null;
   fiat_clock_minute_candidate?: number | null;
   fiat_start_stop_state_raw?: number | null;
@@ -1063,13 +1074,26 @@ const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "cruise_xvv_state", label: "Régulateur · état brut", unit: "code", minimum: 0, maximum: 3, color: "#f2cc60", note: "0x208 Dyn_CMM, octet 4 bits 2-3 : 0 inactif, 2 actif, 3 transitoire (bascule). Candidat confirmé par corrélation sur plusieurs essais.", experimental: true },
   { key: "cruise_active_candidate", label: "Régulateur", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "Actif quand cruise_xvv_state = 2.", status: true, experimental: true },
   { key: "cruise_setpoint_kph", label: "Régulateur · consigne", unit: "km/h", minimum: 0, maximum: 150, precision: 0, color: "#89d7ff", note: "0x50E Dat_CLIM.P219_Com_xPrpReqRaw (255 = inactif). Confirmé sur 5 engagements, 4 essais indépendants.", experimental: true },
+  { key: "cruise_setpoint_step_kph", label: "Régulateur · pas détecté", unit: "km/h", minimum: -10, maximum: 10, precision: 1, color: "#89d7ff", note: "Amplitude du dernier saut de cruise_setpoint_kph (0x50E) : détection automatique des appuis + et - du commodo, aucun bit de direction dédié identifié sur le bus observé.", experimental: true },
+  { key: "acc_mode", label: "ACC · type de régulation", unit: "code", minimum: 0, maximum: 3, color: "#ffb45f", note: "0x452 HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE (2 bits, code caméra ACC/LVV). Toujours à 0 sur les essais disponibles.", experimental: true },
+  { key: "acc_requested", label: "ACC · demande caméra", unit: "état", minimum: 0, maximum: 1, color: "#ffb45f", note: "0x452 HS2_DAT_MDD_CMD_452.RVV_ACC_ACTIVATION_REQ : demande d'activation de l'ACC par la caméra.", status: true, experimental: true },
+  { key: "lvv_requested", label: "LVV · demande caméra", unit: "état", minimum: 0, maximum: 1, color: "#ffb45f", note: "0x452 HS2_DAT_MDD_CMD_452.LVV_ACTIVATION_REQ : demande d'activation du limiteur par la caméra.", status: true, experimental: true },
+  { key: "speed_setpoint_kph", label: "ACC · consigne caméra", unit: "km/h", minimum: 0, maximum: 150, precision: 0, color: "#ffb45f", note: "0x452 HS2_DAT_MDD_CMD_452.SPEED_SETPOINT : consigne caméra ACC/LVV, distincte de la consigne commodo cruise_setpoint_kph (0x50E).", experimental: true },
   { key: "climate_ac_active", label: "Climatisation active", unit: "état", minimum: 0, maximum: 1, color: "#59a8ff", note: "0x50E Dat_CLIM.P050_Com_stAC.", status: true },
   { key: "climate_ac_power_kw", label: "Climatisation · puissance", unit: "kW", minimum: 0, maximum: 6.4, precision: 2, color: "#59a8ff", note: "0x50E Dat_CLIM.P210_Com_pwrACDem × 0.025." },
   { key: "interior_temp_candidate_c", label: "Température intérieure (candidat)", unit: "°C", minimum: 0, maximum: 40, precision: 1, color: "#8fdcff", note: "0x3B8 octet 2, non documenté. Dérive lente et plage plausible sur un essai ; non validé.", experimental: true },
-  { key: "climate_air_temp_candidate_c", label: "Climatisation · air soufflé (candidat)", unit: "°C", minimum: 0, maximum: 40, precision: 1, color: "#8fdcff", note: "0x3B8 octet 3, non documenté. Toujours ≥ à la température intérieure candidate, souvent invalide (0xFF). Varie trop pour une simple consigne ; probablement l'air mélangé/soufflage. Non validé.", experimental: true },
   { key: "front_sensor_b0_raw", label: "Radar avant · octet 0", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 0, non documenté. Candidat très précoce, non validé.", experimental: true },
   { key: "front_sensor_b2_raw", label: "Radar avant · octet 2", unit: "brut", minimum: 0, maximum: 255, color: "#ff8ec7", note: "0x489 octet 2, non documenté. Candidat très précoce, non validé.", experimental: true },
   { key: "front_sensor_b4_raw", label: "Radar avant · octet 4", unit: "brut", minimum: 0, maximum: 32, color: "#ff8ec7", note: "0x489 octet 4, non documenté. Bascule par à-coups dont la cadence semble suivre la proximité sur deux essais dédiés ; à confirmer.", experimental: true },
+  { key: "rear_left_door", label: "Porte arrière gauche", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "0x412 Dat_BSI, octet 6, bit 0x20 (non documenté dans opendbc). Validé par essai dédié : bascule fermé/ouvert/fermé/ouvert/fermé, DRIVER_DOOR/PASSENGER_DOOR/PARKING_BRAKE constants pendant le test.", status: true },
+  { key: "rear_right_door", label: "Porte arrière droite", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "0x412 Dat_BSI, octet 6, bit 0x40 (non documenté dans opendbc). Validé par essai dédié : bascule fermé/ouvert/fermé/ouvert/fermé, DRIVER_DOOR/PASSENGER_DOOR/PARKING_BRAKE constants pendant le test.", status: true },
+  { key: "rear_door_ajar_candidate", label: "Porte arrière (indicateur générique, candidat)", unit: "état", minimum: 0, maximum: 1, color: "#f2cc60", note: "0x78D octet 7, non documenté. Bascule 0/1 à l'identique sur les essais porte arrière gauche ET droite : hypothèse d'un indicateur générique « au moins une porte arrière ouverte », non confirmée individuellement.", status: true, experimental: true },
+  { key: "engine_rpm_3b8_candidate", label: "Régime moteur · copie 0x3B8 (candidat)", unit: "tr/min", minimum: 0, maximum: 4000, precision: 0, color: "#ff8d72", note: "0x3B8 octet 0, non documenté. Formule exacte confirmée par corrélation : rpm ≈ (255 − octet) × 32.", },
+  { key: "accelerator_pct_3b8_candidate", label: "Accélérateur · copie 0x3B8 (candidat)", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#62e39a", note: "0x3B8 octet 3, non documenté. Formule exacte confirmée par corrélation : pct ≈ (255 − octet) / 2. Corrige l'ancienne hypothèse « climatisation air soufflé ».", },
+  { key: "accelerator_pct_2e8_candidate", label: "Accélérateur · copie 0x2E8 (candidat)", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#8ce9b4", note: "0x2E8 octet 1, non documenté. Formule exacte confirmée par corrélation : octet ≈ pct × 2.", },
+  { key: "engine_state_57c_candidate_raw", label: "État moteur · 0x57C (hypothèse)", unit: "brut", minimum: 0, maximum: 255, color: "#f2cc60", note: "0x57C octet 5, non documenté. Anti-corrélé au régime moteur (r≈-0.79) mais seulement 5-7 valeurs distinctes sur un essai : hypothèse d'un état discret (ralenti, Start&Stop…), non confirmée.", experimental: true },
+  { key: "gear_torque_table_2e8_candidate_raw", label: "Table couple/rapport · 0x2E8 (hypothèse)", unit: "brut", minimum: 0, maximum: 255, color: "#f2cc60", note: "0x2E8 octet 3, non documenté. Corrèle modérément avec la vitesse et le rapport engagé (r≈0.66-0.68) mais seulement 4-5 valeurs distinctes : hypothèse d'une table liée au rapport, non confirmée.", experimental: true },
+  { key: "speed_389_candidate_raw", label: "Vitesse · 0x389 (hypothèse)", unit: "brut", minimum: 0, maximum: 255, color: "#f2cc60", note: "0x389 octet 0, non documenté. Corrélation modérée avec la vitesse (r≈0.5) : piste faible, non confirmée.", experimental: true },
   { key: "fiat_clock_hour_candidate", label: "Fiat · horloge (heure)", unit: "h", minimum: 0, maximum: 23, color: "#89d7ff", note: "0x0C28A000 octet 0, BCD. Auto-validé : incrémente avec la minute.", experimental: true },
   { key: "fiat_clock_minute_candidate", label: "Fiat · horloge (minute)", unit: "min", minimum: 0, maximum: 59, color: "#89d7ff", note: "0x0C28A000 octet 1, BCD. Incrémente de +1 toutes les 60s réelles observées.", experimental: true },
   { key: "fiat_start_stop_state_raw", label: "Fiat · état Start&Stop", unit: "code", minimum: 0, maximum: 5, color: "#f2cc60", note: "0x0C1CA000 octet 1, brut. Un seul changement observé (coupure contact) ; à confirmer.", experimental: true },
@@ -1164,6 +1188,8 @@ const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "fuel", label: "Réserve carburant", color: "amber", icon: "fuel", fields: ["low_fuel_warning"], note: "Demande de témoin de niveau carburant minimal." },
   { key: "engine", label: "Voyant moteur", color: "amber", icon: "engine", fields: ["mil_on", "mil_blinking", "obd_error"], note: "États OBD/MIL candidats diffusés par le moteur." },
   { key: "door", label: "Porte ouverte", color: "red", icon: "door", fields: ["driver_door", "passenger_door"], note: "Ouverture des portes avant enregistrée." },
+  { key: "rear_door", label: "Porte arrière", color: "red", icon: "door", fields: ["rear_left_door", "rear_right_door"], note: "Validé par essais dédiés : 0x412 Dat_BSI, octet 6, bits 0x20 (gauche) / 0x40 (droite), non documentés dans opendbc." },
+  { key: "rear_door_ajar_candidate", label: "Porte arrière (générique, candidat)", color: "amber", icon: "door", fields: ["rear_door_ajar_candidate"], note: "0x78D octet 7, non documenté. Hypothèse d'indicateur générique, non confirmée individuellement." },
   { key: "seatbelt", label: "Ceintures", color: "red", icon: "seatbelt", fields: ["driver_seatbelt_state", "passenger_seatbelt_state"], note: "États bruts présents; leur codage exact reste à valider." },
   { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure", "lane_assist_status"], note: "Activation ou alerte de franchissement de ligne." },
   { key: "lane_fault", label: "Défaut aide à la conduite", color: "amber", icon: "lane", fields: ["lane_assist_status"], note: "STATUS 5 = DEFECT dans la définition CAN observée sur cette 308." },
@@ -1185,7 +1211,7 @@ const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
 const defaultReplayGraphKeys = ["speed_kph", "engine_rpm", "steering_angle_deg", "oil_temperature_c"];
 const defaultReplayIndicatorKeys = [
   "turn_left", "turn_right", "low_beam", "high_beam", "parking_brake", "brake_fault",
-  "abs", "esp", "oil_pressure", "coolant", "battery", "fuel", "engine", "door", "seatbelt", "lane", "lane_fault",
+  "abs", "esp", "oil_pressure", "coolant", "battery", "fuel", "engine", "door", "rear_door", "seatbelt", "lane", "lane_fault",
 ];
 
 const PEUGEOT_308_HANDBOOK_URL = "https://public.servicebox.peugeot.com/APddb/modeles/308n/eGuide_308n_308_ed01-18_dag/pdfs/9999_9999_226_en-GB.pdf";
@@ -1788,6 +1814,7 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
     lka_active: logical("LANE_KEEP_ASSIST.LXA_ACTIVATION"),
     acc_mode: integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE"),
     acc_requested: logical("HS2_DAT_MDD_CMD_452.RVV_ACC_ACTIVATION_REQ"),
+    lvv_requested: logical("HS2_DAT_MDD_CMD_452.LVV_ACTIVATION_REQ"),
     speed_setpoint_kph: numeric("HS2_DAT_MDD_CMD_452.SPEED_SETPOINT"),
     cruise_probable: null,
     cruise_confidence: null,
@@ -1806,6 +1833,8 @@ function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): { point
       (integer("Dat_CLIM.P219_Com_xPrpReqRaw") ?? 255) >= 255
         ? null
         : integer("Dat_CLIM.P219_Com_xPrpReqRaw"),
+    cruise_setpoint_direction: null,
+    cruise_setpoint_step_kph: null,
     climate_ac_active: logical("Dat_CLIM.P050_Com_stAC"),
     climate_ac_power_kw:
       numeric("Dat_CLIM.P210_Com_pwrACDem") !== null
@@ -1896,6 +1925,12 @@ function replayIndicatorState(
       const labels = [point.driver_door ? "conducteur" : "", point.passenger_door ? "passager" : ""].filter(Boolean);
       return { available, active: labels.length > 0, detail: labels.length ? `Ouverte : ${labels.join(" + ")}` : "Portes avant fermées" };
     }
+    case "rear_door": {
+      const labels = [point.rear_left_door ? "arrière gauche" : "", point.rear_right_door ? "arrière droite" : ""].filter(Boolean);
+      return { available, active: labels.length > 0, detail: labels.length ? `Ouverte : ${labels.join(" + ")}` : "Portes arrière fermées" };
+    }
+    case "rear_door_ajar_candidate":
+      return { available, active: Boolean(point.rear_door_ajar_candidate), detail: point.rear_door_ajar_candidate ? "Au moins une porte arrière ouverte (candidat)" : "Portes arrière fermées (candidat)" };
     case "seatbelt":
       return { available, active: null, detail: `États bruts C ${point.driver_seatbelt_state ?? "—"} · P ${point.passenger_seatbelt_state ?? "—"}` };
     case "lane":
@@ -4193,6 +4228,7 @@ function App() {
         ? "Droite"
         : point.turn_signal === "hazard" ? "Détresse" : "Arrêt";
     const laneDeparture = point.lane_departure === 1 ? "right" : point.lane_departure === 2 ? "left" : "none";
+    const laneDepartureEventCount = replay.events.filter((event) => event.kind === "adas").length;
     const speedGaugeAngle = Math.min(270, speed / Math.max(140, replay.max_speed_kph) * 270);
     const replayDate = new Date(replay.start_timestamp_us / 1000);
     const roadConfirmed = replay.route_method === "driver_confirmed_osrm";
@@ -4504,7 +4540,34 @@ function App() {
                 <b>{point.lane_departure ? "Alerte de ligne" : "Voie stable"}</b>
               </div>
               <div className="adas-state-grid">
-                <div><span>Maintien dans la voie</span><strong className={point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>{laneAssistStatusLabel(point.lane_assist_status)}</strong><small>État brut {point.lane_assist_status ?? "—"} · {point.lka_active ? "activation demandée" : "aucune activation LXA"}</small></div>
+                <div className={`lka-validation-card${point.lane_assist_status === 6 ? " state-danger" : point.lane_assist_status === 5 ? " state-warning" : ""}`}>
+                  <div className="lka-validation-heading">
+                    <span>Maintien dans la voie — LANE_KEEP_ASSIST</span>
+                    <strong className={point.lane_assist_status === 4 ? "success-text" : point.lane_assist_status === 5 || point.lane_assist_status === 6 ? "warning-text" : ""}>
+                      {laneAssistStatusLabel(point.lane_assist_status)}
+                    </strong>
+                  </div>
+                  <div className="lka-candidate-grid">
+                    <div className={`lka-candidate-indicator${point.lane_assist_status === 4 ? " active" : ""}${point.lane_assist_status === 5 || point.lane_assist_status === 6 ? " alert" : ""}`}>
+                      <span>État STATUS</span>
+                      <strong>{point.lane_assist_status ?? "—"}</strong>
+                      <small>0-7 · 4 = actif · 5 = défaut · 6 = collision</small>
+                    </div>
+                    <div className={`lka-candidate-indicator${point.lane_departure ? " alert" : ""}`}>
+                      <span>Franchissement</span>
+                      <strong>{point.lane_departure === 1 ? "Droite" : point.lane_departure === 2 ? "Gauche" : point.lane_departure ? `Brut ${point.lane_departure}` : "Aucun"}</strong>
+                      <small>LANE_DEPARTURE · alerte de ligne</small>
+                    </div>
+                    <div className={`lka-candidate-indicator${point.lka_active ? " active" : ""}`}>
+                      <span>Activation LXA</span>
+                      <strong>{point.lka_active ? "Demandée" : "Aucune"}</strong>
+                      <small>LXA_ACTIVATION</small>
+                    </div>
+                  </div>
+                  <div className="lka-validation-footer">
+                    <span>Franchissements enregistrés dans la session <strong>{laneDepartureEventCount}</strong></span>
+                  </div>
+                </div>
                 <div className="cruise-validation-card">
                   <div className="cruise-validation-heading">
                     <span>Régulateur — candidats 0x208 / 0x50E</span>
@@ -4523,9 +4586,48 @@ function App() {
                       <strong>{typeof point.cruise_setpoint_kph === "number" ? `${point.cruise_setpoint_kph.toFixed(0)} km/h` : "—"}</strong>
                       <small>0x50E Dat_CLIM · octet 6</small>
                     </div>
+                    <div className={`cruise-candidate-indicator${point.cruise_setpoint_direction ? " active pulse" : ""}`}>
+                      <span>Dernier appui</span>
+                      <strong>
+                        {point.cruise_setpoint_direction === "up"
+                          ? `▲ +${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)}`
+                          : point.cruise_setpoint_direction === "down"
+                            ? `▼ -${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)}`
+                            : "—"}
+                      </strong>
+                      <small>Sens déduit du saut de consigne, aucun bit dédié identifié</small>
+                    </div>
                   </div>
                   <div className="cruise-validation-footer">
                     <span>Détection comportementale <strong>{point.cruise_probable ? `oui · ${Math.round((point.cruise_confidence ?? 0) * 100)} %` : "non"}</strong></span>
+                  </div>
+                </div>
+                <div className="cruise-validation-card">
+                  <div className="cruise-validation-heading">
+                    <span>ACC / LVV — caméra 0x452</span>
+                    <strong className={point.acc_requested || point.lvv_requested ? "success-text" : ""}>
+                      {point.acc_requested ? "ACC demandé" : point.lvv_requested ? "LVV demandé" : "Aucune demande caméra"}
+                    </strong>
+                  </div>
+                  <div className="cruise-candidate-grid">
+                    <div className={`cruise-candidate-indicator${point.acc_requested ? " active" : ""}`}>
+                      <span>ACC</span>
+                      <strong>{point.acc_requested ? "Demandé" : "Aucune"}</strong>
+                      <small>RVV_ACC_ACTIVATION_REQ</small>
+                    </div>
+                    <div className={`cruise-candidate-indicator${point.lvv_requested ? " active" : ""}`}>
+                      <span>LVV</span>
+                      <strong>{point.lvv_requested ? "Demandé" : "Aucune"}</strong>
+                      <small>LVV_ACTIVATION_REQ</small>
+                    </div>
+                    <div className="cruise-candidate-indicator">
+                      <span>Consigne caméra</span>
+                      <strong>{typeof point.speed_setpoint_kph === "number" && point.speed_setpoint_kph > 0 ? `${point.speed_setpoint_kph.toFixed(0)} km/h` : "—"}</strong>
+                      <small>SPEED_SETPOINT</small>
+                    </div>
+                  </div>
+                  <div className="cruise-validation-footer">
+                    <span>Type régulation caméra <strong>{point.acc_mode ?? "—"}</strong></span>
                   </div>
                 </div>
                 <div><span>Frein conducteur</span><strong className={point.brake_active ? "danger-text" : ""}>{point.brake_active ? "Appuyé" : "Relâché"}</strong><small>État système {point.brake_system_state ?? "—"} · pression brute {point.brake_pressure_raw?.toFixed(0) ?? "—"}</small></div>

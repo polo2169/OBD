@@ -106,3 +106,4 @@ le BSI ; ce n'est pas une commande d'actionneur. Les actions clignotant gauche,
 droit et warning sont donc visibles dans le catalogue mais marquées
 « commande à identifier ». Elles resteront bloquées jusqu'à obtention d'une
 séquence UDS BSI confirmée par une source ou une capture contrôlée.
+https://github.com/lukasloetkolben/OpenpilotHardware/tree/main/PSA-Harness
