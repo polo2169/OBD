@@ -15,6 +15,19 @@ class VirtualVehicleTransport(Transport):
     requests and segments responses that do not fit in one classic CAN frame.
     """
 
+    _DEFAULT_TELECODING_VALUES: dict[tuple[int, int], bytes] = {
+        (0x752, 0x2200): bytes.fromhex("00"),
+        (0x764, 0x2100): bytes.fromhex("0000"),
+        (0x764, 0x2101): bytes.fromhex("0000"),
+        (0x6A8, 0x2101): bytes.fromhex("00EFFFFFFDFFFFFF7F00"),
+        (0x6AD, 0x2101): bytes.fromhex("00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+    }
+    _telecoding_values: dict[tuple[int, int], bytes] = dict(_DEFAULT_TELECODING_VALUES)
+
+    @classmethod
+    def reset_simulation(cls) -> None:
+        cls._telecoding_values = dict(cls._DEFAULT_TELECODING_VALUES)
+
     def __init__(
         self,
         read_only: bool = True,
@@ -184,8 +197,7 @@ class VirtualVehicleTransport(Transport):
     def _response_id_for(self, request_id: int) -> int:
         return self.response_ids.get(request_id, request_id + 8)
 
-    @staticmethod
-    def _response(uds: bytes, request_id: int) -> bytes:
+    def _response(self, uds: bytes, request_id: int) -> bytes:
         obd_values = {
             bytes.fromhex("0902"): b"\x49\x02\x01ZFA31200001234567",
             bytes.fromhex("0904"): b"\x49\x04\x01SIM-CAL-2026",
@@ -224,6 +236,9 @@ class VirtualVehicleTransport(Transport):
             return obd_values[uds]
         if uds[:1] == b"\x22" and len(uds) >= 3:
             did = int.from_bytes(uds[1:3], "big")
+            telecoding_value = self._telecoding_values.get((request_id, did))
+            if telecoding_value is not None:
+                return b"\x62" + uds[1:3] + telecoding_value
             values = {
                 0xF180: b"SIM-BOOT-1.0",
                 0xF181: b"SIM-APP-3.2.1",
@@ -255,6 +270,10 @@ class VirtualVehicleTransport(Transport):
             return bytes.fromhex("670312345678")
         if uds[:2] == b"\x27\x04" and len(uds) == 6:
             return b"\x67\x04"
+        if uds[:1] == b"\x2E" and len(uds) >= 4:
+            did = int.from_bytes(uds[1:3], "big")
+            self._telecoding_values[(request_id, did)] = bytes(uds[3:])
+            return b"\x6E" + uds[1:3]
         if uds in {
             bytes.fromhex("2FD6000300"),
             bytes.fromhex("2FD60000"),

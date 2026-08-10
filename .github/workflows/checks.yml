@@ -1,0 +1,67 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Run tests
+        working-directory: backend
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: pytest -p no:cacheprovider -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Check TypeScript and build
+        working-directory: frontend
+        run: npm run check
+
+  firmware:
+    name: Firmware (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - esp32-waveshare-wifi-readonly
+          - esp32-tja1050-serial-diagnostic
+          - esp32-tja1050-serial-psa-lab
+          - esp32-dual-can-16mhz-serial-diagnostic
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.19
+      - name: Compile firmware
+        working-directory: firmware/esp32-gateway
+        run: pio run -e "${{ matrix.environment }}"

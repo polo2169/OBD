@@ -5,7 +5,7 @@ import serial
 
 from app.models import CanFrame
 from app.safety import TxSafetyProfile, authorize_transport_can_frame
-from app.transports.base import Transport
+from app.transports.base import Transport, validate_gateway_tx_policy
 
 
 class Esp32SerialTransport(Transport):
@@ -68,41 +68,16 @@ class Esp32SerialTransport(Transport):
         if self.hello.get("can_ready") is False:
             self.close()
             raise RuntimeError("Le contrôleur CAN de la passerelle n'est pas initialisé.")
-        if self.tx_enabled and bool(self.hello.get("readonly", True)):
-            self.close()
-            raise RuntimeError(
-                "CAN_TX_ENABLED=true mais le firmware ESP32 est compilé en écoute seule. "
-                "Flashez esp32-tja1050-serial-diagnostic pour un scan UDS en lecture."
+        try:
+            validate_gateway_tx_policy(
+                self.hello,
+                tx_enabled=self.tx_enabled,
+                safety_profile=self.safety_profile,
+                require_diagnostic_can=self.require_diagnostic_can,
             )
-        if self.tx_enabled:
-            if (
-                self.require_diagnostic_can
-                and self.hello.get("dual_can") is True
-                and self.hello.get("diagnostic_can_ready") is not True
-            ):
-                self.close()
-                raise RuntimeError(
-                    "Le bus CAN diagnostic 3/8 n'est pas initialisé sur le MCP2515."
-                )
-            psa_lab = self.hello.get("psa_lab") is True
-            if self.safety_profile == "psa_lab" and not psa_lab:
-                self.close()
-                raise RuntimeError(
-                    "Le firmware ESP32 n'annonce pas la capacité PSA lab. "
-                    "Flashez le profil esp32-tja1050-serial-psa-lab."
-                )
-            if (
-                self.require_diagnostic_can
-                and self.safety_profile == "diagnostic_read_only"
-                and self.hello.get("diagnostic_read_only") is not True
-                and not psa_lab
-            ):
-                self.close()
-                raise RuntimeError(
-                    "Le firmware ESP32 n'annonce pas le verrou diagnostic lecture seule "
-                    "ni le profil PSA lab compatible. "
-                    "Le profil actif générique est refusé."
-                )
+        except RuntimeError:
+            self.close()
+            raise
         self.debug("gateway_ready", hello=self.hello)
         self._write_command({"type": "get_status"})
 

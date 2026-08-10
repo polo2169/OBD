@@ -157,6 +157,81 @@ static bool diagnostic_request_id_allowed(uint32_t id) {
 }
 
 #if PSA_LAB
+constexpr uint16_t PSA_LAB_MAX_TELECODING_PAYLOAD = 259;
+
+struct PsaLabIsoTpWriteState {
+  bool active = false;
+  uint32_t id = 0;
+  uint16_t remaining = 0;
+  uint8_t next_sequence = 1;
+  uint32_t updated_ms = 0;
+};
+
+static PsaLabIsoTpWriteState psa_lab_write_state;
+
+static void psa_lab_reset_write_state() {
+  psa_lab_write_state = PsaLabIsoTpWriteState{};
+}
+
+static bool psa_lab_write_id_allowed(uint32_t id) {
+  return id != 0x7E0 && id != 0x7B0 && diagnostic_request_id_allowed(id);
+}
+
+static const char *psa_lab_fragmented_write_rejection(
+    uint32_t id,
+    const uint8_t *payload,
+    size_t length) {
+  const uint8_t pci_type = payload[0] >> 4;
+  if (psa_lab_write_state.active
+      && millis() - psa_lab_write_state.updated_ms > 1500) {
+    psa_lab_reset_write_state();
+  }
+  if (pci_type == 0x1) {
+    if (length < 5 || !psa_lab_write_id_allowed(id)) {
+      return "invalid telecoding first frame";
+    }
+    const uint16_t application_length =
+        static_cast<uint16_t>(((payload[0] & 0x0F) << 8) | payload[1]);
+    const uint16_t did = static_cast<uint16_t>((payload[3] << 8) | payload[4]);
+    if (payload[2] != 0x2E
+        || application_length < 4
+        || application_length > PSA_LAB_MAX_TELECODING_PAYLOAD
+        || did >= 0xF000) {
+      return "only a bounded manufacturer WriteDataByIdentifier may be fragmented";
+    }
+    const uint16_t carried = static_cast<uint16_t>(length - 2);
+    psa_lab_write_state.active = application_length > carried;
+    psa_lab_write_state.id = id;
+    psa_lab_write_state.remaining = application_length > carried
+        ? static_cast<uint16_t>(application_length - carried)
+        : 0;
+    psa_lab_write_state.next_sequence = 1;
+    psa_lab_write_state.updated_ms = millis();
+    return nullptr;
+  }
+  if (pci_type == 0x2) {
+    if (!psa_lab_write_state.active || psa_lab_write_state.id != id || length < 2) {
+      return "telecoding consecutive frame without an accepted first frame";
+    }
+    const uint8_t sequence = payload[0] & 0x0F;
+    if (sequence != psa_lab_write_state.next_sequence) {
+      psa_lab_reset_write_state();
+      return "invalid telecoding ISO-TP sequence";
+    }
+    const uint16_t carried = static_cast<uint16_t>(length - 1);
+    if (carried >= psa_lab_write_state.remaining) {
+      psa_lab_reset_write_state();
+    } else {
+      psa_lab_write_state.remaining -= carried;
+      psa_lab_write_state.next_sequence =
+          static_cast<uint8_t>((psa_lab_write_state.next_sequence + 1) & 0x0F);
+      psa_lab_write_state.updated_ms = millis();
+    }
+    return nullptr;
+  }
+  return "unsupported fragmented telecoding frame";
+}
+
 static bool psa_lab_payload_equals(
     const uint8_t *payload,
     uint8_t application_length,
@@ -210,8 +285,12 @@ static const char *diagnostic_tx_rejection(
     }
     return nullptr;
   }
-  // Read requests used here fit in one CAN frame. Blocking host-originated
-  // first/consecutive frames prevents a forbidden service being fragmented.
+  // PSA lab accepts only a statefully tracked, size-bounded 0x2E request.
+#if PSA_LAB
+  if (pci_type == 0x1 || pci_type == 0x2) {
+    return psa_lab_fragmented_write_rejection(id, payload, length);
+  }
+#endif
   if (pci_type != 0x0) return "multi-frame diagnostic requests are locked";
 
   const uint8_t application_length = payload[0] & 0x0F;
@@ -249,10 +328,23 @@ static const char *diagnostic_tx_rejection(
           ? nullptr
           : "only ClearDiagnosticInformation group FFFFFF is allowed";
     case 0x27:
-      if (id != 0x752 && id != 0x764) return "security access is limited to BSI and telematics";
+      if (!psa_lab_write_id_allowed(id)) return "security access is limited to known PSA ECUs";
       if (application_length == 2 && payload[2] == 0x03) return nullptr;
       if (application_length == 6 && payload[2] == 0x04) return nullptr;
       return "only PSA configuration security access 0x27/03-04 is allowed";
+    case 0x11:
+      return application_length == 2 && payload[2] == 0x01
+          ? nullptr
+          : "only ECU hard reset 0x11/0x01 is allowed";
+    case 0x2E: {
+      if (!psa_lab_write_id_allowed(id) || application_length < 4) {
+        return "invalid bounded telecoding write";
+      }
+      const uint16_t did = static_cast<uint16_t>((payload[2] << 8) | payload[3]);
+      return did < 0xF000
+          ? nullptr
+          : "standardized Fxxx identifiers are locked for telecoding";
+    }
     case 0x2F:
       return psa_lab_named_action_allowed(id, payload, application_length)
           ? nullptr
@@ -406,7 +498,7 @@ static size_t format_hello(char *output, size_t capacity) {
       ? "strict_passive"
       : (DIAGNOSTIC_READ_ONLY
           ? "read_only_diagnostics"
-          : (PSA_LAB ? "psa_lab_named_actions" : "unrestricted"));
+          : (PSA_LAB ? "psa_lab_bounded_writes" : "unrestricted"));
 #if UART_DUAL_CAN_MASTER
   // The main board enforces the 6/14 OBD-read allowlist locally; the satellite
   // exposes its independent policy for PSA diagnostics on 3/8.
@@ -418,6 +510,8 @@ static size_t format_hello(char *output, size_t capacity) {
 #endif
 #if PSA_LAB
   doc["deadman_ms"] = PSA_DEADMAN_MS;
+  doc["telecoding_bounded"] = true;
+  doc["telecoding_max_payload"] = PSA_LAB_MAX_TELECODING_PAYLOAD;
 #endif
   doc["bitrate"] = cfg::CAN_BITRATE;
 #if USE_MCP2515 || DUAL_CAN
@@ -1428,7 +1522,7 @@ void setup() {
         ? "listen_only"
         : (DIAGNOSTIC_READ_ONLY
             ? "read_only_diagnostics"
-            : (PSA_LAB ? "psa_lab_named_actions" : "active"));
+            : (PSA_LAB ? "psa_lab_bounded_writes" : "active"));
     status["driver"] = DUAL_CAN
         ? "twai+mcp2515"
         : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));

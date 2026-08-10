@@ -20,6 +20,7 @@ data/sessions/*.json
 data/sessions/*.vehicle.json
 !data/sessions/.gitkeep
 data/diagnostics/
+data/runtime/
 database/psa/proposals/*.yaml
 !database/psa/proposals/.gitkeep
 *.jsonl

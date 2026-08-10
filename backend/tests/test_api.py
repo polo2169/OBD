@@ -23,7 +23,7 @@ def test_system_status_exposes_wifi_gateway(monkeypatch):
 
 
 def test_operating_mode_switch_requires_checks_and_audits_vin(tmp_path, monkeypatch):
-    vin = "VF3LPHNYWJS141966"
+    vin = "VF3LJHNYWJS123456"
 
     class IdleCapture:
         @staticmethod
@@ -123,7 +123,7 @@ def test_sensor_snapshot_endpoint():
 
 
 def test_live_sensor_registry_crud_is_vin_scoped_and_archived():
-    vin = "VF3LPHNYWJS141966"
+    vin = "VF3LJHNYWJS123456"
     created = client.post("/api/live-data/sensors", json={
         "source_key": "OBD01.engine_rpm",
         "vin": vin,
@@ -140,7 +140,7 @@ def test_live_sensor_registry_crud_is_vin_scoped_and_archived():
 
     listed = client.get(f"/api/live-data/sensors?vin={vin}")
     assert [item["key"] for item in listed.json()] == [key]
-    assert client.get("/api/live-data/sensors?vin=ZFA31200000504700").json() == []
+    assert client.get("/api/live-data/sensors?vin=ZFA31200001234567").json() == []
 
     updated = client.put(f"/api/live-data/sensors/{key}", json={
         "label": "Régime corrigé",

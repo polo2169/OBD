@@ -10,6 +10,8 @@ from app.models import EcuDefinition
 
 _PYPSADIAG_FAMILY_ALIASES = {"BMF_UDS_PSA": "BMF"}
 
+_PYPSADIAG_NON_CODING_TABS = {"ident", "vin", "cal"}
+
 
 class KnowledgeBase:
     def __init__(self, root: Path | None = None) -> None:
@@ -206,6 +208,267 @@ class KnowledgeBase:
                 result[family_dir.name] = zones
         return result
 
+    @cached_property
+    def _pypsadiag_variants(self) -> dict[str, dict[str, dict]]:
+        """Return the source JSONs without merging ECU variants.
+
+        A family can contain several incompatible ECUs (for example NAC, RCC
+        and IVI in ``TELEMAT``).  Merging their zones is useful for discovery,
+        but is not safe enough for a write workflow.  Telecoding therefore
+        always resolves one exact source file through this index.
+        """
+        root = self._pypsadiag_root / "ecu_definitions"
+        result: dict[str, dict[str, dict]] = {}
+        if not root.exists():
+            return result
+        for family_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            variants: dict[str, dict] = {}
+            for path in sorted(family_dir.glob("*.json")):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if isinstance(payload, dict):
+                    variants[path.stem] = payload
+            if variants:
+                result[family_dir.name] = variants
+        return result
+
+    @staticmethod
+    def _option_definition(option: dict, index: int, byte_length: int) -> dict | None:
+        raw_binary = option.get("mask")
+        raw_hex = option.get("value")
+        try:
+            if isinstance(raw_binary, str):
+                encoded = int(raw_binary, 2)
+            elif isinstance(raw_hex, str):
+                encoded = int(raw_hex, 16)
+            else:
+                return None
+        except ValueError:
+            return None
+        width = max(byte_length * 2, 2)
+        return {
+            "key": f"option-{index}",
+            "name": str(option.get("name") or f"Valeur 0x{encoded:X}"),
+            "encoded_hex": f"{encoded:0{width}X}",
+        }
+
+    @classmethod
+    def _field_definition(
+        cls,
+        field: dict,
+        *,
+        key: str,
+        zone_read_only: bool,
+    ) -> dict:
+        form_type = str(field.get("form_type") or "string")
+        mask_binary = field.get("mask")
+        byte_range = field.get("byte_range")
+        if isinstance(byte_range, int) and byte_range > 0:
+            byte_length = byte_range
+        elif isinstance(mask_binary, str) and mask_binary:
+            byte_length = max(1, (len(mask_binary) + 7) // 8)
+        else:
+            byte_length = 1
+        mask_hex = None
+        if isinstance(mask_binary, str):
+            try:
+                mask_hex = f"{int(mask_binary, 2):0{byte_length * 2}X}"
+            except ValueError:
+                mask_hex = None
+
+        options = [
+            normalized
+            for index, option in enumerate(field.get("params") or [])
+            if isinstance(option, dict)
+            for normalized in [cls._option_definition(option, index, byte_length)]
+            if normalized is not None
+        ]
+        available_logic = str(field.get("available_logic") or "active_low")
+        if form_type == "checkbox" and mask_hex is not None:
+            mask_value = int(mask_hex, 16)
+            active_value = mask_value if available_logic == "active_high" else 0
+            inactive_value = 0 if available_logic == "active_high" else mask_value
+            options = [
+                {
+                    "key": "false",
+                    "name": "Absent / désactivé",
+                    "encoded_hex": f"{inactive_value:0{byte_length * 2}X}",
+                },
+                {
+                    "key": "true",
+                    "name": "Présent / activé",
+                    "encoded_hex": f"{active_value:0{byte_length * 2}X}",
+                },
+            ]
+
+        zone_lengths = field.get("zoneLength")
+        if isinstance(zone_lengths, int):
+            accepted_lengths = [zone_lengths]
+        elif isinstance(zone_lengths, list):
+            accepted_lengths = [item for item in zone_lengths if isinstance(item, int)]
+        else:
+            accepted_lengths = []
+        read_only = zone_read_only or bool(field.get("read_only", False))
+        writable = bool(
+            not read_only
+            and mask_hex is not None
+            and form_type in {"checkbox", "combobox"}
+            and options
+        )
+        return {
+            "key": key,
+            "name": str(field.get("name") or key),
+            "form_type": form_type,
+            "value_type": str(field.get("type") or "raw"),
+            "byte": int(field.get("byte") or 0),
+            "byte_length": byte_length,
+            "mask_hex": mask_hex,
+            "available_logic": available_logic,
+            "accepted_zone_lengths": accepted_lengths,
+            "read_only": read_only,
+            "writable": writable,
+            "options": options,
+        }
+
+    @classmethod
+    def _zone_definition(cls, zone_id: str, zone: dict, tabs: dict) -> dict:
+        zone_read_only = bool(zone.get("read_only", False))
+        fields: list[dict] = []
+        if zone.get("form_type") == "multi":
+            raw_params = zone.get("params")
+            if isinstance(raw_params, list):
+                for index, field in enumerate(raw_params):
+                    if not isinstance(field, dict) or not field.get("form_type"):
+                        continue
+                    key = str(
+                        field.get("id")
+                        or field.get("extra_name")
+                        or field.get("name_original")
+                        or f"field-{index}"
+                    )
+                    fields.append(cls._field_definition(field, key=key, zone_read_only=zone_read_only))
+            for key, field in zone.items():
+                if not isinstance(field, dict) or not field.get("form_type"):
+                    continue
+                fields.append(cls._field_definition(field, key=key, zone_read_only=zone_read_only))
+        elif zone.get("form_type") in {"checkbox", "combobox", "string"}:
+            key = str(zone.get("id") or f"zone-{zone_id}")
+            fields.append(cls._field_definition(zone, key=key, zone_read_only=zone_read_only))
+
+        tab = str(zone.get("tab") or "other")
+        structured = bool(fields)
+        coding_candidate = bool(
+            structured
+            and tab not in _PYPSADIAG_NON_CODING_TABS
+            and not zone_read_only
+            and int(zone_id, 16) < 0xF000
+        )
+        return {
+            "did": int(zone_id, 16),
+            "did_hex": zone_id.upper().zfill(4),
+            "name": str(zone.get("name") or zone.get("id") or f"Zone 0x{zone_id}"),
+            "tab": tab,
+            "tab_name": str(tabs.get(tab) or tab),
+            "value_type": str(zone.get("type") or "raw"),
+            "form_type": str(zone.get("form_type") or "string"),
+            "read_only": zone_read_only,
+            "coding_candidate": coding_candidate,
+            "writable": coding_candidate and any(field["writable"] for field in fields),
+            "fields": fields,
+        }
+
+    def telecoding_variants_for_family(self, family: str | None) -> list[dict]:
+        if not family:
+            return []
+        folder = _PYPSADIAG_FAMILY_ALIASES.get(family, family)
+        variants = self._pypsadiag_variants.get(folder, {})
+        normalized: list[dict] = []
+        for variant_id, payload in variants.items():
+            tabs = payload.get("tabs") if isinstance(payload.get("tabs"), dict) else {}
+            zones = []
+            for zone_id, zone in (payload.get("zones") or {}).items():
+                if not isinstance(zone, dict):
+                    continue
+                try:
+                    zones.append(self._zone_definition(str(zone_id), zone, tabs))
+                except ValueError:
+                    continue
+            raw_keys = payload.get("keys")
+            if isinstance(raw_keys, dict):
+                keys = [
+                    {"variant": str(name), "key_hex": str(value).upper()}
+                    for name, value in raw_keys.items()
+                    if isinstance(value, str) and len(value) == 4
+                ]
+            elif isinstance(raw_keys, str) and len(raw_keys) == 4:
+                keys = [{"variant": str(payload.get("name") or variant_id), "key_hex": raw_keys.upper()}]
+            else:
+                keys = []
+            protocol = str(payload.get("protocol") or "unknown")
+            normalized.append({
+                "id": variant_id,
+                "name": str(payload.get("name") or variant_id),
+                "family": folder,
+                "protocol": protocol,
+                "request_id": int(str(payload.get("tx_id")), 16) if payload.get("tx_id") else None,
+                "response_id": int(str(payload.get("rx_id")), 16) if payload.get("rx_id") else None,
+                "security_keys": keys,
+                "tabs": {str(key): str(value) for key, value in tabs.items()},
+                "zones": zones,
+                "zone_count": len(zones),
+                "coding_zone_count": sum(zone["coding_candidate"] for zone in zones),
+                "writable_zone_count": sum(zone["writable"] for zone in zones),
+                "write_supported": protocol == "uds" and bool(keys),
+                "source": self.pypsadiag_source(),
+            })
+        return normalized
+
+    def telecoding_variant(self, family: str | None, variant_id: str) -> dict:
+        variant = next(
+            (item for item in self.telecoding_variants_for_family(family) if item["id"] == variant_id),
+            None,
+        )
+        if variant is None:
+            raise KeyError(f"Variante de télécodage inconnue : {variant_id}.")
+        return variant
+
+    @staticmethod
+    def decode_telecoding_fields(zone: dict, raw: bytes) -> list[dict]:
+        decoded: list[dict] = []
+        for field in zone.get("fields", []):
+            start = field["byte"]
+            length = field["byte_length"]
+            accepted_lengths = field.get("accepted_zone_lengths") or []
+            available = (not accepted_lengths or len(raw) in accepted_lengths) and start + length <= len(raw)
+            item = {**field, "available": available, "raw_hex": None, "value_key": None, "value": None}
+            if not available:
+                decoded.append(item)
+                continue
+            segment = raw[start:start + length]
+            item["raw_hex"] = segment.hex().upper()
+            if field.get("mask_hex") is None:
+                decoded.append(item)
+                continue
+            mask = int(field["mask_hex"], 16)
+            value = int.from_bytes(segment, "big") & mask
+            selected = next(
+                (
+                    option
+                    for option in field.get("options", [])
+                    if int(option["encoded_hex"], 16) & mask == value
+                ),
+                None,
+            )
+            if selected:
+                item["value_key"] = selected["key"]
+                item["value"] = selected["name"]
+            else:
+                item["value"] = f"Valeur non répertoriée (0x{value:0{length * 2}X})"
+            decoded.append(item)
+        return decoded
+
     def telecoding_zones_for_family(self, family: str | None) -> dict[str, dict]:
         """Zone id -> {name, byte, parameters} for a vehicle.yaml ``family`` string.
 
@@ -225,6 +488,9 @@ class KnowledgeBase:
 
     def pypsadiag_source(self) -> str | None:
         return self._pypsadiag_metadata.get("source")
+
+    def pypsadiag_metadata(self) -> dict:
+        return dict(self._pypsadiag_metadata)
 
     @staticmethod
     def decode_telecoding_parameters(zone: dict, raw: bytes) -> list[dict]:

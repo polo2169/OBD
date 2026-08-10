@@ -1,0 +1,705 @@
+
+MesoPlz [HATO], :race_car: :racing_car: — 19/02/2026 20:31
+Thankss! 🫡
+CC-Corsa-E:race_car: :racing_car: — 24/02/2026 17:50
+I would also like to have the configuration for the battery ECU. Does anyone have the JSON file for this?
+
+Thanks in advance. 🤩
+LEOSAMA — 27/02/2026 04:31
+I received the Comma 4 today in Korea and have installed it in the vehicle. I plan to complete the setup this weekend.
+I would like to sincerely thank @elkoled  for designing the vehicle harness and for handling the vehicle porting!!
+Image
+CC-Corsa-E:race_car: :racing_car: — 02/03/2026 11:16
+Hello everyone,
+
+Does anyone happen to know if you can calibrate the front camera with PsyDiag? Unfortunately, after lowering my car, the values are no longer correct.
+Baris Guler [CAI], :race_car: :racing_car: — 03/03/2026 12:52
+Hi everyone,
+
+I've been following Comma for a really long time. Unfortunately, my cars have never been on the supported vehicles list. I'm getting a new car now and switching to a 2026 Peugeot 2008 GT (1.2 hybrid).
+elkoled [CAI],  — 04/12/2025 09:20
+Do you also have Lane Positioning Assist that continuously keeps the car centered in the lane, or just normal Lane Keep Assist?
+Please send a picture of your BSI serial number, it is located below the steering wheel.
+It looks like this:
+Image
+ [CAI], 
+KwangGaeTo:race_car: :racing_car: — 04/12/2025 09:42
+Hi Elkoled, I think it has the Lane Positioning Assist but let me double check and let you know.
+Thank you for your reply.
+ [CAI], 
+KwangGaeTo:race_car: :racing_car: — 06/12/2025 00:32
+Hey @elkoled , my BSI number is BSI-EI5-CEM00 and it has the lane positioning assist.
+Image
+elkoled [CAI],  — 06/12/2025 09:09
+Great, then it is compatible.
+You can write me a dm for the harness.
+ [CAI], 
+yannick0619:race_car: :racing_car: — 07/12/2025 10:08
+Do you have good hope for < 2020 models or it’s really in bad condition ?
+elkoled [CAI],  — 07/12/2025 18:29
+I need access to one of these models for a few days to continue with the port, It is not easy to rent one of these older cars locally.
+psychip:race_car: :racing_car: — 14/12/2025 19:30
+Hello guys, i got a citroen c5, 2012. obviously pnp installation is not possible but i'm considering about implementing a directional servo to wheel that used in racing sim setups. who i can talk about this?
+elkoled [CAI],  — 15/12/2025 16:57
+Have a look in ⁠old-cars
+elkoled [CAI],  — 17/12/2025 20:25
+I have added some features to the PSA port for supported cars:
+Stock ACC: Automatic resume from stop
+Openpilot Longitudinal: very experimental, enable with Developer->Longitudinal Control (alpha)
+
+Fork install:
+Sunnypilot: elkoled/psa-sunny
+Openpilot: elkoled/psa
+Thanks to @semitop7 for testing!
+ [CAI], 
+sunnyhaibin [SP], :crown: — 18/12/2025 07:48
+Wanna repost on the sunnypilot community forum for visibility? https://community.sunnypilot.ai/invites/wH9fcn9b45
+ [SP], 
+elkoled [CAI],  — 18/12/2025 08:27
+sure, thanks 🙂
+ [CAI], 
+sunnyhaibin [SP], :crown: — 19/12/2025 04:15
+Looks good! Reposting here for visibility: https://community.sunnypilot.ai/t/psa-port-status/1784?u=sunnyhaibin
+MesoPlz [HATO], :race_car: :racing_car: — 20/12/2025 16:28
+Got the harness from @elkoled delivered today for my Peugeot e-208!
+
+Installed it already while I'm waiting for my comma four to arrive 👀
+lxn:race_car: :racing_car: — 22/12/2025 15:11
+I have an early version of the Peugeot 5008 mid-range model. It only has the lane-keeping system that corrects when drifting out of the lane, and it has no ACC. Is there no chance that it will be supported?
+semitop7 [CAI],  — 22/12/2025 15:27
+@lxn pls do photo of BSI label like this. What year and engine?
+TAG — 22/12/2025 17:06
+Just wanted to share my experience with ACC telecoding on my 2023 Peugeot e-208 Allure (camera-only, no radar).
+
+Big thanks to @semitop7 (who handled the telecoding) and @elkoled 🙌 — amazing effort and support.
+
+Quick summary of my tests:
+
+ACC works surprisingly well on highways (keeps distance, brakes, stop & go)
+
+Stop & Go works fine — if stopped >4 sec, green (A) shows + “Cruise Paused”
+
+LPA > LKA in my opinion: better lane recognition, proper centering, handles curves nicer
+
+Yellow lane lines sometimes cause hesitation
+
+Camera struggles with faded lines / sun glare
+
+Stationary vehicle test failed (white SUV wasn’t detected) → had to brake manually ⚠️
+
+As mentioned before, this setup definitely needs careful use since there’s no radar.
+
+Hopefully Comma will solve most of the lane issues and be a big upgrade over stock.
+
+https://youtube.com/shorts/ze9DLicTFv0?si=GqZk4eGQ9imDnb4o
+
+https://youtube.com/shorts/XkJuIy0Tujk?si=xOJvh2MhvKNvqjQ-
+
+https://youtube.com/shorts/v8i3hHLim3c?si=MtV5YZ9ydcEx9rDG 
+YouTube
+TAG Fabrication
+Peugeot e-208 ACC telecoding test 🚗 No radar, real results #e208
+Image
+YouTube
+TAG Fabrication
+ACC activated by telecoding 😮 Peugeot e-208 without radar #e208
+Image
+YouTube
+TAG Fabrication
+ACC with Stop&Go after telecoding Peugeot e-208 Allure #e208
+Image
+semitop7 [CAI],  — 22/12/2025 17:30
+@TAG In the video about the Stop & Go test at the beginning. What happened? Were you too impatient and turned off ACC manually, or did the car turn it off automatical
+ [CAI], 
+TAG — 22/12/2025 18:19
+I didn’t turn it off. It paused automatically after waiting too long. This happened at the beginning and the end of the video. The “A” icon was displayed, so I assume it was Auto Hold. I pressed the accelerator, but it didn’t resume, even after re-engaging the cruise control.
+semitop7 [CAI],  — 22/12/2025 18:37
+When the “A” icon is displayed, you are right it is Auto Hold or Stop & Go as Peugeot calls it.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:20
+Woow that's insane! Seems to work almost as well as the factory implementation with radar that I have 😂 
+
+I can tell you that the stationary vehicle test fails for me almost every time too. If the vehicle ahead of me is stopped and I have a bit of speed still the car just won't recognize it. Even with the radar.
+
+And yeah, the standard lane centering assist is pretty bad. Very often it starts hugging the side of the lane and I have to get it back to center myself. Or it just randomly pulls me onto offramps (happens VERY often on 80 KM/h roads).
+
+All in all I think from how you describe it and what I can see in the video's is that the radar doesn't make that huge of a difference with just the camera. Maybe in bad visibility / rain the difference will be bigger. 
+ [HATO], 
+TAG — 23/12/2025 08:37
+Honestly, it’s kind of insane. For me, this is a huge upgrade compared to the old LKA, which I’ve always found mostly useless. LPA is noticeably better, still not perfect, and it definitely needs supervision in case of surprises, but overall it’s a big improvement. It still behaves oddly with yellow lane markings sometimes, and for some reason it likes to get a bit too close to the curb.
+
+I also noticed the camera takes around 1–2 seconds to recognize the car in front. I’m not sure if this is normal for other ACC systems; I tested a 2022 Hyundai Tucson before and didn’t notice this issue. Using ACC with stationary vehicles is actually risky in my case. It didn’t slow down or stop, and I came very close to a crash.
+
+That said, I’m still really thankful. Overall, this is a big achievement and a major upgrade for me.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:39
+the LKA is just meant to keep you IN the lane instead of in the center
+Using ACC with stationary vehicles is actually risky in my case. It didn’t slow down or stop, and I came very close to a crash.
+Please take care doing this :nervous: 
+
+Just expect that it won't work and when it does you'll just be positively surprised :KEKW: 
+For me that's how I look at it. If I see a stationary car in front. Ill just brake manually
+Did you upgrade the cruise control stalk on the steering wheel btw? or how are you controlling it?
+ [HATO], 
+TAG — 23/12/2025 08:43
+There is no need to upgrade. It is %100 functional. Just the writings on it is the difference.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:44
+aaaah wow! That's actually kind of insane hahah
+If I knew all of this was possible I would've bought a e-208 with normal cruise and just installed a comma :KEKW: 
+
+I paid so much more to get it with adaptive cruise and LPA 
+ [HATO], 
+TAG — 23/12/2025 08:49
+I still think I'm missing a lot of stuff from the GT line. It is more beautiful too!
+I got mine used, so I had no choice to pick trim or color 😂 
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:55
+yeah that's true. The headlights are a lot better on the gt line
+And the black roof is also just :chefskiss:
+When I get my comma I really want to try building some extra features that can basically replace the built-in Peugeot connectivity service with something you can add to a home assistant or something.
+The standard connectivity is sooooo bad. It cuts out constantly and has so little options
+ [HATO], 
+TAG — 23/12/2025 09:01
+It can't even do its ONE job almost all of the time
+Tuom — 20/01/2026 23:43
+Hi everyone,
+I’m planning to buy a new Citroen Berlingo. I know that it’s not officially supported, but I would like to know what hardware/features I should look for when choosing a model to work with openpilot.
+I am also a developer and would be happy to help with a port. I can get a harness from elkoled, and my friend has a comma 4 that I can borrow for testing and data collection.
+elkoled [CAI],  — 21/01/2026 01:03
+Hi, Berlingo can have two different steering APIs, we don't know yet which year or trim they map to.
+One confirmed 2018 Berlingo VP K9 has the new API and works with the current port, so Berlingo III may be the transition point.
+To be certain, you would need to connect a comma to it.
+
+The old steering API has some blockers that may not be solved, so it is not recommended.
+Tuom — 21/01/2026 09:09
+That's Interesting. Another friend has a new Peugeot Rifter, which is very similar to Berlingo. Do you think that they share steering API? Would it make sense to connect comma to the Rifter to check?
+elkoled [CAI],  — 21/01/2026 22:19
+Yes they use the same platform, it still can be either API so you need to connect the comma to be sure.
+Does it have ACC and which model year is it?
+Tuom — 22/01/2026 08:52
+I would have to ask them.
+Regarding Berlingo, I am still choosing a model. It will be the new one, so the year of manufacture should probably be 2025. Does it have to have ACC? And what other features should I look for? Lane assist? Anything else?
+Jorge — 23/01/2026 07:32
+Hello everyone, I have a 2022 Opel Corsa-e (electric) with radar, adaptive cruise control, and lane keeping assist. I believe Elkoled has developed compatible software to use COMMA. Therefore, I'd like to know which harness is being used, as I can't find anything to use it with. Please excuse my ignorance and inexperience on this subject. I don't know if the creator is also the one selling the harness and/or the software. Thank you.
+elkoled [CAI],  — 23/01/2026 20:20
+You can write me a dm
+elkoled [CAI],  — 23/01/2026 20:21
+Yes it should have ACC, look for "Lane Positioning Assist", it sometimes comes with the ACC package on newer PSA vehicles
+ [CAI], 
+Tuom — 24/01/2026 15:31
+Thanks, for reply. Sorry for so many questions, but can it also work without ACC with just regular cruise control? I saw that you posted video before with openpilot longitudinal control.  So it should be possible, right? Or would it be possible to use openpilot for just the lateral control and stock cruise control for longitudinal?
+semitop7 [CAI],  — 24/01/2026 19:39
+If there is a lane keeping assist (LKA) system it should work. In any case on some models ACC can be activated using a camera only without radar. At least on the Peugeot 2008 Active it works well. 
+elkoled [CAI],  — 24/01/2026 21:05
+Openpilot longitudinal control only works if there is ACC in the car, I recommend you to get ACC, it is a much better experience
+Luke:race_car: :racing_car: — 27/01/2026 05:00
+Hi, I have 2018 Citroen Spacetourer A/T and I would love to get comma to help me with long drives. Is there any possibility?
+elkoled [CAI],  — 27/01/2026 05:07
+Hi, it is likely not supported currently. To be sure you would need to install a comma in the car.
+CC-Corsa-E:race_car: :racing_car: — 28/01/2026 12:16
+Hello everyone!
+
+I have a 2023 Opel Corsa with full equipment, unfortunately without parking assist and without ACC.  I already have the button to activate the ACC, PyPsaDiag, and diagnostic device.
+
+Is there something like a guideline on what needs to be changed so that the parking assist and ACC work?  I would be grateful for some help.  Since I'm from Germany, it would of course be easiest in German, but English is fine too. 😀
+CC-Corsa-E:race_car: :racing_car: — 03/02/2026 14:47
+I would also like to have the configuration for the battery ECU. Does anyone have the JSON file for this?
+
+Thanks in advance. 🤩 
+CC-Corsa-E:race_car: :racing_car: — 04/02/2026 12:42
+?🫣
+Sascha_T [pou], :race_car: :racing_car: — 06/02/2026 00:19
+it's doomed bro
+retrofitting ACC on a 2023 may be possible (without hw replacements/purely in sw) 
+unlike on other cars 
+just fafo
+MesoPlz [HATO], :race_car: :racing_car: — 19/02/2026 11:00
+Installed my comma four yesterday. Currently running elkoled's PSA fork.
+
+I just compiled the latest master version of Sunnypilot on top of the fork. Gonna try installing that one soon 👀 
+
+Everything is working perfectly! :D
+ [HATO], 
+Hamonza — 19/02/2026 20:30
+Nice! On what car?
+MesoPlz [HATO], :race_car: :racing_car: — 19/02/2026 20:30
+e208 😊
+Unfortunately I didn't get sunny pilot working yet. But I did sync my stock op fork to master open pilot. That's working fine!
+Hamonza — 19/02/2026 20:31
+Ah okay! Awesome! Congrats 😄
+
+
+I figured I'd check the Discord just in case, and I noticed the Peugeot channel here. Is there any chance my new car might be supported? If this has been discussed before, I'd really appreciate it if you could point me to any threads or articles I can read up on.
+
+Thanks
+If it is possible, which harness do I need to buy, or would I have to do some custom modifications? Any info on this would be greatly appreciated
+ [CAI], 
+elkoled [CAI],  — 03/03/2026 15:46
+The 2008 (2019-2025) is supported, the new facelift has not been tested yet. Since the changes are mainly cosmetic the probability of it working is high.
+Just make sure you have ACC and LPA (Lane positioning assist) trim.
+
+You can order the comma and my harness to try it out and return both if it does not work. Write me a DM if interested. 
+AD — 04/03/2026 13:32
+Anyone up and running with a Jumpy or other PSA medium sized van?
+semitop7 [CAI],  — 04/03/2026 21:32
+I know a owner of Peugeot Rifter 2019. It has mostly the same ECUs as in my Peugeot 2008. We activated adaptive cruise in the Rifter and everything works great. I don't see any issues why it wouldn't work there because comma 3x works great with my car.
+MRMoser — 05/03/2026 14:52
+Quick question regarding the new STLA Medium platform.
+
+I drive a 2025 Vauxhall/Opel Grandland Mild-Hybrid (MHEV) with full factory ACC and Lane Assist. I would love to get a comma 3X or comma 4 for it.
+
+I know the older EMP2-based models (like the Grandland X or the older Peugeot 3008) are well supported by the PSA community ports. However, since my 2025 model uses the completely new STLA Medium architecture, I suspect it uses a new SGW, different camera connectors, and probably SecOC for the steering commands.
+
+Has anyone started looking into the STLA Medium platform yet? Is there any known SGW bypass and harness layout available, or is SecOC currently a hard blocker for openpilot on these new Stellantis models?
+elkoled [CAI],  — 05/03/2026 17:36
+I am not aware of anyone working on it.
+ [CAI], 
+Neo [OMI],  — 08/03/2026 13:18
+What mount did you use for your 2008?
+ [OMI], 
+semitop7 [CAI],  — 09/03/2026 19:06
+Mount for what? For comma device? 
+LEOSAMA — 13/03/2026 15:14
+I have installed sunnypilot with psa car port by @elkoled on my comma four
+I will test it and make some pull request to @elkoled's fork
+Image
+semitop7 [CAI],  — 13/03/2026 21:30
+What car?
+ [CAI], 
+LEOSAMA — 14/03/2026 00:59
+testing on e-208 2023y
+LEOSAMA — 24/03/2026 01:22
+It has an issue where cruise control disengages in SunnyPilot, so I’ll test it across several use cases.
+Otherwise, does the ~2022 e-208 have a B mode (regen) button? My 2023 model has one that enables stronger regenerative braking. 
+On my 2023 model, when openpilot or SunnyPilot is active, the car always behaves as if it’s in B mode, and the B button no longer changes the regenerative braking strength. That’s why I’m asking if there is a B mode button on the ~2022 model. 
+LuckShadow:race_car: :racing_car: — 05/04/2026 17:20
+Hi everyone, I own a 2021 Citroen C4 equipped with ACC. I've searched this thread for info on this car, but I'm not sure about the current state of development. I'm based in Europe. Does anyone know if there's a compatible harness available? Thanks! 🙂
+root:race_car: :racing_car: — 06/04/2026 16:38
+You can find the list of compatible cars here https://github.com/elkoled/openpilot-psa/
+FK Nielsen — 06/04/2026 21:55
+Hi everyone I have an 2020 Opel Grandland X Hybrid4 with adaptive cruise and laneassist.  while looking through the list over likely compatible cars  https://github.com/elkoled/openpilot-psa/  I can see the  Citroen C5 Aircross Numbers matches whats in my car. Any thoughts on this, does it even matter? tia 🙂
+Image
+elkoled [CAI],  — 09/04/2026 20:31
+Opel Grandland X has not been verified yet, as BSI matches with C5 Aircross, It is likely to work. 
+ [CAI], 
+FK Nielsen — 10/04/2026 16:45
+Well, I wont know it if i dont try it hahaha
+MesoPlz [HATO], :race_car: :racing_car: — 16/04/2026 08:43
+I've had the same issue. You can test my fork of sunnypilot / elko's port RWL-Dittrich/psa-sunny 
+For some cars an extra parameter is used in the CAN bus to control the Brake mode. I added this one to the CAN commands the Comma sends out, which solved the issue for me.
+@semitop7 has been testing it too on a petrol car. Of course without B mode. For him it didn't give him any other issues.
+
+My fork is also based on the latest master version of Sunnypilot. Just something to note :) 
+MesoPlz [HATO], :race_car: :racing_car: — 28/04/2026 08:58
+I recently added a smoothing filter at low speeds to curb the jittering that happened below about 20 kph. That really helps a lot for driver comfort. It's already in my psa-sunny fork :)
+treefiddy5306 — 30/04/2026 10:37
+Hey guys, I'm currently looking into getting a 2026 Peugeot 308 GT (Facelift), but openpilot compatibility is a huge deciding factor for me.
+
+It has the new Hybrid 145 e-DSC6 powertrain (48V mild-hybrid with the e-motor integrated into the gearbox) and is based on the EMP2 V3 platform. It comes with full ACC Stop&Go and Lane Positioning Assist (so it has both the front radar and the camera).
+
+I've been reading through the talks here and saw the awesome progress on the standard 1.2 PureTech ICE engines. My questions are:
+
+Feasibility: Is OP even feasible on these new 2025/2026 MHEV powertrains, or do the new hybrid ECU logic and the latest Stellantis Security Gateways (SGW) make it a dead end right now?
+
+Development: If it is possible to port, what would be the best starting point to help develop this? (e.g., which harness design is currently best to build for EMP2 V3 to start sniffing/logging HS1/HS2/ADAS, and has anyone started tackling the gas/brake/regen logic for the e-DSC6 yet?)
+
+Would love to hear your thoughts or warnings before I pull the trigger on this car. Thanks!
+semitop7 [CAI],  — 30/04/2026 22:44
+I think it will not work on new generation 3008. Because main ecu was replaced and now it named VSM. It has different harness connector so for as minimum required develop and build new one adapter. Also it has some new data bus. Same for 408, 308. Almost all cars what have new IVI multimedia system. 
+adz2462:race_car: :racing_car: — 09/05/2026 17:11
+Hi everyone, I just discovered openpilot/sunnypilot and this is honestly incredible 😄 I had no idea a solution like this existed.
+
+Would it be possible to know if my car could be compatible? Officially it seems unsupported, but from the previous messages here it looks like it might work.
+
+I have a Peugeot 5008 GT Pack 2022 (Phase 2) with Adaptive Cruise Control, Lane Positioning Assist / active lane centering and EAT8 gearbox.
+
+Thank you for your reply 🙂
+semitop7 [CAI],  — 09/05/2026 17:24
+@adz2462 Pls provide photos BSI and CVM3 camera like in this post ⁠peugeot-citroen-opel⁠
+adz2462:race_car: :racing_car: — 09/05/2026 17:36
+@semitop7 Hi, I opened the panel under the steering wheel but I’m not sure where exactly I should look for the BSI label and the CVM3 camera reference. Is this the correct area for the BSI? I attached a photo 🙂 Also, is the CVM3 camera the module located behind the rear view mirror on the windshield? Sorry  I don’t know much about cars yet !
+Image
+semitop7 [CAI],  — 12/05/2026 19:17
+I don't know where exactly the label located in you car. You can try find in some specific forum for yours car.
+P.S. You can see on background some green and blue fuses. The label should be on top or bottom side of this box.
+inigosendino — 22/05/2026 10:52
+Hi, I have a comma 3X on a 2021 Opel Corsa-e using the @elkoled's PSA harness and the his psa-sunny fork.
+
+The device boots correctly, panda/harness seem OK, no CAN or harness errors, and the car appears online. However, openpilot never becomes engageable.
+
+Reseating the harness or the OBD-C cable does no difference.
+
+Any idea how to diagnose this issue?
+
+Thanks. 
+elkoled [CAI],  — 22/05/2026 10:53
+Do you have a route?
+inigosendino — 22/05/2026 10:56
+Not sure what do you mean...
+elkoled [CAI],  — 22/05/2026 10:56
+I sent you a dm
+Your cars fingerprint is not added yet
+Dshah:race_car: :racing_car: — 22/05/2026 14:43
+hey all, I joined to know if Peugeot 3008 (P64) 2025 model port is already done or someone working on it asi I plan to port for mine, Thanks 
+semitop7 [CAI],  — 22/05/2026 20:08
+I don't know anybody who working on port for new platform based on VSM Ecu. It models like 3008, 5008, 308, 408 with new IVI multimedia system. So you can try.
+ [CAI], 
+Dshah:race_car: :racing_car: — 22/05/2026 20:55
+any guidelines where to start? I have just basic knowledge and used vlud method to can sniff using arduino and can-bus shield v2 with pypsdiag,  Thanks 
+semitop7 [CAI],  — 22/05/2026 21:02
+You need some documentation for VSM to understand which CANs uses for what. Also VSM has additional communication channels more modern.
+ [CAI], 
+Dshah:race_car: :racing_car: — 22/05/2026 22:01
+I have access to documentations and when I gave a doc like assist at gpt it gives like , but maybe I need some additional informtaion as well to find on some place
+Image
+Image
+Image
+semitop7 [CAI],  — 23/05/2026 10:03
+GPT often imagines something what not belongs reality. Maybe @elkoled can help more for you. I only know bases.
+Sascha_T [pou], :race_car: :racing_car: — 25/05/2026 14:30
+vluds stuff is only UDS afaik which is not what you need
+pypsadiag is only UDS
+you need to go sniff actual canbusses
+not just communicate on the one CAN DIAG
+cristianku:race_car: :racing_car: — 26/06/2026 11:55
+Hi everyone,
+
+I have prepared my openpilot fork for the Peugeot 3008 II P84 pre-facelift, roughly 2017–2020 models ( COMMA 4 - master branch based)
+
+My own car is a 2019 Peugeot 3008, so this is the configuration I tested.
+
+At the moment, this fork is compatible only with the Peugeot 3008 P84 pre-facelift.
+For the Peugeot 5008, please contact me first. It will probably need an additional fingerprint.
+
+If your Peugeot 3008 has Lane Centering Assist, it should work with this fork:
+
+https://github.com/cristianku/openpilot
+
+During the openpilot installation, when asked for a custom repo, enter:
+
+cristianku/peugeot-3008
+
+I also added smoothing to the steering controller to remove the small steering jerks.
+This is done through a torque factor that smooths the steering torque request and makes the steering assist feel more stable and progressive.
+
+Important safety notes:
+
+On tight curves, if the required steering torque is too high, the steering assist may drop out / release steering support without any warning from the car or from openpilot.
+
+Below around 54 km/h, steering assist is disabled.
+The Peugeot 3008 normally enables Lane Centering Assist only above around 80 km/h, while with this openpilot fork it can work down to about 53–54 km/h.
+
+Be careful: openpilot may still appear green / active below this speed, but the steering assist can disappear without warning at the moment.
+
+Driving assist activation works from 30 km/h and above, as it does from factory. This cannot currently be changed.
+In this case:
+
+   
+openpilot becomes green
+the car’s adaptive cruise / distance control activates
+longitudinal control is handled by the car, not by openpilot
+openpilot starts providing steering assist only above about 54 km/h
+below that speed, steering assist stops again
+
+Thanks to @elkoled  for the initial base for this model and your past support. 
+elkoled [CAI],  — 26/06/2026 15:58
+great job! How did you fix the torque steering oscillations?
+ [CAI], 
+cristianku:race_car: :racing_car: — 26/06/2026 21:36
+Thank you! 😊 I achieved it with a combination of steering torque tuning and a progressively increasing torque factor, which avoids sudden steering jerks ("slaps") and makes the steering much smoother.
+It's already working well and is perfectly usable, but it still needs some refinement. I took a six-month break from the project and only recently started working on it again, so I'm sure there are still a few details to improve.
+https://youtu.be/2dKJDR8pXhI?is=_MqkwLkPDzK8Rji2
+YouTube
+Cristianku
+PEUGEOT 3008 COMMA 4 OPENPILOT
+Image
+cristianku:race_car: :racing_car: — 26/06/2026 22:07
+Additionally I added a Sunnypilot branch cristianku/peugeot-3008-sunny ( when you install in Comma 4 you can just put this ), the github link is : https://github.com/cristianku/openpilot.git:peugeot-3008-sunny
+Both cristianku/peugeot-3008 and cristianku/peugeot-3008-sunny are up to date with the Openpilot / Sunnypilot master branch  . 
+I will not use these branches cristianku/peugeot-3008 and cristianku/peugeot-3008-sunny for my testing, I will commit and push here just when I am 100% sure that is working. 
+elkoled [CAI],  — 26/06/2026 22:11
+Looks quite smooth! 
+Did you try spoofing speed to the EPS to enable steering below 54km/h?
+ [CAI], 
+cristianku:race_car: :racing_car: — 26/06/2026 22:14
+Still I haven't tried that.
+djfigo:race_car: :racing_car: — 05/07/2026 20:18
+Hi @cristianku ,
+i sent you a DM to work on a Berlingo Fork.
+Many Thanks
+cristianku:race_car: :racing_car: — 10/07/2026 16:55
+I've renamed the branches. They are now:
+
+cristianku/openpilot:psa-torque — for stock openpilot
+cristianku/openpilot:psa-torque-sunny — for sunnypilot
+
+These only work with older cars that use torque control instead of angle control.
+I've added the fingerprints for PSA_PEUGEOT_3008 and PSA_CITROEN_C4_SPACETOURER.
+There are also -testing branches, but please don't use them — they're just for my own testing, and I'll merge them onto psa-torque and psa-torque-sunny once they're ready.
+I'm working on disabling the "Keep the hands on the steering wheel" message and getting better torque control.
+semitop7 [CAI],  — 11/07/2026 21:12
+About "Keep the hands on the steering wheel". Do you have separate button for LPA for disable it or in torque mode this required by default?
+ [CAI], 
+cristianku:race_car: :racing_car: — 11/07/2026 21:14
+Please rephrase your question , more precisely what you mean
+semitop7 [CAI],  — 11/07/2026 21:23
+I mean in new cars (where steering wheel controls by angel) present LPA (Line Position Assist) button. Only if this button enabled then required "Keep the hands on the steering wheel". Not sure how it works on older cars. So my question mainly about that. 
+ [CAI], 
+cristianku:race_car: :racing_car: — 11/07/2026 21:24
+No, you can not disable this warning by a physical button in torque controller cars
+It's a warning for few seconds then the EPS disengage
+semitop7 [CAI],  — 11/07/2026 21:26
+I got it. Maybe it can be disabled in BSI using PyPSADiag. Did you try investigate what options do you have? 
+ [CAI], 
+cristianku:race_car: :racing_car: — 11/07/2026 21:28
+This is the last option , I am trying the normal way before that
+yannick0619:race_car: :racing_car: — 13/07/2026 11:09
+Hello, is anyone can sell me a harness for the 5008 from 2019? Even with the instructions, I found it difficult to build it myself.
+tasos51 — 13/07/2026 13:15
+Are you sure the older use torque control and the new ones angle? Or the other way around? Asking because I'll start porting a 308 late 2022 with VSI soon. Thanks
+semitop7 [CAI],  — 15/07/2026 08:22
+New one should use definitely angle. As I know if in yours car present CVM2 safety camera than it should be with torque if CMV3 - angle. VSI has newest next generation camera. I don’t think that Stelantis did downgrade and goes back to torque instead of angel.
+hi im isaac | 22 f150 lightning [GW], Icône de rôle, openpilot contributor — 15/07/2026 13:50
+what're the chances this works with a 308 pre-facelift?
+leemong — 24/07/2026 04:04
+You can direct cut the can  lines. and reconnect to the panda. I did this,and it word well.
+yannick0619:race_car: :racing_car: — 24/07/2026 07:05
+I would like a more reversible solution.
+cristianku:race_car: :racing_car: — 31/07/2026 17:06
+I think there's no way to make longitudinal control work on older PSA models. Fundamentally, unless ARTIV is put into programming mode, we can't send the same CAN message with different data onto the bus.
+
+At least on my 2019 Peugeot 3008 (torque-controlled), ARTIV doesn't respond on the CAN bus where the comma device is connected. It does respond when I connect a diagnostic tool like the Kingbolen directly to the OBD port and sniff the traffic. From the comma side I can see the CAN messages, but I think they're just being relayed—it doesn't seem like comma can communicate with ARTIV directly.
+ [GW], 
+cristianku:race_car: :racing_car: — 31/07/2026 17:07
+I can add you finger print to cristianku/psa-torque-sunny and you can try
+But you can send me the log first I can look if you have the torque controlled one
+cristianku:race_car: :racing_car: — 31/07/2026 17:15
+ARTIV is the radar that sends the longitudinal Control messages
+cristianku:race_car: :racing_car: — 31/07/2026 23:57
+The “Keep Hands on Steering Wheel” warning has been removed. 
+However, lateral control may still disengage during long or demanding curves because the factory EPS requires periodic rearming and may not reactivate quickly enough. A caution may also appear on the dashboard during this transition, but it is not an EPS fault.
+These changes are not yet included in openpilot’s openDBC submodule.
+Installation: cristianku/psa-torque-sunny 
+dmrlinares [CAI], :race_car: :racing_car: — 03/08/2026 19:16
+Hi @elkoled / @semitop7
+Writing from Spain. I'm replacing my 2017 Berlingo (B9, the old one) with a new one, and I'd rather buy something the PSA port can actually work with than find out afterwards. I already own a comma 4. A few things I can't answer myself:
+MY2026 / facelift. Your verified list says "Citroen Berlingo K9 2018-". Does the current facelift still map to AEE2010_R3 with the new (angle) steering API? I read semitop7's warning that on the new 3008/408/308 the main ECU has been replaced by VSM, with a different harness connector and new buses. Has that reached the Berlingo/Partner/Combo yet? Any Stellantis Security Gateway to worry about?
+How do I check before signing? I can have the dealer open a stock unit. Are photos of the BSI label + the CVM3 camera reference enough for you to tell, like you asked adz2462?
+Van (N1) vs VP. Everything verified so far seems to be VP. I may end up with the panel van, the crew cab ("Flex Cab") or the combi. Would you expect a different BSI or camera between them?
+L1 vs L2 (Talla M 4.40 m vs Talla XL 4.75 m): any impact on the port?
+comma four. Does the port run on the four already, or 3X only? That's the one piece of hardware I can't change.
+PSA-Harness: still in stock / still building them? I can solder reliably and I've seen the schematic and the BSI-donor approach, but I'd rather buy one from you. Shipping to Spain.
+On the trim requirement: in Spain the only way to get ACC on a new Berlingo is the optional "Pack Safety Plus" (ZV0Y), which Citroen restricts to the EAT8 automatic or the electric version. It bundles adaptive cruise with stop&go plus HIA (lane centering). I assume that is exactly your "Required trim: ACC". Can you confirm?
+Happy to give back: as far as I can tell nobody is running openpilot on a PSA in Spain, and there are no logs at all from a current-generation Berlingo van. Once I have the car I can gather whatever is useful. Thanks for the work on this port.
+dmrlinares [CAI], :race_car: :racing_car: — 03/08/2026 21:06
+Follow-up, this time on the medium van (K0 platform): Jumpy III / SpaceTourer / Expert / Traveller / ProAce / Vivaro / Zafira Life / Scudo / Ulysse. I have searched the whole server and there is not a single report, only unanswered questions - AD asked on 4 March, Luke asked about a 2018 SpaceTourer A/T on 27 January, and the standing answer for the ProAce is still "search the discord, if you see nothing then no".
+Is K0 simply out of scope, or is it just that nobody has ever had one? The repo lists the Jumpy BSI as BSI-EL3-CEM00 D7 7.11 with the steering API as "Torque/Angle". Does that mean some trims do carry the good (angle) API, like the Berlingo K9?
+Does the PSA-Harness physically fit the K0 BSI, or is the connector different from the K9?
+Trim question. In Spain the Jumpy offers ACC in two separate packs: ZVK5 (manual gearbox, plain ACC) and ZVK7 (electric or EAT8, ACC with stop&go). Worth noting the manual CAN have ACC here, unlike the Berlingo. But this model has no HIA / lane centring in any pack, only the basic lane keeping assist that nudges you back. Is ACC plus nudge-only LKA enough for the port, or is the lane-centring hardware what actually matters?
+Asking because the crew cab is the one body style that fits my use case (N1 with seats), and if it is a dead end I would rather know before buying.
+
+
+elkoled [CAI],  — 04/12/2025 09:20
+Do you also have Lane Positioning Assist that continuously keeps the car centered in the lane, or just normal Lane Keep Assist?
+Please send a picture of your BSI serial number, it is located below the steering wheel.
+It looks like this:
+Image
+ [CAI], 
+KwangGaeTo:race_car: :racing_car: — 04/12/2025 09:42
+Hi Elkoled, I think it has the Lane Positioning Assist but let me double check and let you know.
+Thank you for your reply.
+ [CAI], 
+KwangGaeTo:race_car: :racing_car: — 06/12/2025 00:32
+Hey @elkoled , my BSI number is BSI-EI5-CEM00 and it has the lane positioning assist.
+Image
+elkoled [CAI],  — 06/12/2025 09:09
+Great, then it is compatible.
+You can write me a dm for the harness.
+ [CAI], 
+yannick0619:race_car: :racing_car: — 07/12/2025 10:08
+Do you have good hope for < 2020 models or it’s really in bad condition ?
+elkoled [CAI],  — 07/12/2025 18:29
+I need access to one of these models for a few days to continue with the port, It is not easy to rent one of these older cars locally.
+psychip:race_car: :racing_car: — 14/12/2025 19:30
+Hello guys, i got a citroen c5, 2012. obviously pnp installation is not possible but i'm considering about implementing a directional servo to wheel that used in racing sim setups. who i can talk about this?
+elkoled [CAI],  — 15/12/2025 16:57
+Have a look in ⁠old-cars
+elkoled [CAI],  — 17/12/2025 20:25
+I have added some features to the PSA port for supported cars:
+Stock ACC: Automatic resume from stop
+Openpilot Longitudinal: very experimental, enable with Developer->Longitudinal Control (alpha)
+
+Fork install:
+Sunnypilot: elkoled/psa-sunny
+Openpilot: elkoled/psa
+Thanks to @semitop7 for testing!
+ [CAI], 
+sunnyhaibin [SP], :crown: — 18/12/2025 07:48
+Wanna repost on the sunnypilot community forum for visibility? https://community.sunnypilot.ai/invites/wH9fcn9b45
+ [SP], 
+elkoled [CAI],  — 18/12/2025 08:27
+sure, thanks 🙂
+ [CAI], 
+sunnyhaibin [SP], :crown: — 19/12/2025 04:15
+Looks good! Reposting here for visibility: https://community.sunnypilot.ai/t/psa-port-status/1784?u=sunnyhaibin
+MesoPlz [HATO], :race_car: :racing_car: — 20/12/2025 16:28
+Got the harness from @elkoled delivered today for my Peugeot e-208!
+
+Installed it already while I'm waiting for my comma four to arrive 👀
+lxn:race_car: :racing_car: — 22/12/2025 15:11
+I have an early version of the Peugeot 5008 mid-range model. It only has the lane-keeping system that corrects when drifting out of the lane, and it has no ACC. Is there no chance that it will be supported?
+semitop7 [CAI],  — 22/12/2025 15:27
+@lxn pls do photo of BSI label like this. What year and engine?
+TAG — 22/12/2025 17:06
+Just wanted to share my experience with ACC telecoding on my 2023 Peugeot e-208 Allure (camera-only, no radar).
+
+Big thanks to @semitop7 (who handled the telecoding) and @elkoled 🙌 — amazing effort and support.
+
+Quick summary of my tests:
+
+ACC works surprisingly well on highways (keeps distance, brakes, stop & go)
+
+Stop & Go works fine — if stopped >4 sec, green (A) shows + “Cruise Paused”
+
+LPA > LKA in my opinion: better lane recognition, proper centering, handles curves nicer
+
+Yellow lane lines sometimes cause hesitation
+
+Camera struggles with faded lines / sun glare
+
+Stationary vehicle test failed (white SUV wasn’t detected) → had to brake manually ⚠️
+
+As mentioned before, this setup definitely needs careful use since there’s no radar.
+
+Hopefully Comma will solve most of the lane issues and be a big upgrade over stock.
+
+https://youtube.com/shorts/ze9DLicTFv0?si=GqZk4eGQ9imDnb4o
+
+https://youtube.com/shorts/XkJuIy0Tujk?si=xOJvh2MhvKNvqjQ-
+
+https://youtube.com/shorts/v8i3hHLim3c?si=MtV5YZ9ydcEx9rDG 
+YouTube
+TAG Fabrication
+Peugeot e-208 ACC telecoding test 🚗 No radar, real results #e208
+Image
+YouTube
+TAG Fabrication
+ACC activated by telecoding 😮 Peugeot e-208 without radar #e208
+Image
+YouTube
+TAG Fabrication
+ACC with Stop&Go after telecoding Peugeot e-208 Allure #e208
+Image
+semitop7 [CAI],  — 22/12/2025 17:30
+@TAG In the video about the Stop & Go test at the beginning. What happened? Were you too impatient and turned off ACC manually, or did the car turn it off automatical
+ [CAI], 
+TAG — 22/12/2025 18:19
+I didn’t turn it off. It paused automatically after waiting too long. This happened at the beginning and the end of the video. The “A” icon was displayed, so I assume it was Auto Hold. I pressed the accelerator, but it didn’t resume, even after re-engaging the cruise control.
+semitop7 [CAI],  — 22/12/2025 18:37
+When the “A” icon is displayed, you are right it is Auto Hold or Stop & Go as Peugeot calls it.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:20
+Woow that's insane! Seems to work almost as well as the factory implementation with radar that I have 😂 
+
+I can tell you that the stationary vehicle test fails for me almost every time too. If the vehicle ahead of me is stopped and I have a bit of speed still the car just won't recognize it. Even with the radar.
+
+And yeah, the standard lane centering assist is pretty bad. Very often it starts hugging the side of the lane and I have to get it back to center myself. Or it just randomly pulls me onto offramps (happens VERY often on 80 KM/h roads).
+
+All in all I think from how you describe it and what I can see in the video's is that the radar doesn't make that huge of a difference with just the camera. Maybe in bad visibility / rain the difference will be bigger. 
+ [HATO], 
+TAG — 23/12/2025 08:37
+Honestly, it’s kind of insane. For me, this is a huge upgrade compared to the old LKA, which I’ve always found mostly useless. LPA is noticeably better, still not perfect, and it definitely needs supervision in case of surprises, but overall it’s a big improvement. It still behaves oddly with yellow lane markings sometimes, and for some reason it likes to get a bit too close to the curb.
+
+I also noticed the camera takes around 1–2 seconds to recognize the car in front. I’m not sure if this is normal for other ACC systems; I tested a 2022 Hyundai Tucson before and didn’t notice this issue. Using ACC with stationary vehicles is actually risky in my case. It didn’t slow down or stop, and I came very close to a crash.
+
+That said, I’m still really thankful. Overall, this is a big achievement and a major upgrade for me.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:39
+the LKA is just meant to keep you IN the lane instead of in the center
+Using ACC with stationary vehicles is actually risky in my case. It didn’t slow down or stop, and I came very close to a crash.
+Please take care doing this :nervous: 
+
+Just expect that it won't work and when it does you'll just be positively surprised :KEKW: 
+For me that's how I look at it. If I see a stationary car in front. Ill just brake manually
+Did you upgrade the cruise control stalk on the steering wheel btw? or how are you controlling it?
+ [HATO], 
+TAG — 23/12/2025 08:43
+There is no need to upgrade. It is %100 functional. Just the writings on it is the difference.
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:44
+aaaah wow! That's actually kind of insane hahah
+If I knew all of this was possible I would've bought a e-208 with normal cruise and just installed a comma :KEKW: 
+
+I paid so much more to get it with adaptive cruise and LPA 
+ [HATO], 
+TAG — 23/12/2025 08:49
+I still think I'm missing a lot of stuff from the GT line. It is more beautiful too!
+I got mine used, so I had no choice to pick trim or color 😂 
+MesoPlz [HATO], :race_car: :racing_car: — 23/12/2025 08:55
+yeah that's true. The headlights are a lot better on the gt line
+And the black roof is also just :chefskiss:
+When I get my comma I really want to try building some extra features that can basically replace the built-in Peugeot connectivity service with something you can add to a home assistant or something.
+The standard connectivity is sooooo bad. It cuts out constantly and has so little options
+ [HATO], 
+TAG — 23/12/2025 09:01
+It can't even do its ONE job almost all of the time
+Tuom — 20/01/2026 23:43
+Hi everyone,
+I’m planning to buy a new Citroen Berlingo. I know that it’s not officially supported, but I would like to know what hardware/features I should look for when choosing a model to work with openpilot.
+I am also a developer and would be happy to help with a port. I can get a harness from elkoled, and my friend has a comma 4 that I can borrow for testing and data collection.
+elkoled [CAI],  — 21/01/2026 01:03
+Hi, Berlingo can have two different steering APIs, we don't know yet which year or trim they map to.
+One confirmed 2018 Berlingo VP K9 has the new API and works with the current port, so Berlingo III may be the transition point.
+To be certain, you would need to connect a comma to it.
+
+The old steering API has some blockers that may not be solved, so it is not recommended.
+Tuom — 21/01/2026 09:09
+That's Interesting. Another friend has a new Peugeot Rifter, which is very similar to Berlingo. Do you think that they share steering API? Would it make sense to connect comma to the Rifter to check?
+elkoled [CAI],  — 21/01/2026 22:19
+Yes they use the same platform, it still can be either API so you need to connect the comma to be sure.
+Does it have ACC and which model year is it?
+Tuom — 22/01/2026 08:52
+I would have to ask them.
+Regarding Berlingo, I am still choosing a model. It will be the new one, so the year of manufacture should probably be 2025. Does it have to have ACC? And what other features should I look for? Lane assist? Anything else?
+Jorge — 23/01/2026 07:32
+Hello everyone, I have a 2022 Opel Corsa-e (electric) with radar, adaptive cruise control, and lane keeping assist. I believe Elkoled has developed compatible software to use COMMA. Therefore, I'd like to know which harness is being used, as I can't find anything to use it with. Please excuse my ignorance and inexperience on this subject. I don't know if the creator is also the one selling the harness and/or the software. Thank you.
+elkoled [CAI],  — 23/01/2026 20:20
+You can write me a dm
+elkoled [CAI],  — 23/01/2026 20:21
+Yes it should have ACC, look for "Lane Positioning Assist", it sometimes comes with the ACC package on newer PSA vehicles
+ [CAI], 
+Tuom — 24/01/2026 15:31
+Thanks, for reply. Sorry for so many questions, but can it also work without ACC with just regular cruise control? I saw that you posted video before with openpilot longitudinal control.  So it should be possible, right? Or would it be possible to use openpilot for just the lateral control and stock cruise control for longitudinal?
+semitop7 [CAI],  — 24/01/2026 19:39
+If there is a lane keeping assist (LKA) system it should work. In any case on some models ACC can be activated using a camera only without radar. At least on the Peugeot 2008 Active it works well. 
+elkoled [CAI],  — 24/01/2026 21:05
+Openpilot longitudinal control only works if there is ACC in the car, I recommend you to get ACC, it is a much better experience
+Luke:race_car: :racing_car: — 27/01/2026 05:00
+Hi, I have 2018 Citroen Spacetourer A/T and I would love to get comma to help me with long drives. Is there any possibility?
+elkoled [CAI],  — 27/01/2026 05:07
+Hi, it is likely not supported currently. To be sure you would need to install a comma in the car.
+CC-Corsa-E:race_car: :racing_car: — 28/01/2026 12:16
+Hello everyone!
+
+I have a 2023 Opel Corsa with full equipment, unfortunately without parking assist and without ACC.  I already have the button to activate the ACC, PyPsaDiag, and diagnostic device.
+
+Is there something like a guideline on what needs to be changed so that the parking assist and ACC work?  I would be grateful for some help.  Since I'm from Germany, it would of course be easiest in German, but English is fine too. 😀
+CC-Corsa-E:race_car: :racing_car: — 03/02/2026 14:47
+I would also like to have the configuration for the battery ECU. Does anyone have the JSON file for this?
+
+Thanks in advance. 🤩 
+CC-Corsa-E:race_car: :racing_car: — 04/02/2026 12:42
+?🫣
+Sascha_T [pou], :race_car: :racing_car: — 06/02/2026 00:19
+it's doomed bro
+retrofitting ACC on a 2023 may be possible (without hw replacements/purely in sw) 
+unlike on other cars 
+just fafo
+MesoPlz [HATO], :race_car: :racing_car: — 19/02/2026 11:00
+Installed my comma four yesterday. Currently running elkoled's PSA fork.
+
+I just compiled the latest master version of Sunnypilot on top of the fork. Gonna try installing that one soon 👀 
+
+Everything is working perfectly! :D
+ [HATO], 
+Hamonza — 19/02/2026 20:30
+Nice! On what car?
+MesoPlz [HATO], :race_car: :racing_car: — 19/02/2026 20:30
+e208 😊
+Unfortunately I didn't get sunny pilot working yet. But I did sync my stock op fork to master open pilot. That's working fine!
+Hamonza — 19/02/2026 20:31
+Ah okay! Awesome! Congrats 😄

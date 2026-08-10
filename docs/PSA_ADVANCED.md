@@ -12,6 +12,9 @@ conservant la pile ISO-TP et le protocole ESP32 natifs d'OpenDiag.
 - lecture brute de n'importe quel DID via le service UDS `0x22` ;
 - calcul seed/key local, sans émission CAN ;
 - accès sécurité de configuration `0x27/03-04`, désactivé par défaut ;
+- import des 50 variantes et 1 022 zones de la révision PyPSADiag référencée ;
+- télécodage UDS structuré avec variante explicite, sauvegarde VIN, modification
+  multi-paramètres, aperçu binaire, contrôle de concurrence et relecture ;
 - tests NAC connus : écran noir/restauration et affichage caméra ;
 - arrêt automatique des commandes temporaires en trois secondes maximum ;
 - deadman ESP32 autonome à 3,5 s, avec nouvelles tentatives d'arrêt si le PC
@@ -36,8 +39,15 @@ Le profil expérimental est séparé :
 pio run -e esp32-tja1050-serial-psa-lab -t upload
 ```
 
-Son `hello` annonce `psa_lab=true` et `tx_policy=psa_lab_named_actions`. Le
+Son `hello` annonce `psa_lab=true`, `telecoding_bounded=true` et
+`tx_policy=psa_lab_bounded_writes`. Le
 backend refuse toute action si cette capacité n'est pas annoncée.
+
+Les requêtes `0x2E` longues utilisent ISO-TP. Le firmware ne laisse passer un
+premier fragment que si le service, le DID constructeur, l'adresse ECU et la
+taille maximale sont valides. Il mémorise ensuite l'identifiant, le numéro de
+séquence et une échéance de 1,5 s ; un fragment isolé ou hors séquence est
+refusé. Le backend applique en plus le catalogue exact et le plan validé.
 
 ## Verrous backend
 
@@ -48,6 +58,8 @@ PSA_ADVANCED_ENABLED=true
 PSA_SECURITY_ACCESS_ENABLED=false
 PSA_ACTUATOR_ENABLED=false
 PSA_ACTUATOR_MAX_DURATION_MS=3000
+PSA_ECU_RESET_ENABLED=false
+PSA_TELECODING_WRITE_ENABLED=false
 READ_ONLY=true
 ```
 
@@ -60,9 +72,50 @@ READ_ONLY=false
 PSA_ACTUATOR_ENABLED=true
 ```
 
-`PSA_SECURITY_ACCESS_ENABLED=true` est indépendant et n'est nécessaire que pour
-l'échange seed/key réel. Le firmware bloque toujours `0x2E`, `0x31`, `0x34`,
-`0x36`, `0x37`, l'effacement DTC et toute autre commande non listée.
+`PSA_SECURITY_ACCESS_ENABLED=true` est indépendant. Une écriture de télécodage
+exige en plus `PSA_TELECODING_WRITE_ENABLED=true`. Le firmware bloque toujours
+`0x31`, `0x34`, `0x36`, `0x37` et toute commande non listée. `0x2E` n'est admis
+que pour le workflow borné décrit ci-dessous.
+
+## Workflow de télécodage
+
+L'atelier est visible dans la page de chaque calculateur PSA :
+
+1. choisir explicitement la variante PyPSADiag correspondant à l'identification
+   et à l'adressage du calculateur ;
+2. lire une zone `0x22` ; OpenDiag crée immédiatement une sauvegarde JSON liée
+   au VIN, avec la valeur brute, les champs décodés et une empreinte SHA-256 ;
+3. modifier une ou plusieurs options énumérées. Les chaînes brutes, DIDs Fxxx,
+   champs inconnus et zones de mauvaise longueur restent en lecture seule ;
+4. générer un diff. Le backend recalcule tous les masques, détecte les champs
+   qui se chevauchent et produit une empreinte immuable du plan ;
+5. confirmer les préconditions, la clé de la variante et la phrase exacte
+   `TELECODER <ECU> <DID>` ;
+6. dans une seule session, le backend ouvre la session étendue, effectue
+   `SecurityAccess`, relit la zone et compare chaque octet à la sauvegarde. Au
+   moindre écart, aucune écriture n'est envoyée ;
+7. si la zone est inchangée, une unique requête `0x2E` est envoyée, puis `0x22`
+   contrôle la valeur complète. Un rapport d'exécution et la trace protocolaire
+   sont enregistrés localement.
+
+Les sauvegardes sont stockées sous `TELECODING_BACKUP_DIR` (par défaut
+`data/runtime/telecoding`). Elles peuvent être rouvertes depuis l'interface,
+mais une ancienne sauvegarde ne contourne jamais le contrôle de concurrence.
+
+API correspondante :
+
+```text
+GET  /api/diagnostic/psa/ecus/{ecu}/telecoding/catalog
+POST /api/diagnostic/psa/ecus/{ecu}/telecoding/snapshots
+GET  /api/diagnostic/psa/telecoding/backups
+GET  /api/diagnostic/psa/telecoding/backups/{snapshot_id}
+POST /api/diagnostic/psa/telecoding/preview
+POST /api/diagnostic/psa/telecoding/execute
+```
+
+Les variantes `kwp_hab` et `kwp_is` sont cataloguées pour consultation, mais
+restent non exécutables : le transport actif OpenDiag est actuellement UDS sur
+ISO-TP. Aucune compatibilité KWP n'est simulée ou revendiquée.
 
 ## Câblage
 

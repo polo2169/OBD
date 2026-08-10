@@ -38,14 +38,15 @@ class Settings(BaseSettings):
     psa_telecoding_write_enabled: bool = False
     database_dir: Path = Path("../database")
     session_dir: Path = Path("../data/sessions")
-    sensor_overrides_file: Path = Path("../data/sensor_overrides.json")
+    sensor_overrides_file: Path = Path("../data/runtime/sensor_overrides.json")
     manual_signal_validations_file: Path = Path("../data/manual_signal_validations.json")
-    live_sensor_registry_file: Path = Path("../data/live_sensor_registry.json")
-    observed_dtcs_file: Path = Path("../data/observed_dtcs.json")
+    live_sensor_registry_file: Path = Path("../data/runtime/live_sensor_registry.json")
+    observed_dtcs_file: Path = Path("../data/runtime/observed_dtcs.json")
     diagnostic_history_dir: Path = Path("../data/diagnostics")
+    telecoding_backup_dir: Path = Path("../data/runtime/telecoding")
     diagnostic_trace_import_dir: Path = Path("../data/diagbox_imports")
-    transport_selection_file: Path = Path("../data/transport_selection.json")
-    security_audit_file: Path = Path("../data/security_audit.jsonl")
+    transport_selection_file: Path = Path("../data/runtime/transport_selection.json")
+    security_audit_file: Path = Path("../data/runtime/security_audit.jsonl")
     vehicle_profile: str = "peugeot_308_t9_2018"
     opendbc_enabled: bool = True
 

@@ -42,7 +42,11 @@ PSA_LAB_ACTION_PAYLOADS = {
 }
 PSA_LAB_DTC_CLEAR_PAYLOAD = bytes.fromhex("14FFFFFF")
 PSA_LAB_ECU_RESET_PAYLOAD = bytes.fromhex("1101")
-PSA_LAB_SECURITY_REQUEST_IDS = {0x752, 0x764}
+PSA_LAB_SECURITY_REQUEST_IDS = {
+    0x6A8, 0x6A9, 0x6AA, 0x6AD, 0x6AF, 0x6B5, 0x6B6, 0x730,
+    0x744, 0x74A, 0x752, 0x75D, 0x75F, 0x764, 0x76D, 0x796,
+}
+PSA_LAB_MAX_TELECODING_PAYLOAD = 259  # service + DID + 256 bytes of zone data
 
 
 @dataclass(frozen=True)
@@ -155,8 +159,22 @@ def authorize_psa_lab_can_frame(
         if len(data) < 3 or (data[0] & 0x0F) > 0x02:
             return SafetyDecision(False, "Trame de contrôle de flux ISO-TP invalide.")
         return SafetyDecision(True, "Contrôle de flux ISO-TP autorisé.")
+    if pci_type == 0x1:
+        if len(data) < 5 or arbitration_id not in PSA_LAB_SECURITY_REQUEST_IDS:
+            return SafetyDecision(False, "Premier fragment ISO-TP de télécodage invalide.")
+        application_length = ((data[0] & 0x0F) << 8) | data[1]
+        did = int.from_bytes(data[3:5], "big")
+        if data[2] != 0x2E or not 4 <= application_length <= PSA_LAB_MAX_TELECODING_PAYLOAD:
+            return SafetyDecision(False, "Seul un WriteDataByIdentifier borné peut être fragmenté.")
+        if did >= 0xF000:
+            return SafetyDecision(False, "Les DIDs normalisés Fxxx ne sont jamais télécodés.")
+        return SafetyDecision(True, "Premier fragment ISO-TP de télécodage borné autorisé.")
+    if pci_type == 0x2:
+        if arbitration_id not in PSA_LAB_SECURITY_REQUEST_IDS:
+            return SafetyDecision(False, "Fragment ISO-TP sur un calculateur non autorisé.")
+        return SafetyDecision(True, "Fragment consécutif d'un télécodage borné autorisé.")
     if pci_type != 0x0:
-        return SafetyDecision(False, "Requêtes diagnostic multi-trames verrouillées en mode PSA lab.")
+        return SafetyDecision(False, "Type de trame ISO-TP verrouillé en mode PSA lab.")
 
     application_length = data[0] & 0x0F
     if application_length == 0 or application_length > 7 or len(data) < application_length + 1:
@@ -200,9 +218,10 @@ def authorize_psa_lab_uds(arbitration_id: int, payload: bytes) -> SafetyDecision
         return SafetyDecision(False, "Seul le redémarrage matériel exact 0x11/0x01 est autorisé en mode PSA lab.")
 
     if service == 0x2E and arbitration_id in PSA_LAB_SECURITY_REQUEST_IDS:
-        if len(payload) >= 4:
-            return SafetyDecision(True, "Écriture de télécodage BSI/télématique autorisée en mode maintenance.")
-        return SafetyDecision(False, "Payload d'écriture télécodage trop court (service + DID + données).")
+        did = int.from_bytes(payload[1:3], "big") if len(payload) >= 3 else 0xFFFF
+        if 4 <= len(payload) <= PSA_LAB_MAX_TELECODING_PAYLOAD and did < 0xF000:
+            return SafetyDecision(True, "Écriture d'une zone de télécodage constructeur bornée autorisée.")
+        return SafetyDecision(False, "Payload de télécodage invalide, normalisé Fxxx ou supérieur à 256 octets de zone.")
 
     return SafetyDecision(
         False,

@@ -249,6 +249,13 @@ def advanced_catalog() -> dict:
     ecus = []
     for ecu in kb.ecus():
         zones = kb.telecoding_zones_for_family(ecu.family)
+        variant_keys = []
+        for variant in kb.telecoding_variants_for_family(ecu.family):
+            if variant["request_id"] != ecu.request_id or variant["response_id"] != ecu.response_id:
+                continue
+            for candidate in variant["security_keys"]:
+                if candidate not in variant_keys:
+                    variant_keys.append(candidate)
         ecus.append({
             "key": ecu.key,
             "name": ecu.name,
@@ -257,7 +264,7 @@ def advanced_catalog() -> dict:
             "response_id": ecu.response_id,
             "protocol": ecu.protocol,
             "optional": ecu.optional,
-            "security_keys": SECURITY_KEY_CANDIDATES.get(ecu.key, []),
+            "security_keys": variant_keys or SECURITY_KEY_CANDIDATES.get(ecu.key, []),
             "telecoding_zones": [
                 {"did": zone_id, "name": zone.get("name", zone_id)}
                 for zone_id, zone in sorted(zones.items())
@@ -271,7 +278,7 @@ def advanced_catalog() -> dict:
         "telecoding_write_enabled": settings.psa_telecoding_write_enabled,
         "read_only": settings.read_only,
         "can_tx_enabled": settings.can_tx_enabled,
-        "required_firmware_policy": "psa_lab_named_actions",
+        "required_firmware_policy": "psa_lab_bounded_writes",
         "wiring": {
             "vehicle_can": "AEE2004/AEE2010 : CAN diagnostic sur OBD 3/8",
             "standard_obd": "OBD-II moteur normalisé généralement sur 6/14 selon l'interface et le câblage utilisé",

@@ -1,3 +1,5 @@
+import pytest
+
 from app.safety import (
     authorize_diagnostic_can_frame,
     authorize_live_obd_can_frame,
@@ -6,6 +8,41 @@ from app.safety import (
     authorize_uds,
     authorize_psa_lab_uds,
 )
+from app.transports.base import validate_gateway_tx_policy
+
+
+def test_gateway_policy_rejects_raw_active_firmware_even_when_backend_tx_is_disabled():
+    with pytest.raises(RuntimeError, match="non filtrée"):
+        validate_gateway_tx_policy(
+            {
+                "readonly": False,
+                "diagnostic_read_only": False,
+                "psa_lab": False,
+                "tx_policy": "unrestricted",
+            },
+            tx_enabled=False,
+            safety_profile="diagnostic_read_only",
+            require_diagnostic_can=True,
+        )
+
+
+def test_gateway_policy_accepts_passive_and_allowlisted_firmware():
+    validate_gateway_tx_policy(
+        {"readonly": True, "tx_policy": "blocked"},
+        tx_enabled=False,
+        safety_profile="diagnostic_read_only",
+        require_diagnostic_can=True,
+    )
+    validate_gateway_tx_policy(
+        {
+            "readonly": False,
+            "diagnostic_read_only": True,
+            "tx_policy": "diagnostic_read_only",
+        },
+        tx_enabled=True,
+        safety_profile="diagnostic_read_only",
+        require_diagnostic_can=True,
+    )
 
 
 def test_read_did_allowed():

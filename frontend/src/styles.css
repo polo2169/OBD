@@ -2367,3 +2367,416 @@ button:disabled { opacity: .5; cursor: wait; }
 .dtc-snapshot-result code {
   word-break: break-all;
 }
+
+.telecoding-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.telecoding-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.telecoding-steps span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.telecoding-steps b {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.telecoding-steps .complete {
+  border-color: rgba(98, 227, 154, 0.4);
+  color: var(--text);
+  background: rgba(98, 227, 154, 0.08);
+}
+
+.telecoding-steps .complete b {
+  background: rgba(98, 227, 154, 0.2);
+  color: #62e39a;
+}
+
+.telecoding-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 104, 104, 0.42);
+  border-radius: 8px;
+  background: rgba(255, 104, 104, 0.1);
+  color: #ffadad;
+  font-size: 0.8rem;
+}
+
+.telecoding-selector-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.25fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.telecoding-selector-grid > label:not(.telecoding-toggle),
+.telecoding-final-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.telecoding-selector-grid select,
+.telecoding-selector-grid input,
+.telecoding-final-form select,
+.telecoding-final-form input,
+.telecoding-fields select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.telecoding-toggle {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.telecoding-variant-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.telecoding-variant-summary > div,
+.telecoding-backup-proof > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.telecoding-variant-summary span,
+.telecoding-backup-proof span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.telecoding-variant-summary strong,
+.telecoding-backup-proof strong,
+.telecoding-backup-proof code {
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+}
+
+.telecoding-browser {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 2fr);
+  min-height: 480px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.telecoding-zone-list {
+  display: flex;
+  max-height: 680px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.1);
+  padding: 8px;
+}
+
+.telecoding-zone-list header {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.telecoding-zone-list button,
+.telecoding-history button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+}
+
+.telecoding-zone-list button:hover,
+.telecoding-zone-list button.active,
+.telecoding-history button:hover {
+  border-color: rgba(80, 160, 255, 0.35);
+  background: rgba(80, 160, 255, 0.09);
+}
+
+.telecoding-zone-list button code,
+.telecoding-history button code {
+  grid-row: 1 / 3;
+  color: var(--accent);
+}
+
+.telecoding-zone-list button span,
+.telecoding-history button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.telecoding-zone-list button small,
+.telecoding-history button small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.telecoding-zone-list > p {
+  color: var(--muted);
+  padding: 8px;
+  font-size: 0.72rem;
+}
+
+.telecoding-editor {
+  min-width: 0;
+  max-height: 680px;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.telecoding-placeholder {
+  display: grid;
+  min-height: 420px;
+  place-content: center;
+  gap: 7px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.telecoding-zone-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.telecoding-zone-heading > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.telecoding-zone-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.telecoding-zone-heading span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.telecoding-backup-proof {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.telecoding-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.telecoding-fields article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.8fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.telecoding-fields article.changed {
+  border-color: rgba(255, 180, 95, 0.5);
+  background: rgba(255, 180, 95, 0.07);
+}
+
+.telecoding-fields article > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.telecoding-fields article span,
+.telecoding-fields article small,
+.telecoding-readonly {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.telecoding-readonly {
+  justify-self: end;
+}
+
+.telecoding-plan,
+.telecoding-execution-gate {
+  padding: 14px;
+  border: 1px solid rgba(255, 180, 95, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 180, 95, 0.045);
+}
+
+.telecoding-plan h3,
+.telecoding-execution-gate h3 {
+  margin: 0 0 8px;
+}
+
+.telecoding-diff {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+}
+
+.telecoding-diff > div {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.telecoding-diff code {
+  overflow-wrap: anywhere;
+}
+
+.telecoding-diff p {
+  margin: 0;
+}
+
+.telecoding-final-form {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(260px, 1.2fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.telecoding-final-form small {
+  color: var(--muted);
+}
+
+.telecoding-execution-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid rgba(98, 227, 154, 0.4);
+  border-radius: 9px;
+  background: rgba(98, 227, 154, 0.09);
+}
+
+.telecoding-execution-result.warning {
+  border-color: rgba(255, 180, 95, 0.45);
+  background: rgba(255, 180, 95, 0.08);
+}
+
+.telecoding-execution-result small,
+.telecoding-execution-result span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.telecoding-history {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.telecoding-history summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.telecoding-history > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+}
+
+@media (max-width: 980px) {
+  .telecoding-selector-grid,
+  .telecoding-final-form {
+    grid-template-columns: 1fr;
+  }
+
+  .telecoding-variant-summary,
+  .telecoding-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .telecoding-browser {
+    grid-template-columns: 1fr;
+  }
+
+  .telecoding-zone-list {
+    max-height: 280px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 620px) {
+  .telecoding-variant-summary,
+  .telecoding-steps,
+  .telecoding-backup-proof,
+  .telecoding-history > div,
+  .telecoding-fields article {
+    grid-template-columns: 1fr;
+  }
+
+  .telecoding-zone-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

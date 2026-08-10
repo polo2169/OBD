@@ -25,7 +25,6 @@ from app.diagnostic.psa_advanced import (
     read_raw_did,
     reset_ecu,
     unlock_configuration,
-    write_telecoding_parameter,
 )
 from app.diagnostic.regression import compare_with_baseline
 from app.diagnostic.scanner import (
@@ -38,6 +37,15 @@ from app.diagnostic.scanner import (
     sweep_ecu_dids,
 )
 from app.diagnostic.trace_import import import_diagnostic_trace
+from app.diagnostic.telecoding import (
+    StaleTelecodingSnapshotError,
+    create_telecoding_snapshot,
+    execute_telecoding,
+    get_telecoding_backup,
+    list_telecoding_backups,
+    preview_telecoding,
+    telecoding_catalog,
+)
 from app.learn.capture import capture_manager
 from app.learn.models import CaptureStart, CaptureStatus, PassiveSensorSnapshot
 from app.learn.passive_sensors import passive_sensor_snapshot
@@ -67,8 +75,14 @@ from app.models import (
     ScanReport,
     ScanRequest,
     SensorSnapshot,
-    TelecodingWriteRequest,
-    TelecodingWriteResult,
+    TelecodingBackupSummary,
+    TelecodingCatalogResult,
+    TelecodingExecuteRequest,
+    TelecodingExecuteResult,
+    TelecodingPreviewRequest,
+    TelecodingPreviewResult,
+    TelecodingSnapshotRequest,
+    TelecodingSnapshotResult,
     TransportConnectRequest,
     VehicleIdentityRequest,
     VehicleIdentityResult,
@@ -106,6 +120,8 @@ def status() -> dict:
         "psa_advanced_enabled": settings.psa_advanced_enabled,
         "psa_security_access_enabled": settings.psa_security_access_enabled,
         "psa_actuator_enabled": settings.psa_actuator_enabled,
+        "psa_ecu_reset_enabled": settings.psa_ecu_reset_enabled,
+        "psa_telecoding_write_enabled": settings.psa_telecoding_write_enabled,
         "vehicle_profile": settings.vehicle_profile,
         "gateway_endpoint": gateway_endpoint,
         "gateway_verified": connection["verified"],
@@ -617,10 +633,29 @@ def diagnostic_ecu_reset(ecu_key: str, request: EcuResetRequest) -> EcuResetResu
         ) from exc
 
 
-@router.post("/diagnostic/psa/ecus/{ecu_key}/telecoding-write", response_model=TelecodingWriteResult)
-def diagnostic_telecoding_write(ecu_key: str, request: TelecodingWriteRequest) -> TelecodingWriteResult:
+@router.get(
+    "/diagnostic/psa/ecus/{ecu_key}/telecoding/catalog",
+    response_model=TelecodingCatalogResult,
+)
+def diagnostic_telecoding_catalog(ecu_key: str) -> TelecodingCatalogResult:
     try:
-        return write_telecoding_parameter(ecu_key, request)
+        return telecoding_catalog(ecu_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/diagnostic/psa/ecus/{ecu_key}/telecoding/snapshots",
+    response_model=TelecodingSnapshotResult,
+)
+def diagnostic_telecoding_snapshot(
+    ecu_key: str,
+    request: TelecodingSnapshotRequest,
+) -> TelecodingSnapshotResult:
+    try:
+        return create_telecoding_snapshot(ecu_key, request)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=exc.args[0]) from exc
     except PermissionError as exc:
@@ -632,7 +667,67 @@ def diagnostic_telecoding_write(ecu_key: str, request: TelecodingWriteRequest) -
     except NegativeResponseException as exc:
         raise HTTPException(
             status_code=409,
-            detail=f"Écriture refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+            detail=f"Lecture de zone refusée par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
+        ) from exc
+
+
+@router.get(
+    "/diagnostic/psa/telecoding/backups",
+    response_model=list[TelecodingBackupSummary],
+)
+def diagnostic_telecoding_backups(ecu_key: str | None = None) -> list[TelecodingBackupSummary]:
+    return list_telecoding_backups(ecu_key)
+
+
+@router.get(
+    "/diagnostic/psa/telecoding/backups/{snapshot_id}",
+    response_model=TelecodingSnapshotResult,
+)
+def diagnostic_telecoding_backup(snapshot_id: str) -> TelecodingSnapshotResult:
+    try:
+        return get_telecoding_backup(snapshot_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/diagnostic/psa/telecoding/preview",
+    response_model=TelecodingPreviewResult,
+)
+def diagnostic_telecoding_preview(request: TelecodingPreviewRequest) -> TelecodingPreviewResult:
+    try:
+        return preview_telecoding(request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/diagnostic/psa/telecoding/execute",
+    response_model=TelecodingExecuteResult,
+)
+def diagnostic_telecoding_execute(request: TelecodingExecuteRequest) -> TelecodingExecuteResult:
+    try:
+        return execute_telecoding(request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except StaleTelecodingSnapshotError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutException as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except NegativeResponseException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Télécodage refusé par l'ECU : NRC 0x{exc.response.code:02X} {exc.response.code_name}",
         ) from exc
 
 

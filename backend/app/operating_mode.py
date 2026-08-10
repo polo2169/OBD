@@ -56,6 +56,12 @@ def operating_mode_state() -> dict:
             "safety_ecu_clear": not settings.read_only and settings.safety_ecu_clear_enabled,
             "psa_actions": not settings.read_only and settings.psa_actuator_enabled,
             "security_access": not settings.read_only and settings.psa_security_access_enabled,
+            "ecu_reset": not settings.read_only and settings.psa_ecu_reset_enabled,
+            "telecoding": bool(
+                not settings.read_only
+                and settings.psa_security_access_enabled
+                and settings.psa_telecoding_write_enabled
+            ),
         },
     }
 

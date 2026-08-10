@@ -17,7 +17,7 @@ from app.models import (
 )
 
 
-VIN = "VF3LPHNYWJS141966"
+VIN = "VF3LJHNYWJS123456"
 
 
 def _dtc(code: str, raw_hex: str, status: int) -> DtcReadResult:

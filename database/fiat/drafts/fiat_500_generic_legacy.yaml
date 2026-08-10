@@ -31,8 +31,8 @@ notes:
   - "L'année, la motorisation et le marché doivent être renseignés avant d'étendre le catalogue : 500 type 312, 500X et 500e n'ont pas la même architecture."
   - Le VIN est demandé d'abord par le service OBD-II normalisé Mode 09 PID 02 sur les broches OBD 6/14.
   - La Fiat 500 type 312 testée répond en EOBD CAN 29 bits sur la paire moteur 18DA10F1/18DAF110.
-  - "Les trames 0218A006, 0628A001, 0810A000, 0A18A000, 0C1CA000 et 0C28A000 de la source ouverte sont aussi présentes dans la capture du VIN ZFA31200000504700. Leur décodage reste candidat jusqu'à une action annotée ou un recoupement indépendant."
-  - "Confirmations conducteur pour ZFA31200000504700 : régime moteur 0618A001, pédale de frein 0810A000 et témoin de porte conducteur 0A18A000. Le niveau brut de freinage, le frein de stationnement et les autres bits de ces trames restent candidats."
+  - "Les trames 0218A006, 0628A001, 0810A000, 0A18A000, 0C1CA000 et 0C28A000 de la source ouverte sont aussi présentes dans une capture de référence Fiat 500 type 312. Leur décodage reste candidat jusqu'à une action annotée ou un recoupement indépendant."
+  - "Confirmations conducteur sur la capture de référence : régime moteur 0618A001, pédale de frein 0810A000 et témoin de porte conducteur 0A18A000. Le niveau brut de freinage, le frein de stationnement et les autres bits de ces trames restent candidats."
   - "Sur 0618A001, l'octet 7 est conservé comme position de papillon candidate (0..255 vers 0..100 %) et l'octet 4 comme charge/pression d'air brute candidate. Ils doivent être comparés respectivement aux PID EOBD 01/11 et 01/0B avant validation."
   - Les paires 7B0/7C0 et 7B0/7C3 viennent d'un catalogue communautaire ; elles restent désactivées tant que leur routage 6/14 n'est pas validé sur véhicule.
 

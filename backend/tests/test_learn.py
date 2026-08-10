@@ -37,14 +37,14 @@ def test_session_can_be_attached_to_a_vehicle_without_rewriting_raw_capture(tmp_
     raw_path.write_text(raw_payload, encoding="utf-8")
 
     assign_session_vehicle(session_id, SessionVehicleAssignment(
-        vin="VF3LPHNYWJS141966",
+        vin="VF3LJHNYWJS123456",
         vehicle_profile="peugeot_308_t9_2018",
         vehicle_label="Peugeot 308 II",
     ))
 
     summary = list_sessions()[0]
     assert raw_path.read_text(encoding="utf-8") == raw_payload
-    assert summary.vin == "VF3LPHNYWJS141966"
+    assert summary.vin == "VF3LJHNYWJS123456"
     assert summary.vehicle_profile == "peugeot_308_t9_2018"
     assert summary.vehicle_label == "Peugeot 308 II"
 

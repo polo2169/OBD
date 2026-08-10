@@ -447,6 +447,175 @@ class TelecodingWriteResult(BaseModel):
     session_id: str | None = None
 
 
+class TelecodingOptionDefinition(BaseModel):
+    key: str
+    name: str
+    encoded_hex: str
+
+
+class TelecodingFieldDefinition(BaseModel):
+    key: str
+    name: str
+    form_type: str
+    value_type: str
+    byte: int
+    byte_length: int
+    mask_hex: str | None = None
+    available_logic: str
+    accepted_zone_lengths: list[int] = Field(default_factory=list)
+    read_only: bool
+    writable: bool
+    options: list[TelecodingOptionDefinition] = Field(default_factory=list)
+
+
+class TelecodingDecodedField(TelecodingFieldDefinition):
+    available: bool
+    raw_hex: str | None = None
+    value_key: str | None = None
+    value: str | None = None
+
+
+class TelecodingZoneDefinition(BaseModel):
+    did: int
+    did_hex: str
+    name: str
+    tab: str
+    tab_name: str
+    value_type: str
+    form_type: str
+    read_only: bool
+    coding_candidate: bool
+    writable: bool
+    fields: list[TelecodingFieldDefinition] = Field(default_factory=list)
+
+
+class TelecodingVariantDefinition(BaseModel):
+    id: str
+    name: str
+    family: str
+    protocol: str
+    request_id: int | None = None
+    response_id: int | None = None
+    security_keys: list[dict[str, str]] = Field(default_factory=list)
+    tabs: dict[str, str] = Field(default_factory=dict)
+    zones: list[TelecodingZoneDefinition] = Field(default_factory=list)
+    zone_count: int
+    coding_zone_count: int
+    writable_zone_count: int
+    write_supported: bool
+    source: str | None = None
+
+
+class TelecodingCatalogResult(BaseModel):
+    ecu_key: str
+    ecu_name: str
+    ecu_family: str | None = None
+    ecu_request_id: int
+    ecu_response_id: int
+    source: str | None = None
+    revision: str | None = None
+    license: str | None = None
+    warning: str
+    variants: list[TelecodingVariantDefinition] = Field(default_factory=list)
+
+
+class TelecodingSnapshotRequest(BaseModel):
+    variant_id: str = Field(min_length=1, max_length=100)
+    did: int = Field(ge=0, le=0xFFFF)
+
+
+class TelecodingSnapshotResult(BaseModel):
+    snapshot_id: str
+    captured_at: str
+    ecu_key: str
+    ecu_name: str
+    variant_id: str
+    variant_name: str
+    did: int
+    did_hex: str
+    zone_name: str
+    vin: str | None = None
+    raw_hex: str
+    sha256: str
+    fields: list[TelecodingDecodedField] = Field(default_factory=list)
+    source: str | None = None
+    backup_file: str
+
+
+class TelecodingChangeRequest(BaseModel):
+    field_key: str = Field(min_length=1, max_length=180)
+    option_key: str = Field(min_length=1, max_length=80)
+
+
+class TelecodingFieldChange(BaseModel):
+    field_key: str
+    field_name: str
+    previous_option_key: str | None = None
+    previous_value: str | None = None
+    requested_option_key: str
+    requested_value: str
+
+
+class TelecodingPreviewRequest(BaseModel):
+    snapshot_id: str = Field(min_length=1, max_length=100)
+    changes: list[TelecodingChangeRequest] = Field(min_length=1, max_length=64)
+
+
+class TelecodingPreviewResult(BaseModel):
+    snapshot_id: str
+    plan_hash: str
+    ecu_key: str
+    variant_id: str
+    did: int
+    raw_before_hex: str
+    raw_after_hex: str
+    changed_byte_indexes: list[int] = Field(default_factory=list)
+    changes: list[TelecodingFieldChange] = Field(default_factory=list)
+    fields_after: list[TelecodingDecodedField] = Field(default_factory=list)
+    executable: bool
+    blockers: list[str] = Field(default_factory=list)
+
+
+class TelecodingExecuteRequest(TelecodingPreviewRequest):
+    plan_hash: str = Field(pattern=r"^[0-9A-Fa-f]{64}$")
+    application_key_hex: str = Field(pattern=r"^[0-9A-Fa-f]{4}$")
+    confirmation: str
+    vehicle_stationary: bool = False
+    ignition_on_engine_off: bool = False
+    stable_battery_voltage: bool = False
+    workshop_or_private_site: bool = False
+
+
+class TelecodingExecuteResult(BaseModel):
+    execution_id: str
+    snapshot_id: str
+    ecu_key: str
+    variant_id: str
+    did: int
+    verified: bool
+    stale_snapshot: bool = False
+    raw_before_hex: str
+    raw_requested_hex: str
+    raw_after_hex: str | None = None
+    changes: list[TelecodingFieldChange] = Field(default_factory=list)
+    message: str
+    session_id: str | None = None
+    report_file: str
+
+
+class TelecodingBackupSummary(BaseModel):
+    snapshot_id: str
+    captured_at: str
+    ecu_key: str
+    variant_id: str
+    did: int
+    did_hex: str
+    zone_name: str
+    vin: str | None = None
+    sha256: str
+    raw_length: int
+
+
 class VehicleIdentityRequest(BaseModel):
     vehicle_profile: str = Field(min_length=1, max_length=100)
 

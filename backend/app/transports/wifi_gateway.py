@@ -7,7 +7,7 @@ import time
 
 from app.models import CanFrame
 from app.safety import TxSafetyProfile, authorize_transport_can_frame
-from app.transports.base import Transport
+from app.transports.base import Transport, validate_gateway_tx_policy
 
 
 class Esp32WifiTransport(Transport):
@@ -163,35 +163,16 @@ class Esp32WifiTransport(Transport):
         if hello.get("can_ready") is False:
             self._disconnect("gateway_can_not_ready")
             raise RuntimeError("Le contrôleur CAN de la passerelle n’est pas initialisé.")
-        if self.tx_enabled and bool(hello.get("readonly", True)):
-            self._disconnect("gateway_readonly_rejected")
-            raise RuntimeError(
-                "CAN_TX_ENABLED=true mais le firmware ESP32 Wi-Fi est en écoute seule."
+        try:
+            validate_gateway_tx_policy(
+                hello,
+                tx_enabled=self.tx_enabled,
+                safety_profile=self.safety_profile,
+                require_diagnostic_can=self.require_diagnostic_can,
             )
-        if self.tx_enabled:
-            if (
-                self.require_diagnostic_can
-                and hello.get("dual_can") is True
-                and hello.get("diagnostic_can_ready") is not True
-            ):
-                self._disconnect("gateway_diagnostic_can_not_ready")
-                raise RuntimeError(
-                    "Le bus CAN diagnostic 3/8 n'est pas initialisé sur le MCP2515."
-                )
-            psa_lab = hello.get("psa_lab") is True
-            if self.safety_profile == "psa_lab" and not psa_lab:
-                self._disconnect("gateway_psa_lab_rejected")
-                raise RuntimeError("Le firmware ESP32 Wi-Fi n'annonce pas la capacité PSA lab.")
-            if (
-                self.require_diagnostic_can
-                and self.safety_profile == "diagnostic_read_only"
-                and hello.get("diagnostic_read_only") is not True
-                and not psa_lab
-            ):
-                self._disconnect("gateway_tx_policy_rejected")
-                raise RuntimeError(
-                    "Le firmware ESP32 Wi-Fi n'annonce aucun verrou diagnostic compatible."
-                )
+        except RuntimeError:
+            self._disconnect("gateway_tx_policy_rejected")
+            raise
 
     def _read_json(self, timeout: float) -> dict | None:
         if self.socket is None:

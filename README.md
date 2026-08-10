@@ -121,6 +121,24 @@ Le fichier `backend/.env` choisit le matériel utilisé. Pour travailler sans
 voiture, conserver `TRANSPORT=virtual`. Pour la passerelle USB, utiliser
 `TRANSPORT=esp32_serial` et renseigner son `SERIAL_PORT`.
 
+Les réglages et observations propres à la machine sont écrits dans
+`data/runtime/`, qui n'est pas versionné. Les fichiers `data/*.example.json`
+documentent les formats attendus sans publier de port série, VIN ou défaut
+observé.
+
+### Vérification avant commit
+
+Depuis la racine du dépôt :
+
+```bash
+./scripts/check_project.sh
+```
+
+Cette commande exécute les tests backend, le contrôle TypeScript strict et le
+build frontend dans un répertoire temporaire. Si PlatformIO est installé, elle
+compile aussi le profil firmware passif par défaut. La CI reprend ces contrôles
+et compile en plus les profils firmware actifs filtrés de référence.
+
 ### Frontend et backend en une commande
 
 Toujours depuis la racine du dépôt :
@@ -335,6 +353,15 @@ Ils restent verrouillés tant que `READ_ONLY=false`, `CAN_TX_ENABLED=true` et
 `PSA_ACTUATOR_ENABLED=true` ne sont pas explicitement réunis. Le déverrouillage
 de configuration possède son propre verrou `PSA_SECURITY_ACCESS_ENABLED=true`.
 Chaque opération exige en plus les confirmations atelier dans l'interface.
+
+Chaque page calculateur PSA contient également un atelier de télécodage issu du
+catalogue PyPSADiag. Il impose une variante ECU exacte et le parcours
+`lecture → sauvegarde VIN → diff → relecture anti-concurrence → écriture unique
+→ contrôle`. Les écritures restent désactivées tant que
+`PSA_TELECODING_WRITE_ENABLED=true` et `PSA_SECURITY_ACCESS_ENABLED=true` ne
+sont pas réunis avec le mode Maintenance contrôlée et le firmware
+`psa_lab_bounded_writes`. Les sauvegardes et rapports restent locaux dans
+`data/runtime/telecoding/`.
 
 Les commandes BSI de clignotants ne sont pas connues : elles apparaissent dans
 le catalogue mais restent non exécutables. Voir [docs/PSA_ADVANCED.md](docs/PSA_ADVANCED.md).
@@ -563,12 +590,19 @@ figées et la stratégie de détection.
 ## Tests
 
 ```bash
-cd backend
-pytest
+./scripts/check_project.sh
 ```
 
-La configuration `pyproject.toml` permet de lancer les tests directement depuis
-`backend` sans régler manuellement `PYTHONPATH`.
+Pour ne lancer que le backend :
+
+```bash
+cd backend
+./.venv/bin/pytest -p no:cacheprovider -q
+```
+
+La fixture globale force un transport virtuel et redirige toutes les données
+d'exécution vers un répertoire temporaire. Les tests restent donc isolés du
+fichier `.env`, du véhicule et des données locales.
 
 ## Important
 

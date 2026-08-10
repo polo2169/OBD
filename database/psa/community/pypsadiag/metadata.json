@@ -12,5 +12,5 @@
     "ecu_suppliers.json": "ECU supplier code map (imported for reference, not yet wired into a decode path).",
     "ecu_definitions/<FAMILY>/*.json": "Per-ECU telecoding zone definitions (UDS zones 0x2100/0x2101): CFG_* configuration parameters with byte offset, bitmask and named option values."
   },
-  "warning": "Community source, GPL-2.0. Telecoding zone/parameter names describe vehicle configuration options (feature present/absent), not live sensor values. Only used here for read-only interpretation of data already read via documented DIDs — never for writing/coding."
+  "warning": "Community source, GPL-2.0. Telecoding zone/parameter names describe vehicle configuration options, not live sensor values. Read-only interpretation is available for every imported definition. A structured option is eligible for writing only through OpenDiag's separately disabled snapshot/diff/VIN/concurrency-check workflow; KWP variants, raw strings, identification zones and unknown values remain non-writable."
 }

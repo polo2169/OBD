@@ -44,7 +44,7 @@ RX 664#056FD60003000000
 
 def test_real_peugeot_scan_still_matches_frozen_reference():
     scan = Path(__file__).resolve().parents[2] / (
-        "data/diagnostics/peugeot/VF3LPHNYWJS141966/scans/"
+        "data/diagnostics/peugeot/VF3LJHNYWJS123456/scans/"
         "scan-20260802T152802400960Z-da1fb35d.json"
     )
     if not scan.exists():

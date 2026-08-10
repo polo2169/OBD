@@ -42,6 +42,10 @@ def test_psa_lab_can_allowlist_is_stricter_than_raw_active_can():
     assert authorize_psa_lab_can_frame(0x752, False, named_nac_frame).allowed is False
     assert authorize_psa_lab_can_frame(0x7B0, False, bytes.fromhex("0322F19000000000")).allowed is True
     assert authorize_psa_lab_can_frame(0x7B0, False, bytes.fromhex("042E123400000000")).allowed is False
+    assert authorize_psa_lab_can_frame(0x752, False, bytes.fromhex("042E220001000000")).allowed is True
+    assert authorize_psa_lab_can_frame(0x752, False, bytes.fromhex("042EF19001000000")).allowed is False
+    assert authorize_psa_lab_can_frame(0x752, False, bytes.fromhex("100A2E2100010203")).allowed is True
+    assert authorize_psa_lab_can_frame(0x752, False, bytes.fromhex("100A312100010203")).allowed is False
 
 
 def test_psa_seed_key_and_raw_did_api(tmp_path, monkeypatch):
