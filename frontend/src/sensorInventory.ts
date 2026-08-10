@@ -115,7 +115,7 @@ export const vehicleSensorCandidates: VehicleSensorCandidate[] = [
   { id: "psa-blower", label: "Vitesse pulseur", system: "Climatisation", description: "Consigne et retour du ventilateur habitacle.", source: "psa", priority: 2 },
   { id: "psa-flaps", label: "Position des volets de climatisation", system: "Climatisation", description: "Mixage, distribution et recyclage.", source: "psa", priority: 3 },
 
-  { id: "can-lane-assist", label: "Maintien dans la voie", system: "ADAS / stationnement", description: "Activation et alerte de franchissement.", source: "can", liveFields: ["lka_active", "lane_departure", "lane_assist_status"], optional: true, priority: 1 },
+  { id: "can-lane-assist", label: "Maintien dans la voie", system: "ADAS / stationnement", description: "État, mode LKA/LPA, consigne d'angle et alerte de franchissement.", source: "can", liveFields: ["lka_active", "lka_mode", "lka_angle_setpoint_deg", "lka_torque_factor_raw", "lane_departure", "lane_assist_status"], optional: true, priority: 1 },
   { id: "can-acc", label: "Régulation adaptative", system: "ADAS / stationnement", description: "Mode ACC, activation et consigne de vitesse.", source: "can", liveFields: ["acc_mode", "acc_requested", "speed_setpoint_kph"], optional: true, priority: 1 },
   { id: "psa-radar-target", label: "Cible radar principale", system: "ADAS / stationnement", description: "Distance, vitesse relative et angle de la cible.", source: "psa", optional: true, priority: 1 },
   { id: "psa-lane-model", label: "Modèle détaillé des lignes", system: "ADAS / stationnement", description: "Courbure, position et qualité des lignes gauche/droite.", source: "psa", optional: true, priority: 2 },

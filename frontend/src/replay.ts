@@ -153,7 +153,7 @@ export const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "rear_door", label: "Porte arrière", color: "red", icon: "door", fields: ["rear_left_door", "rear_right_door"], note: "Validé par essais dédiés : 0x412 Dat_BSI, octet 6, bits 0x20 (gauche) / 0x40 (droite), non documentés dans opendbc." },
   { key: "rear_door_ajar_candidate", label: "Porte arrière (générique, candidat)", color: "amber", icon: "door", fields: ["rear_door_ajar_candidate"], note: "0x78D octet 7, non documenté. Hypothèse d'indicateur générique, non confirmée individuellement." },
   { key: "seatbelt", label: "Ceintures", color: "red", icon: "seatbelt", fields: ["driver_seatbelt_state", "passenger_seatbelt_state"], note: "États bruts présents; leur codage exact reste à valider." },
-  { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure", "lane_assist_status"], note: "Activation ou alerte de franchissement de ligne." },
+  { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure", "lane_assist_status", "lka_mode"], note: "STATUS 4 indique l'assistance active; LXA_ACTIVATION sélectionne LKA ou LPA." },
   { key: "lane_fault", label: "Défaut aide à la conduite", color: "amber", icon: "lane", fields: ["lane_assist_status"], note: "STATUS 5 = DEFECT dans la définition CAN observée sur cette 308." },
   { key: "reverse", label: "Marche arrière", color: "green", icon: "reverse", fields: ["reverse"], note: "État de marche arrière candidat BSI." },
   { key: "headlamp_fault", label: "Défaut d'éclairage", color: "amber", icon: "bulb", fields: ["headlamp_fault"], note: "Défaut déclaré sur un feu de croisement ou de route." },
@@ -471,7 +471,10 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
     passenger_seatbelt_state: integer("RESTRAINTS.PASSENGER_SEATBELT"),
     lane_assist_status: integer("LANE_KEEP_ASSIST.STATUS"),
     lane_departure: integer("LANE_KEEP_ASSIST.LANE_DEPARTURE"),
-    lka_active: logical("LANE_KEEP_ASSIST.LXA_ACTIVATION"),
+    lka_mode: integer("LANE_KEEP_ASSIST.LXA_ACTIVATION"),
+    lka_active: integer("LANE_KEEP_ASSIST.STATUS") === null ? null : integer("LANE_KEEP_ASSIST.STATUS") === 4,
+    lka_angle_setpoint_deg: numeric("LANE_KEEP_ASSIST.SET_ANGLE"),
+    lka_torque_factor_raw: numeric("LANE_KEEP_ASSIST.TORQUE_FACTOR"),
     acc_mode: integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE"),
     acc_requested: logical("HS2_DAT_MDD_CMD_452.RVV_ACC_ACTIVATION_REQ"),
     lvv_requested: logical("HS2_DAT_MDD_CMD_452.LVV_ACTIVATION_REQ"),
@@ -594,7 +597,7 @@ export function replayIndicatorState(
     case "seatbelt":
       return { available, active: null, detail: `États bruts C ${point.driver_seatbelt_state ?? "—"} · P ${point.passenger_seatbelt_state ?? "—"}` };
     case "lane":
-      return { available, active: Boolean(point.lka_active || point.lane_departure || point.lane_assist_status === 4), detail: point.lane_departure ? `Alerte ligne brute ${point.lane_departure}` : laneAssistStatusLabel(point.lane_assist_status) };
+      return { available, active: Boolean(point.lka_active || point.lane_departure), detail: point.lane_departure ? `Alerte ligne brute ${point.lane_departure}` : laneAssistStatusLabel(point.lane_assist_status) };
     case "lane_fault": {
       const active = point.lane_assist_status === 5 || point.lane_assist_status === 6;
       return { available, active, detail: laneAssistStatusLabel(point.lane_assist_status) };

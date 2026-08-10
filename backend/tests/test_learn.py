@@ -126,7 +126,7 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
             (0x452, payload(0x452, TURN_SIGNAL_STATUS=turn_signal)),
             (0x612, payload(0x612, ETAT_FEUX_CROIST=1, DEF_FEU_CROISMNT_D=0, DEF_FEU_CROISMNT_G=0, DEF_FEU_ROUTE_D=0, DEF_FEU_ROUTE_G=0)),
             (0x412, payload(0x412, P013_MainBrake=brake, P040_MainBrakeFault=0, P012_Com_bFlMin=1 if index >= 3 else 0, P086_Com_stFlLvlDia=0)),
-            (0x3F2, payload(0x3F2, STATUS=2)),
+            (0x3F2, payload(0x3F2, STATUS=2, LXA_ACTIVATION=1, SET_ANGLE=12.3, TORQUE_FACTOR=50)),
             (0x488, payload(0x488, P005_CEngDst_tSens=88, P011_Oil_tSwmp=90, P158_Air_tAFS=32)),
             (0x50D, payload(0x50D, P351_Com_bABSIntvActv=1 if index == 3 else 0)),
             (0x572, payload(0x572, DRIVER_SEATBELT=2, PASSENGER_SEATBELT=1)),
@@ -183,6 +183,11 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
     assert replay.points[-1].current_gear == 4
     assert replay.points[-1].target_gear == 5
     assert replay.points[-1].gear_shift_active is True
+    assert replay.points[-1].lane_assist_status == 2
+    assert replay.points[-1].lka_mode == 1
+    assert replay.points[-1].lka_active is False
+    assert replay.points[-1].lka_angle_setpoint_deg == 12.3
+    assert replay.points[-1].lka_torque_factor_raw == 50
     assert replay.points[-1].lateral_accel_ms2 == 1.25
     assert replay.points[-1].yaw_rate_deg_s == 2.3
     assert any(event.kind == "turn_signal" for event in replay.events)

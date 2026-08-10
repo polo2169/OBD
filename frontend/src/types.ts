@@ -1036,7 +1036,10 @@ export type ReplaySample = {
   passenger_seatbelt_state?: number | null;
   lane_assist_status?: number | null;
   lane_departure?: number | null;
+  lka_mode?: number | null;
   lka_active?: boolean | null;
+  lka_angle_setpoint_deg?: number | null;
+  lka_torque_factor_raw?: number | null;
   acc_mode?: number | null;
   acc_requested?: boolean | null;
   lvv_requested?: boolean | null;

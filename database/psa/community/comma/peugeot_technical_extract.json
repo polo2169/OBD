@@ -1,0 +1,425 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-10",
+  "scope": "PSA AEE2010 R3 technical knowledge extracted from comma.ai Discord and cross-checked against local Peugeot 308 T9 captures",
+  "source_export": {
+    "path": "database/psa/community/comma/peugeot.json",
+    "guild_id": "469524606043160576",
+    "channel_id": "943275077137498112",
+    "message_count": 943,
+    "non_empty_message_count": 914,
+    "attachment_count": 102,
+    "embed_count": 33,
+    "date_from": "2022-02-15",
+    "date_to": "2026-08-03"
+  },
+  "confidence_levels": {
+    "vehicle_confirmed": "Repeated or cross-validated on the local Peugeot 308",
+    "vehicle_diagnostic": "Observed locally and diagnostic, without full dynamic validation",
+    "upstream_confirmed": "Defined or used by current OpenDBC primary code",
+    "community_confirmed": "Concordant community tests or documented functional result",
+    "community_report": "Attributable technical report not reproduced locally",
+    "hypothesis": "Explicit supposition requiring a vehicle test",
+    "not_observed": "Searched but absent from the currently captured local bus"
+  },
+  "vehicle": {
+    "make": "Peugeot",
+    "model": "308 II T9",
+    "model_year": 2018,
+    "vin": "VF3LPHNYWJS141966",
+    "sessions_inspected": 337,
+    "diagnostic_summary": {
+      "front_camera_family": "CVM",
+      "front_camera_variant": null,
+      "variant_note": "CVM2 and CVM3 aliases share the currently known UDS addresses; exact generation is not proven",
+      "request_id_hex": "0x74A",
+      "response_id_hex": "0x64A",
+      "active_session": 3,
+      "active_dtcs": [
+        {
+          "code": "B1004",
+          "raw": "900496",
+          "status_hex": "0x89",
+          "label": "Multifunction video camera",
+          "confidence": "vehicle_diagnostic"
+        },
+        {
+          "code": "B117F",
+          "raw": "917F00",
+          "status_hex": "0x89",
+          "label": "Image sensor",
+          "confidence": "vehicle_diagnostic"
+        }
+      ],
+      "scan_path": "data/diagnostics/peugeot/VF3LPHNYWJS141966/scans/scan-20260807T102946956596Z-21700cb0.json",
+      "transition": "Both DTCs changed from historical 0x08 at 10:03 to active 0x89 at 10:29; the BSI mirrors them with 0x09"
+    }
+  },
+  "architecture": {
+    "camera_ecu_code": "7573",
+    "camera_to_bsi": [
+      "vehicle position",
+      "yaw speed",
+      "traffic lane curvature"
+    ],
+    "bsi_role": "Master gateway that filters, transforms and distributes messages between CAN networks",
+    "eps_ecu_code": "7126",
+    "bsi_to_eps": [
+      "EPS motor control",
+      "LKA status"
+    ],
+    "harness_buses": [
+      {
+        "panda_bus": 0,
+        "network": "BSI1 Gateway"
+      },
+      {
+        "panda_bus": 1,
+        "network": "CAN HS2"
+      },
+      {
+        "panda_bus": 2,
+        "network": "CAN HS1",
+        "notes": "0x348 Dyn2_CMM and 0x3CD Dyn2_FRE were only observed here in the cited harness test"
+      }
+    ],
+    "sources": [
+      {
+        "message_id": "1219464745997041764",
+        "url": "https://discord.com/channels/469524606043160576/943275077137498112/1219464745997041764"
+      },
+      {
+        "message_id": "1226686403534917694",
+        "url": "https://discord.com/channels/469524606043160576/943275077137498112/1226686403534917694"
+      },
+      {
+        "message_id": "1228589414704480276",
+        "url": "https://discord.com/channels/469524606043160576/943275077137498112/1228589414704480276"
+      },
+      {
+        "message_id": "1316533980429815892",
+        "url": "https://discord.com/channels/469524606043160576/943275077137498112/1316533980429815892"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Multifunction video camera",
+      "ecu_code": "7573",
+      "networks": ["CAN HS1", "CAN ADAS", "CAN HS2"],
+      "hardware_report": ["Mobileye EyeQ3", "NXP MPC5643L"],
+      "vehicle_match_proven": false,
+      "confidence": "community_report",
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1201692191710249061",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1201703896360439909",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1250816519194021909"
+      ]
+    },
+    {
+      "name": "Electric power steering",
+      "ecu_code": "7126",
+      "networks": ["CAN HS1"],
+      "confidence": "community_confirmed",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1250816519194021909"
+    },
+    {
+      "name": "ARTIV radar",
+      "ecu_code": null,
+      "networks": ["CAN HS2", "CAN ADAS"],
+      "can_outputs": ["0x2B6", "0x2F6"],
+      "present_on_local_vehicle": null,
+      "confidence": "upstream_confirmed"
+    }
+  ],
+  "can_messages": [
+    {
+      "id_hex": "0x305",
+      "id_decimal": 773,
+      "dbc_name": "STEERING_ALT",
+      "dlc": 7,
+      "bus": "CAN HS1 / BSI-EPS chain",
+      "transmitter": "EPS or BSI-distributed depending on variant",
+      "receivers": ["BSI", "steering-data consumers"],
+      "function": "Actual steering angle and steering rotation information",
+      "confidence": "vehicle_confirmed",
+      "vehicle_observed": {
+        "frame_count": 612725,
+        "session_count": 40,
+        "median_period_ms": 9.989,
+        "angle_min_deg": -536.9,
+        "angle_max_deg": 541.1
+      },
+      "signals": [
+        {"name": "ANGLE", "start_bit": 7, "length": 16, "byte_order": "big_endian", "signed": true, "factor": 0.1, "unit": "deg", "function": "Actual steering-wheel angle"},
+        {"name": "RATE", "start_bit": 23, "length": 8, "byte_order": "big_endian", "signed": false, "factor": 1, "unit": "deg/s", "function": "Rotation-rate magnitude"},
+        {"name": "RATE_SIGN", "start_bit": 31, "length": 1, "byte_order": "big_endian", "signed": false, "factor": 1, "unit": "state", "function": "Local sign: 0 positive, 1 negative"},
+        {"name": "COUNTER", "start_bit": 35, "length": 4, "byte_order": "big_endian", "signed": false, "factor": 1, "unit": "raw", "function": "Frame counter"},
+        {"name": "CHECKSUM", "start_bit": 39, "length": 4, "byte_order": "big_endian", "signed": false, "factor": 1, "unit": "raw", "function": "Frame checksum"}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1316377761165607004",
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
+      "id_hex": "0x3F2",
+      "id_decimal": 1010,
+      "dbc_name": "LANE_KEEP_ASSIST",
+      "dlc": 8,
+      "bus": "CAN HS1, BSI to EPS",
+      "transmitter": "BSI gateway",
+      "receivers": ["EPS 7126"],
+      "function": "Lane-assist control, function state and steering-column setpoint",
+      "confidence": "vehicle_diagnostic",
+      "vehicle_observed": {
+        "frame_count": 128357,
+        "session_count": 43,
+        "median_period_ms": 50.007,
+        "state_counts": {"0": 5749, "1": 5719, "2": 108045, "3": 1235, "4": 0, "5": 7609, "6": 0, "7": 0},
+        "set_angle_min_deg": 0,
+        "set_angle_max_deg": 0,
+        "torque_factor_min": 0,
+        "torque_factor_max": 0,
+        "diagnostic_interpretation": "No Active state; repeated Defect state is compatible with active CVM DTCs. Zero set angle does not distinguish angle from torque control."
+      },
+      "signals": [
+        {"name": "DRIVE", "start_bit": 6, "length": 1, "byte_order": "big_endian", "signed": false, "function": "Unknown/load-shedding request", "confidence": "hypothesis"},
+        {"name": "COUNTER", "start_bit": 11, "length": 4, "byte_order": "big_endian", "signed": false, "function": "Frame counter", "confidence": "upstream_confirmed"},
+        {"name": "CHECKSUM", "start_bit": 15, "length": 4, "byte_order": "big_endian", "signed": false, "function": "Frame checksum", "confidence": "community_confirmed"},
+        {"name": "unknown2", "start_bit": 23, "length": 8, "byte_order": "big_endian", "signed": false, "observed_range": [0, 100], "confidence": "vehicle_diagnostic"},
+        {"name": "TORQUE", "start_bit": 31, "length": 11, "byte_order": "big_endian", "signed": true, "unit": "raw", "observed_range": [-7, 60], "function": "Historical name; physical meaning and scale unvalidated", "confidence": "hypothesis"},
+        {"name": "LANE_DEPARTURE", "start_bit": 33, "length": 2, "byte_order": "big_endian", "signed": false, "enum": {"0": "none", "1": "right", "2": "left", "3": "both_or_reserved"}, "confidence": "upstream_confirmed"},
+        {"name": "STATUS", "start_bit": 36, "length": 3, "byte_order": "big_endian", "signed": false, "enum": {"0": "unavailable", "1": "unselected", "2": "selected", "3": "authorized", "4": "active", "5": "defect", "6": "collision", "7": "reserved"}, "confidence": "vehicle_diagnostic"},
+        {"name": "LXA_ACTIVATION", "start_bit": 40, "length": 1, "byte_order": "big_endian", "signed": false, "enum": {"0": "LKA", "1": "LPA"}, "function": "Function selector, not active flag", "confidence": "upstream_confirmed"},
+        {"name": "TORQUE_FACTOR", "start_bit": 47, "length": 7, "byte_order": "big_endian", "signed": false, "unit": "raw", "function": "Torque-limiting factor; physical scale not validated locally", "confidence": "upstream_confirmed"},
+        {"name": "SET_ANGLE", "start_bit": 55, "length": 14, "byte_order": "big_endian", "signed": true, "factor": 0.1, "unit": "deg", "minimum": -90, "maximum": 90, "function": "Steering-column angle setpoint", "confidence": "upstream_confirmed"}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1218583557488902174",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1219465389705007124",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1316377761165607004",
+        "https://github.com/commaai/opendbc/blob/master/opendbc/dbc/psa_aee2010_r3.dbc",
+        "https://github.com/commaai/opendbc/blob/master/opendbc/car/psa/psacan.py"
+      ]
+    },
+    {
+      "id_hex": "0x452",
+      "id_decimal": 1106,
+      "dbc_name": "HS2_DAT_MDD_CMD_452",
+      "dlc": 6,
+      "bus": "CAN HS2 / ADAS",
+      "transmitter": "BSI",
+      "receivers": ["CMF", "ARTIV", "engine ECU", "brake ECU"],
+      "function": "Driver longitudinal commands, ACC configuration, blinkers and wipers",
+      "confidence": "upstream_confirmed",
+      "vehicle_observed": {
+        "frame_count": 128273,
+        "session_count": 43,
+        "median_period_ms": 50.008,
+        "acc_activity": false,
+        "note": "Longitudinal type, speed setpoint and activation requests remained zero in the aggregate"
+      },
+      "signals": [
+        {"name": "LONGITUDINAL_REGULATION_TYPE", "start_bit": 1, "length": 2, "enum_labels": ["deactivated", "LVV", "RVV", "ACC"]},
+        {"name": "TURN_SIGNAL_STATUS", "start_bit": 5, "length": 2, "enum": {"0": "off", "1": "right", "2": "left", "3": "hazard"}},
+        {"name": "FRONT_WIPER_STATUS", "start_bit": 7, "length": 2},
+        {"name": "SPEED_SETPOINT", "start_bit": 15, "length": 8, "factor": 1, "unit": "km/h"},
+        {"name": "CHECKSUM_CONS_RVV_LVV2", "start_bit": 17, "length": 2},
+        {"name": "BRAKE_ONLY_CMD_BSI", "start_bit": 18, "length": 1},
+        {"name": "LVV_ACTIVATION_REQ", "start_bit": 22, "length": 1},
+        {"name": "RVV_ACC_ACTIVATION_REQ", "start_bit": 23, "length": 1},
+        {"name": "ARC_HABIT_SENSITIVITY", "start_bit": 26, "length": 3},
+        {"name": "ARC_HABIT_ACTIVATION_REQ", "start_bit": 27, "length": 1},
+        {"name": "COUNTER", "start_bit": 31, "length": 4},
+        {"name": "FRONT_WASH_STATUS", "start_bit": 32, "length": 1},
+        {"name": "FORCE_ACTIVATION_HAB_CMD", "start_bit": 33, "length": 1},
+        {"name": "INTER_VEHICLE_TIME_SETPOINT", "start_bit": 39, "length": 6, "factor": 0.1, "unit": "s"},
+        {"name": "CHECKSUM", "start_bit": 43, "length": 4},
+        {"name": "COCKPIT_GO_ACC_REQUEST", "start_bit": 45, "length": 1, "confidence": "hypothesis"},
+        {"name": "ACC_PROGRAM_MODE", "start_bit": 47, "length": 2, "enum_labels": ["comfort", "sport", "eco", "reserved"]}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1218283515053871124",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1218511775968792678",
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
+      "id_hex": "0x50E",
+      "id_decimal": 1294,
+      "dbc_name": "Dat_CLIM",
+      "dlc": 8,
+      "bus": "BSI to engine ECU",
+      "transmitter": "BSI",
+      "receivers": ["engine ECU"],
+      "function": "Classic cruise-control orders and setpoint, multiplexed with climate data",
+      "confidence": "vehicle_confirmed",
+      "vehicle_observed": {
+        "frame_count": 64285,
+        "session_count": 42,
+        "median_period_ms": 100.001,
+        "setpoint_min": 37,
+        "setpoint_max": 255,
+        "setpoint_unique_values": 49,
+        "inactive_value": 255,
+        "validation": "Five cruise engagements across four tests"
+      },
+      "signals": [
+        {"name": "P219_Com_xPrpReqRaw", "start_bit": 48, "length": 8, "byte_order": "little_endian", "factor": 1, "unit": "km/h_observed", "function": "Cruise setpoint"},
+        {"name": "P231_Com_ctBSIFrm", "start_bit": 56, "length": 4, "byte_order": "little_endian", "factor": 1, "function": "BSI frame counter"},
+        {"name": "P222_Typ_PrpCtl_Req", "start_bit": 60, "length": 1, "byte_order": "little_endian", "factor": 1, "function": "Cruise request type"},
+        {"name": "P232_Com_stXVVChkSum", "start_bit": 4, "length": 2, "byte_order": "little_endian", "factor": 1, "function": "XVV checksum"}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1216469720828608594",
+        "https://discord.com/channels/469524606043160576/943275077137498112/1216471510835789845",
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
+      "id_hex": "0x2B6",
+      "id_decimal": 694,
+      "dbc_name": "HS2_DYN1_MDD_ETAT_2B6",
+      "dlc": 8,
+      "bus": "CAN HS2 / ADAS",
+      "transmitter": "ARTIV radar",
+      "receivers": ["engine ECU", "brake ECU", "BSI", "PASS_HCU2", "CMF"],
+      "function": "ACC longitudinal dynamics, desired deceleration and wheel torque requests",
+      "confidence": "upstream_confirmed",
+      "vehicle_observed": {"frame_count": 0, "session_count": 0, "confidence": "not_observed"},
+      "signals": [
+        {"name": "MDD_DESIRED_DECELERATION", "start_bit": 7, "length": 8, "factor": 0.05, "offset": -10.65, "unit": "m/s2"},
+        {"name": "POTENTIAL_WHEEL_TORQUE_REQUEST", "start_bit": 9, "length": 2},
+        {"name": "MIN_TIME_FOR_DESIRED_GEAR", "start_bit": 15, "length": 6, "factor": 0.1, "unit": "s"},
+        {"name": "GMP_POTENTIAL_WHEEL_TORQUE", "start_bit": 23, "length": 12, "factor": 4, "offset": -4000, "unit": "Nm"},
+        {"name": "ACC_STATUS", "start_bit": 27, "length": 4},
+        {"name": "GMP_WHEEL_TORQUE", "start_bit": 39, "length": 14, "factor": 1, "offset": -4000, "unit": "Nm"},
+        {"name": "WHEEL_TORQUE_REQUEST", "start_bit": 41, "length": 2},
+        {"name": "AUTO_BRAKING_STATUS", "start_bit": 50, "length": 3},
+        {"name": "MDD_DECEL_TYPE", "start_bit": 52, "length": 2},
+        {"name": "MDD_DECEL_CONTROL_REQ", "start_bit": 53, "length": 1},
+        {"name": "GEAR_TYPE", "start_bit": 54, "length": 1},
+        {"name": "PREFILL_REQUEST", "start_bit": 55, "length": 1},
+        {"name": "DYN_ACC_CHECKSUM", "start_bit": 59, "length": 4},
+        {"name": "DYN_ACC_PROCESS_COUNTER", "start_bit": 63, "length": 4}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1216470323575128105",
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
+      "id_hex": "0x2F6",
+      "id_decimal": 758,
+      "dbc_name": "HS2_DYN_MDD_ETAT_2F6",
+      "dlc": 8,
+      "bus": "CAN HS2 / ADAS",
+      "transmitter": "ARTIV radar",
+      "receivers": ["BSI", "engine ECU", "brake ECU", "CMF"],
+      "function": "ACC target, collision alerts, AEB and takeover state",
+      "confidence": "upstream_confirmed",
+      "vehicle_observed": {"frame_count": 0, "session_count": 0, "confidence": "not_observed"},
+      "signals": [
+        {"name": "TARGET_DETECTED", "start_bit": 0, "length": 1},
+        {"name": "REQUEST_TAKEOVER", "start_bit": 2, "length": 2},
+        {"name": "BLIND_SENSOR", "start_bit": 4, "length": 1},
+        {"name": "REQ_VISUAL_COLL_ALERT_ARC", "start_bit": 5, "length": 1},
+        {"name": "REQ_AUDIO_COLL_ALERT_ARC", "start_bit": 6, "length": 1},
+        {"name": "REQ_HAPTIC_COLL_ALERT_ARC", "start_bit": 7, "length": 1},
+        {"name": "INTER_VEHICLE_DISTANCE", "start_bit": 15, "length": 10, "factor": 0.25, "unit": "m"},
+        {"name": "ARC_STATUS", "start_bit": 19, "length": 4},
+        {"name": "AUTO_BRAKING_IN_PROGRESS", "start_bit": 20, "length": 1},
+        {"name": "AEB_ENABLED", "start_bit": 21, "length": 1},
+        {"name": "DRIVE_AWAY_REQUEST", "start_bit": 33, "length": 1},
+        {"name": "DISPLAY_INTERVEHICLE_TIME", "start_bit": 39, "length": 6, "factor": 0.1, "unit": "s"},
+        {"name": "MDD_DECEL_CONTROL_REQ", "start_bit": 42, "length": 1},
+        {"name": "AUTO_BRAKING_STATUS", "start_bit": 47, "length": 3},
+        {"name": "CHECKSUM_TRANSM_DYN_ACC2", "start_bit": 51, "length": 4},
+        {"name": "PROCESS_COUNTER_4B_ACC2", "start_bit": 55, "length": 4},
+        {"name": "TARGET_POSITION", "start_bit": 63, "length": 3}
+      ],
+      "sources": [
+        "https://discord.com/channels/469524606043160576/943275077137498112/1216470323575128105",
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc"
+      ]
+    }
+  ],
+  "uds": [
+    {
+      "name": "Local CVM",
+      "request_id_hex": "0x74A",
+      "response_id_hex": "0x64A",
+      "bus": "diagnostic",
+      "confidence": "vehicle_confirmed",
+      "notes": "Family CVM detected; exact CVM2/CVM3 variant unresolved"
+    },
+    {
+      "name": "Community ECU sample 0x6B5",
+      "request_id_hex": "0x6B5",
+      "response_offset": -32,
+      "bus": 0,
+      "read_dids": ["0xF180", "0xF186", "0xF18B", "0xF18C"],
+      "confidence": "community_report",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1342919257062768844"
+    },
+    {
+      "name": "Community ECU sample 0x6A6",
+      "request_id_hex": "0x6A6",
+      "response_offset": -32,
+      "bus": 0,
+      "read_dids": ["0xF180", "0xF186", "0xF18B", "0xF18C"],
+      "confidence": "community_report",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1342919257062768844"
+    },
+    {
+      "name": "Community ECU sample 0x6B4",
+      "request_id_hex": "0x6B4",
+      "response_offset": -32,
+      "bus": 0,
+      "read_dids": ["0xF180", "0xF186", "0xF18B", "0xF18C", "0xF193", "0xF195"],
+      "confidence": "community_report",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1342919257062768844"
+    },
+    {
+      "name": "ARTIV/radar candidate",
+      "request_id_hex": "0x6B6",
+      "response_id_hex": "0x696",
+      "direction_confirmed": false,
+      "confidence": "hypothesis",
+      "notes": "The author explicitly reconsidered the request/response direction"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "CVM2 vehicles use torque control and CVM3 vehicles use angle control",
+      "confidence": "hypothesis",
+      "vehicle_result": "unresolved",
+      "reason": "Single community statement phrased as personal knowledge; local LKA never becomes active",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1526836366795604138"
+    },
+    {
+      "claim": "The local Peugeot 308 uses the same torque branches as the older Peugeot 3008",
+      "confidence": "hypothesis",
+      "vehicle_result": "unsupported",
+      "reason": "Published fingerprints only name PSA_PEUGEOT_3008 and PSA_CITROEN_C4_SPACETOURER",
+      "source": "https://discord.com/channels/469524606043160576/943275077137498112/1525153395328155769"
+    },
+    {
+      "claim": "0x2B6 and 0x2F6 are absent from the vehicle",
+      "confidence": "hypothesis",
+      "vehicle_result": "not_observed_on_captured_bus",
+      "reason": "A gateway-filtered capture cannot prove physical absence from other CAN branches"
+    }
+  ],
+  "safety": {
+    "receive_only": true,
+    "can_injection_authorized": false,
+    "telecoding_authorized": false,
+    "notes": [
+      "Do not infer a safe transmit definition from signal layout alone",
+      "Checksum, counter, timeout, bus termination and fail-safe behavior require bench validation",
+      "Radar/EPS control affects steering and braking"
+    ]
+  }
+}

@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 29
+CACHE_VERSION = 30
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -165,7 +165,10 @@ FIELD_QUALITY = {
     "passenger_seatbelt_state": "opendbc_candidate_raw_state",
     "lane_assist_status": "opendbc_candidate",
     "lane_departure": "opendbc_candidate",
-    "lka_active": "opendbc_candidate",
+    "lka_mode": "opendbc_candidate",
+    "lka_active": "derived_from_lane_assist_status_4",
+    "lka_angle_setpoint_deg": "opendbc_candidate_inactive_on_local_vehicle",
+    "lka_torque_factor_raw": "opendbc_candidate_scale_not_vehicle_validated",
     "acc_mode": "opendbc_candidate",
     "acc_requested": "opendbc_candidate",
     "lvv_requested": "opendbc_candidate",
@@ -418,9 +421,15 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
     elif message == "LANE_KEEP_ASSIST":
         status = _number(values, "STATUS")
         departure = _number(values, "LANE_DEPARTURE")
+        mode = _number(values, "LXA_ACTIVATION")
         state["lane_assist_status"] = int(status) if status is not None else None
         state["lane_departure"] = int(departure) if departure is not None else None
-        state["lka_active"] = _boolean(values, "LXA_ACTIVATION")
+        # LXA_ACTIVATION sélectionne la fonction LKA (0) ou LPA (1) ; il ne
+        # signifie pas que l'assistance braque. L'état actif est STATUS == 4.
+        state["lka_mode"] = int(mode) if mode is not None else None
+        state["lka_active"] = int(status) == 4 if status is not None else None
+        state["lka_angle_setpoint_deg"] = _number(values, "SET_ANGLE")
+        state["lka_torque_factor_raw"] = _number(values, "TORQUE_FACTOR")
     elif message == "DRIVER" and state.get("accelerator_pct") is None:
         state["accelerator_pct"] = _number(values, "GAS_PEDAL")
 

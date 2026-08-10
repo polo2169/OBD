@@ -488,9 +488,19 @@ export function ReplayScreen({
                       <small>LANE_DEPARTURE · alerte de ligne</small>
                     </div>
                     <div className={`lka-candidate-indicator${point.lka_active ? " active" : ""}`}>
-                      <span>Activation LXA</span>
-                      <strong>{point.lka_active ? "Demandée" : "Aucune"}</strong>
-                      <small>LXA_ACTIVATION</small>
+                      <span>Assistance réelle</span>
+                      <strong>{point.lka_active ? "Active" : "Inactive"}</strong>
+                      <small>Dérivée de STATUS = 4</small>
+                    </div>
+                    <div className="lka-candidate-indicator">
+                      <span>Mode LXA</span>
+                      <strong>{point.lka_mode === 0 ? "LKA" : point.lka_mode === 1 ? "LPA" : "—"}</strong>
+                      <small>LXA_ACTIVATION · sélecteur, pas état actif</small>
+                    </div>
+                    <div className={`lka-candidate-indicator${point.lka_active ? " active" : ""}`}>
+                      <span>Consigne colonne</span>
+                      <strong>{typeof point.lka_angle_setpoint_deg === "number" ? `${point.lka_angle_setpoint_deg.toFixed(1)}°` : "—"}</strong>
+                      <small>SET_ANGLE · facteur {point.lka_torque_factor_raw ?? "—"}</small>
                     </div>
                   </div>
                   <div className="lka-validation-footer">

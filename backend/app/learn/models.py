@@ -391,7 +391,10 @@ class ReplaySample(BaseModel):
     passenger_seatbelt_state: int | None = None
     lane_assist_status: int | None = None
     lane_departure: int | None = None
+    lka_mode: int | None = None
     lka_active: bool | None = None
+    lka_angle_setpoint_deg: float | None = None
+    lka_torque_factor_raw: float | None = None
     acc_mode: int | None = None
     acc_requested: bool | None = None
     lvv_requested: bool | None = None

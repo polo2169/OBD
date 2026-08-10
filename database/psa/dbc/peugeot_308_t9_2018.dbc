@@ -1,0 +1,206 @@
+VERSION "Peugeot 308 T9 2018 - vehicle validated subset 2026-08-10"
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: ENGINE ABS_ESP BSI GEARBOX STEERING CLUSTER CAMERA ARTIV TESTER
+
+
+BO_ 520 T9_ENGINE_DYNAMICS_208: 8 ENGINE
+ SG_ EngineRPM : 7|16@0+ (0.125,0) [0|8191.75] "rpm" Vector__XXX
+ SG_ EngineTorqueNm : 16|8@1+ (3,-150) [-150|615] "Nm" Vector__XXX
+ SG_ AcceleratorPositionPct : 24|8@1+ (0.5,0) [0|100] "%" Vector__XXX
+ SG_ CruiseStateCandidate : 34|2@1+ (1,0) [0|3] "state" Vector__XXX
+
+BO_ 552 T9_ENGINE_DYNAMICS_REDUNDANT_228: 8 ENGINE
+ SG_ AcceleratorPositionSecondaryPct : 16|8@1+ (0.5,0) [0|100] "%" Vector__XXX
+
+BO_ 744 T9_ACCELERATOR_SHADOW_2E8: 4 ENGINE
+ SG_ AcceleratorPositionShadow2Pct : 8|8@1+ (0.5,0) [0|100] "%" Vector__XXX
+
+BO_ 757 T9_STEERING_TORQUE_2F5: 7 STEERING
+ SG_ DriverTorqueRaw : 15|8@0- (1,0) [-128|127] "raw" Vector__XXX
+
+BO_ 773 T9_STEERING_DYNAMICS_305: 7 STEERING
+ SG_ SteeringAngleDeg : 7|16@0- (0.1,0) [-1080|1080] "deg" Vector__XXX
+ SG_ SteeringRateMagnitudeDegS : 23|8@0+ (1,0) [0|255] "deg/s" Vector__XXX
+ SG_ SteeringRateSign : 31|1@0+ (1,0) [0|1] "state" Vector__XXX
+
+BO_ 781 T9_WHEEL_SPEEDS_30D: 8 ABS_ESP
+ SG_ WheelSpeedFrontLeftKph : 7|16@0+ (0.01,0) [0|655.35] "km/h" Vector__XXX
+ SG_ WheelSpeedFrontRightKph : 23|16@0+ (0.01,0) [0|655.35] "km/h" Vector__XXX
+ SG_ WheelSpeedRearLeftKph : 39|16@0+ (0.01,0) [0|655.35] "km/h" Vector__XXX
+ SG_ WheelSpeedRearRightKph : 55|16@0+ (0.01,0) [0|655.35] "km/h" Vector__XXX
+
+BO_ 840 T9_ENGINE_GEAR_348: 8 ENGINE
+ SG_ CurrentGear : 4|4@1+ (1,0) [0|15] "gear" Vector__XXX
+
+BO_ 841 T9_GEARBOX_TARGET_349: 8 GEARBOX
+ SG_ TargetGear : 28|4@1+ (1,0) [0|15] "gear" Vector__XXX
+
+BO_ 909 T9_VEHICLE_DYNAMICS_38D: 8 ABS_ESP
+ SG_ VehicleSpeedKph : 7|16@0+ (0.01,0) [0|300] "km/h" Vector__XXX
+ SG_ LongitudinalAccelerationMs2 : 39|8@0+ (0.08,-14) [-14|6.32] "m/s2" Vector__XXX
+
+BO_ 952 T9_ENGINE_CLIMATE_SHADOW_3B8: 7 ENGINE
+ SG_ EngineRPMShadow : 0|8@1+ (-32,8160) [0|8160] "rpm" Vector__XXX
+ SG_ InteriorTemperatureCandidateC : 16|8@1+ (0.1,0) [0|25.5] "degC" Vector__XXX
+ SG_ AcceleratorPositionShadowPct : 24|8@1+ (-0.5,127.5) [0|100] "%" Vector__XXX
+
+BO_ 973 T9_BRAKE_DYNAMICS_3CD: 8 ABS_ESP
+ SG_ BrakeSystemState : 0|2@1+ (1,0) [0|3] "state" Vector__XXX
+ SG_ LateralAccelerationMs2 : 15|8@0- (0.05,0) [-6.4|6.35] "m/s2" Vector__XXX
+ SG_ YawRateDegS : 23|16@0- (0.1,0) [-3276.8|3276.7] "deg/s" Vector__XXX
+ SG_ BrakePressureRelativeRaw : 47|12@0+ (1,0) [0|4095] "raw" Vector__XXX
+
+BO_ 1010 T9_LANE_KEEP_COMMAND_3F2: 8 BSI
+ SG_ LKAState : 36|3@0+ (1,0) [0|7] "state" STEERING
+ SG_ LaneDeparture : 33|2@0+ (1,0) [0|3] "state" STEERING
+ SG_ LXAMode : 40|1@0+ (1,0) [0|1] "state" STEERING
+ SG_ LKATorqueFactorRaw : 47|7@0+ (1,0) [0|127] "raw" STEERING
+ SG_ ColumnAngleSetpointDeg : 55|14@0- (0.1,0) [-90|90] "deg" STEERING
+
+BO_ 1042 T9_BODY_STATUS_412: 8 BSI
+ SG_ ReverseGearActive : 2|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ BrakePedalActive : 5|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ PassengerDoorOpen : 52|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ RearLeftDoorOpen : 53|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ RearRightDoorOpen : 54|1@1+ (1,0) [0|1] "state" Vector__XXX
+
+BO_ 1106 T9_DRIVER_CRUISE_COMMAND_452: 6 BSI
+ SG_ LongitudinalRegulationType : 1|2@0+ (1,0) [0|3] "state" Vector__XXX
+ SG_ TurnSignalStatus : 5|2@0+ (1,0) [0|3] "state" Vector__XXX
+ SG_ FrontWiperStatus : 7|2@0+ (1,0) [0|3] "state" Vector__XXX
+ SG_ SpeedSetpointKph : 15|8@0+ (1,0) [0|255] "km/h" Vector__XXX
+ SG_ SpeedSetpointChecksum : 17|2@0+ (1,0) [0|3] "raw" Vector__XXX
+ SG_ BrakeOnlyCommandBSI : 18|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ LimiterActivationRequest : 22|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ CruiseACCActivationRequest : 23|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ ACCHabitSensitivity : 26|3@0+ (1,0) [0|7] "state" Vector__XXX
+ SG_ ACCHabitActivationRequest : 27|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ FrameCounter : 31|4@0+ (1,0) [0|15] "raw" Vector__XXX
+ SG_ FrontWashStatus : 32|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ ForceHabitActivationCommand : 33|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ InterVehicleTimeSetpointS : 39|6@0+ (0.1,0) [0|6.3] "s" Vector__XXX
+ SG_ FrameChecksum : 43|4@0+ (1,0) [0|15] "raw" Vector__XXX
+ SG_ CockpitGoACCRequest : 45|1@0+ (1,0) [0|1] "state" Vector__XXX
+ SG_ ACCProgramMode : 47|2@0+ (1,0) [0|3] "state" Vector__XXX
+
+BO_ 1160 T9_ENGINE_TEMPERATURES_488: 8 ENGINE
+ SG_ CoolantTemperatureC : 0|8@1+ (1,-40) [-40|214] "degC" Vector__XXX
+ SG_ IdleSetpointRPM : 16|8@1+ (8,0) [0|2032] "rpm" Vector__XXX
+ SG_ OilTemperatureC : 40|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
+ SG_ IntakeAirTemperatureC : 56|8@1+ (1,-40) [-40|214] "degC" Vector__XXX
+
+BO_ 1294 T9_CRUISE_SETPOINT_50E: 8 BSI
+ SG_ CruiseSetpointKph : 48|8@1+ (1,0) [0|255] "km/h" Vector__XXX
+
+BO_ 1394 T9_RESTRAINTS_572: 8 BSI
+ SG_ PassengerSeatbeltState : 5|2@0+ (1,0) [0|3] "state" Vector__XXX
+
+BO_ 1416 T9_ENGINE_PRESSURE_STATUS_588: 8 ENGINE
+ SG_ OilPressureSwitch : 16|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ AtmosphericPressureHpa : 42|5@1+ (15,685) [685|1150] "hPa" Vector__XXX
+
+BO_ 1426 T9_BATTERY_STATUS_592: 8 BSI
+ SG_ BatteryChargePct : 0|8@1+ (1,0) [0|100] "%" Vector__XXX
+ SG_ BatteryTemperatureC : 8|8@1+ (0.5,-30) [-30|97.5] "degC" Vector__XXX
+ SG_ BatteryVoltageV : 28|11@0+ (0.01,5) [5|25.47] "V" Vector__XXX
+
+BO_ 1458 T9_AMBIENT_TEMPERATURE_5B2: 8 BSI
+ SG_ AmbientTemperatureC : 16|8@1+ (0.5,-40) [-40|87.5] "degC" Vector__XXX
+
+BO_ 1554 T9_FUEL_AND_LIGHTING_612: 8 BSI
+ SG_ FuelLevelLitersRaw : 31|8@0+ (0.5,0) [0|127.5] "L" Vector__XXX
+
+BO_ 2024 T9_EOBD_RESPONSE_7E8: 8 ENGINE
+ SG_ OBD_ResponseService : 8|8@1+ (1,0) [0|255] "service" TESTER
+ SG_ OBD_PID M : 16|8@1+ (1,0) [0|255] "pid" TESTER
+ SG_ EngineLoadPct m4 : 24|8@1+ (0.392156862745,0) [0|100] "%" TESTER
+ SG_ ManifoldPressureKpa m11 : 24|8@1+ (1,0) [0|255] "kPa" TESTER
+ SG_ ThrottlePositionPct m17 : 24|8@1+ (0.392156862745,0) [0|100] "%" TESTER
+
+
+CM_ "Peugeot 308 II T9 2018 AEE2010.full. This file contains only signals decoded and validated or manually confirmed on the local vehicle captures. It is a receive-only description and does not authorize CAN transmission.";
+CM_ "Signal layouts are derived in part from commaai/opendbc psa_aee2010_r3.dbc revision a0febba355168a5cb6168b535144c8c41a5ce323, Copyright (c) 2020 Comma.ai, Inc., MIT License. Vehicle-specific validation was performed by the local OBD project.";
+CM_ "CVM-family UDS DTCs B1004 and B117F are intentionally absent: diagnostic service responses are not periodic sensor signals and cannot be represented safely as fixed DBC fields. The exact CVM2/CVM3 generation is not proven by the current scan.";
+
+CM_ BO_ 520 "Validated engine speed, pedal position and torque. CruiseStateCandidate was correlated across several vehicle tests: raw 0 inactive, 2 active, 3 transient.";
+CM_ SG_ 520 EngineRPM "Validated against idle setpoint and vehicle captures.";
+CM_ SG_ 520 EngineTorqueNm "Validated by correlation with accelerator position while the engine was running.";
+CM_ SG_ 520 AcceleratorPositionPct "Validated against the independent 0x228 accelerator channel.";
+CM_ SG_ 520 CruiseStateCandidate "Vehicle-observed state. Active is derived as raw value 2; it is not an official PSA enum.";
+
+CM_ BO_ 552 "Independent redundant accelerator channel used to validate 0x208.";
+CM_ BO_ 744 "Undocumented redundant accelerator copy; exact raw/2 formula confirmed against the validated accelerator signal.";
+CM_ SG_ 757 DriverTorqueRaw "Direction and dynamics validated on the vehicle. No physical Nm scale has been established, therefore the unit remains raw.";
+CM_ SG_ 773 SteeringAngleDeg "Scale and direction validated on the vehicle.";
+CM_ SG_ 773 SteeringRateMagnitudeDegS "Validated rate magnitude. Signed steering rate must be derived using SteeringRateSign: sign 1 means negative in the local replay.";
+CM_ BO_ 781 "All four wheel speeds validated together over a road capture; mean inter-wheel spread 0.86 km/h.";
+CM_ SG_ 909 VehicleSpeedKph "Validated against the mean of the four wheel speeds; observed mean difference 0.35 km/h.";
+CM_ SG_ 909 LongitudinalAccelerationMs2 "Validated by comparison with the derivative of vehicle speed.";
+CM_ BO_ 952 "Undocumented frame with two exact redundant engine/pedal formulas and one manually confirmed temperature candidate.";
+CM_ SG_ 952 InteriorTemperatureCandidateC "Manually confirmed on the T9. The physical sensor location is not independently documented, so Candidate remains in the name.";
+CM_ SG_ 973 LateralAccelerationMs2 "Scale and direction validated during a road capture.";
+CM_ SG_ 973 YawRateDegS "Scale and direction validated against steering and wheel-speed differential.";
+CM_ SG_ 973 BrakePressureRelativeRaw "Validated as a relative brake-pressure indicator only. It must not be displayed as bar.";
+CM_ BO_ 1010 "BSI to EPS lane-assist command. Observed locally at about 20 Hz: 128357 frames across 43 sessions. Receive-only diagnostic definition: no STATUS=4 Active was observed, STATUS=5 Defect was observed, and ColumnAngleSetpointDeg remained zero.";
+CM_ SG_ 1010 LKAState "State table recovered from the PSA community definition and cross-checked against opendbc. On the local faulty vehicle: Selected, Authorized and Defect occur; Active does not.";
+CM_ SG_ 1010 LXAMode "Function selector, not an activation flag: 0=LKA, 1=LPA.";
+CM_ SG_ 1010 LKATorqueFactorRaw "The current DBC represents this as 0..127 raw. A historical community file used a 0.01 factor; the physical scale is therefore intentionally not asserted here.";
+CM_ SG_ 1010 ColumnAngleSetpointDeg "Angle-command layout is source-confirmed but could not be dynamically validated on the local vehicle because LKA never reached Active.";
+CM_ SG_ 1042 RearLeftDoorOpen "Undocumented byte 6 mask 0x20, confirmed by repeated closed-open-closed tests on the rear-left door.";
+CM_ SG_ 1042 RearRightDoorOpen "Undocumented byte 6 mask 0x40, confirmed by repeated closed-open-closed tests on the rear-right door.";
+CM_ BO_ 1106 "BSI driver/ACC command frame. Observed locally at about 20 Hz but with longitudinal regulation and ACC requests inactive; signal layout is source-confirmed for AEE2010 R3.";
+CM_ SG_ 1294 CruiseSetpointKph "Confirmed over five cruise engagements in four independent tests. Raw 255 means inactive/unavailable.";
+CM_ SG_ 1416 OilPressureSwitch "Validated as a logical warning contact: active with engine stopped and inactive with engine running. This is not an oil-pressure measurement in bar.";
+CM_ SG_ 1426 BatteryVoltageV "Validated by comparison of engine-running and engine-stopped voltage medians.";
+CM_ SG_ 1554 FuelLevelLitersRaw "Validated raw tank level, affected by fuel slosh. The application field fuel_liters applies a 120 s causal filter which DBC cannot express.";
+CM_ BO_ 2024 "Active EOBD Mode 01 response, not a passive broadcast frame. Multiplexed fields are valid only when OBD_ResponseService is 0x41.";
+
+
+VAL_ 520 CruiseStateCandidate 0 "Inactive_observed" 2 "Active_observed" 3 "Transient_observed";
+VAL_ 773 SteeringRateSign 0 "Positive_local_replay" 1 "Negative_local_replay";
+VAL_ 1010 LKAState 0 "Unavailable" 1 "Unselected" 2 "Selected" 3 "Authorized" 4 "Active" 5 "Defect" 6 "Collision" 7 "Reserved";
+VAL_ 1010 LaneDeparture 0 "None" 1 "Right" 2 "Left" 3 "Both_or_reserved";
+VAL_ 1010 LXAMode 0 "LKA" 1 "LPA";
+VAL_ 1042 ReverseGearActive 0 "Inactive" 1 "Active";
+VAL_ 1042 BrakePedalActive 0 "Released" 1 "Pressed";
+VAL_ 1042 PassengerDoorOpen 0 "Closed" 1 "Open";
+VAL_ 1042 RearLeftDoorOpen 0 "Closed" 1 "Open";
+VAL_ 1042 RearRightDoorOpen 0 "Closed" 1 "Open";
+VAL_ 1106 SpeedSetpointKph 255 "Inactive_or_unavailable";
+VAL_ 1106 TurnSignalStatus 0 "Off" 1 "Right" 2 "Left" 3 "Hazard";
+VAL_ 1294 CruiseSetpointKph 255 "Inactive_or_unavailable";
+VAL_ 1416 OilPressureSwitch 0 "Pressure_OK_observed" 1 "Warning_contact_active_observed";
+VAL_ 2024 OBD_ResponseService 65 "Mode01_CurrentDataResponse";
