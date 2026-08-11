@@ -70,6 +70,41 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
         "Rotation du véhicule autour de l’axe vertical, validée sur cette 308 par deux références CAN indépendantes.",
         True,
     ),
+    "Dyn2_CMM.P026_Com_bESPAck": (
+        "ESP reconnu par le moteur",
+        "Acquittement moteur/ESP présent dans les 469 307 trames locales examinées; aucune transition n'a été observée.",
+        False,
+    ),
+    "Dyn2_CMM.P025_Com_stESPErr": (
+        "État de défaut ESP côté moteur",
+        "État brut sur deux bits. Il est resté à 0 dans les captures locales; aucun défaut réel n'a permis de valider les autres états.",
+        False,
+    ),
+    "Dyn_CDS.P047_Com_stESPIntv": (
+        "État brut d'intervention ESP",
+        "État 0 presque constant et état 6 observé sur deux trames. L'énumération détaillée reste inconnue.",
+        False,
+    ),
+    "Dyn_CDS.P147_Com_bESPIntvActv": (
+        "Intervention ESP active",
+        "Bit documenté mais resté inactif dans 477 639 trames locales; l'état actif n'est pas encore testé sur cette voiture.",
+        False,
+    ),
+    "Dyn_CDS.P352_StbIntv_bTCSIntvActv": (
+        "Antipatinage TCS actif",
+        "Bit documenté mais resté inactif dans 477 639 trames locales; une perte d'adhérence contrôlée serait nécessaire pour le valider.",
+        False,
+    ),
+    "Dyn_CDS.P353_StbIntv_bESPExclvIntvActv": (
+        "Correction ESP exclusive active",
+        "Bit documenté mais resté inactif dans 477 639 trames locales; état actif non testé.",
+        False,
+    ),
+    "Dat_ABR.P351_Com_bABSIntvActv": (
+        "Intervention ABS active",
+        "Bit documenté mais resté inactif dans 95 515 trames locales; aucun freinage déclenchant l'ABS n'a été enregistré.",
+        False,
+    ),
     "HS2_DYN_ABR_38D.VITESSE_VEHICULE_ROUES": (
         "Vitesse véhicule par les roues",
         "Vitesse calculée par l'ABS à partir des capteurs de roues.",

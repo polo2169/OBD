@@ -22,6 +22,7 @@ class FakePhysicalGateway(Transport):
         self.safety_profile = "diagnostic_read_only"
         self.frames: queue.Queue[CanFrame] = queue.Queue()
         self.sent: list[CanFrame] = []
+        self.live_mute_events: list[bool] = []
         self.opened = False
 
     @property
@@ -42,6 +43,9 @@ class FakePhysicalGateway(Transport):
 
     def send(self, frame: CanFrame) -> None:
         self.sent.append(frame)
+
+    def set_live_mute(self, enabled: bool) -> None:
+        self.live_mute_events.append(enabled)
 
 
 def test_shared_gateway_keeps_live_and_diagnostic_consumers_independent():
@@ -137,3 +141,34 @@ def test_shared_gateway_serializes_complete_diagnostic_transactions():
 
     first.close()
     second.close()
+
+
+def test_shared_gateway_mutes_only_diagnostic_bus_transactions():
+    physical = FakePhysicalGateway()
+    hub = SharedGatewayHub(lambda: physical, physical.name)
+    client = hub.client(("diagnostic",), "diagnostic_read_only", 16)
+    client.open()
+
+    with client.diagnostic_transaction(mute_live=False):
+        assert physical.live_mute_events == []
+    with client.diagnostic_transaction(mute_live=True):
+        assert physical.live_mute_events == [True]
+
+    assert physical.live_mute_events == [True, False]
+    client.close()
+
+
+def test_shared_gateway_restores_live_mute_after_exception_and_nested_session():
+    physical = FakePhysicalGateway()
+    hub = SharedGatewayHub(lambda: physical, physical.name)
+    client = hub.client(("diagnostic",), "diagnostic_read_only", 16)
+    client.open()
+
+    with pytest.raises(RuntimeError, match="test failure"):
+        with client.diagnostic_transaction(mute_live=True):
+            with client.diagnostic_transaction(mute_live=True):
+                assert physical.live_mute_events == [True]
+                raise RuntimeError("test failure")
+
+    assert physical.live_mute_events == [True, False]
+    client.close()

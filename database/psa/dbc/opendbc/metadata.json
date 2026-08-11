@@ -8,6 +8,7 @@
   "retrieved_at": "2026-07-31",
   "license": "MIT",
   "vehicle_scope": "PSA AEE2010 R3; upstream car port validated for Peugeot 208 2019-2025 only",
-  "local_usage": "Passive decoding and hypothesis enrichment for Peugeot 308 T9 2018 captures",
+  "local_usage": "External passive comparison catalog only; local Peugeot 308 T9 2018 evidence points to the older AEE2010 R2/EVO torque variant on 0x3F2 and identifies the brake ECU as Bosch ESP 9.0 / ESP90",
+  "vehicle_result": "Do not identify this vehicle as R3 from this filename: 191254 local 0x3F2 frames support signed torque control while the angle command remains zero; ESP/ABS intervention layouts are exposed but their active states were not observed",
   "validation_status": "external_unverified_for_308_t9"
 }

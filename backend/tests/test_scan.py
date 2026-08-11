@@ -1,11 +1,30 @@
+from contextlib import contextmanager
+
 from app.config import settings
 from app.diagnostic.scanner import clear_ecu_dtcs, read_ecu_did, scan_vehicle
+from app.database import KnowledgeBase
 from app.diagnostic.obd import PID_BY_ID, live_pid_definitions, snapshot_sensors
 from app.diagnostic.isotp import UdsSession
 from app.diagnostic.uds import decode_dtc_status, format_sae_dtc
 from app.models import ClearDtcRequest
 from app.diagnostic.uds import request
 from app.transports.virtual import VirtualVehicleTransport
+
+
+class TransactionRecordingVirtualTransport(VirtualVehicleTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.live_mute_requests: list[bool] = []
+        self.sent_frames = []
+
+    def send(self, frame):
+        self.sent_frames.append(frame)
+        super().send(frame)
+
+    @contextmanager
+    def diagnostic_transaction(self, *, mute_live: bool = False):
+        self.live_mute_requests.append(mute_live)
+        yield
 
 
 def test_virtual_scan():
@@ -23,6 +42,16 @@ def test_virtual_scan():
     assert report.dtc_summary.active >= 1
     assert report.scan_id
     assert "confirmed" in abs_ecu.dtcs[0].status_labels
+    esp_zones = {item.did: item for item in abs_ecu.identification if 0x2100 <= item.did <= 0x2103}
+    assert set(esp_zones) == {0x2100, 0x2101, 0x2102, 0x2103}
+    assert esp_zones[0x2102].raw_hex == "06000000A400"
+    assert esp_zones[0x2103].raw_hex == "06FFFDFFFF"
+    assert esp_zones[0x2101].telecoding is not None
+    gearbox = next(ecu for ecu in report.ecus if ecu.key == "gearbox")
+    gearbox_zones = {item.did: item for item in gearbox.identification}
+    assert gearbox_zones[0x2100].raw_hex == "00FEFFFCFF003801"
+    assert gearbox_zones[0x2101].raw_hex == "00FEFFFEFFBFBE"
+    assert gearbox_zones[0x2101].telecoding is not None
     assert report.debug.session_id
     assert report.debug.event_types["uds_request"] > 0
     assert engine.active_session == 1
@@ -66,10 +95,30 @@ def test_t9_profile_contains_sourced_psa_ecus():
         assert ecus[key].request_id == request_id
         assert ecus[key].response_id == response_id
         assert ecus[key].source
-        assert ecus[key].confidence == "community_family_catalog"
+        if key == "abs_esp":
+            assert ecus[key].confidence == "vehicle_identified"
+        else:
+            assert ecus[key].confidence == "community_family_catalog"
 
     assert ecus["front_camera"].optional is True
     assert ecus["abs_esp"].optional is False
+
+    profile_abs = next(item for item in KnowledgeBase().ecus() if item.key == "abs_esp")
+    assert profile_abs.name == "ABS / ESP90 Bosch 9.0"
+    assert profile_abs.telecoding_variant == "ESP90"
+    assert profile_abs.telecoding_write_allowed is False
+    assert profile_abs.identification_dids == [0x2100, 0x2101, 0x2102, 0x2103]
+    assert profile_abs.dtc_catalogs == ["ESP90", "ABRASR"]
+    assert profile_abs.dtc_status_masks == [0x09, 0xFF]
+
+    profile_gearbox = next(item for item in KnowledgeBase().ecus() if item.key == "gearbox")
+    assert profile_gearbox.name == "Aisin TF-71SC / AT6 III (EAT6)"
+    assert profile_gearbox.confidence == "vehicle_identified"
+    assert profile_gearbox.flow_control_blocksize == 0
+    assert profile_gearbox.isotp_tx_padding is None
+    assert profile_gearbox.identification_dids == [0x2100, 0x2101]
+    assert profile_gearbox.telecoding_variant == "BVA_AM6_AT6_UDS"
+    assert profile_gearbox.telecoding_write_allowed is False
 
 
 def test_dtc_decoder_keeps_failure_type_separate():
@@ -123,7 +172,7 @@ def test_fiat_live_profile_exposes_extended_gasoline_obd_sensors():
 
 def test_obd_session_routes_requests_to_live_bus():
     events: list[dict] = []
-    transport = VirtualVehicleTransport()
+    transport = TransactionRecordingVirtualTransport()
     transport.set_debug_sink(events.append)
     transport.open()
     try:
@@ -138,6 +187,44 @@ def test_obd_session_routes_requests_to_live_bus():
         and event.get("bus") == "live"
         for event in events
     )
+    assert transport.live_mute_requests == [False]
+
+
+def test_diagnostic_session_requests_live_bus_mute():
+    transport = TransactionRecordingVirtualTransport()
+    transport.open()
+    try:
+        with UdsSession(transport, 0x7E0, 0x7E8) as session:
+            assert session.request(bytes.fromhex("22F190")).startswith(bytes.fromhex("62F190"))
+    finally:
+        transport.close()
+
+    assert transport.live_mute_requests == [True]
+
+
+def test_unpadded_isotp_session_sends_three_byte_flow_control():
+    transport = TransactionRecordingVirtualTransport()
+    transport.response_ids[0x6A9] = 0x689
+    transport.open()
+    try:
+        with UdsSession(
+            transport,
+            0x6A9,
+            0x689,
+            tx_padding=None,
+            flow_control_blocksize=0,
+        ) as session:
+            assert session.request(bytes.fromhex("222100")) == bytes.fromhex(
+                "62210000FEFFFCFF003801"
+            )
+    finally:
+        transport.close()
+
+    flow_controls = [
+        frame for frame in transport.sent_frames
+        if frame.data and frame.data[0] >> 4 == 0x3
+    ]
+    assert [frame.data for frame in flow_controls] == [bytes.fromhex("300000")]
 
 
 def test_explicit_virtual_dtc_clear_workflow(tmp_path, monkeypatch):

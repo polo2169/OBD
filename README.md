@@ -645,7 +645,7 @@ Le post-traitement charge également la base MIT
 
 - DBC `psa_aee2010_r3` figé à la révision
   `a0febba355168a5cb6168b535144c8c41a5ce323` ;
-- 107 messages et 430 signaux disponibles ;
+- 107 messages et 432 signaux disponibles ;
 - décodage avec `cantools`, sans importer le code d'actionnement openpilot ;
 - rapprochement automatique entre marqueurs et signaux DBC décodés ;
 - inventaire CAN enrichi avec le nom du message et ses signaux connus ;
@@ -654,6 +654,9 @@ Le post-traitement charge également la base MIT
 Le port PSA amont documente la Peugeot 208 2019–2025, pas la 308 T9 2018.
 Les noms opendbc restent donc marqués comme externes et non validés tant qu'une
 capture répétée sur la 308 ne confirme pas leur comportement.
+Le nom `r3` désigne ici la provenance du catalogue externe, pas l'architecture
+attribuée à la voiture : les captures locales de `0x3F2` sont compatibles avec
+la variante AEE2010 R2/EVO à commande de couple et CVM G2.
 
 La copie amont et son attribution se trouvent dans
 `database/psa/dbc/opendbc/`. Elle est utilisée uniquement sur les trames reçues :

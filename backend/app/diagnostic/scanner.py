@@ -156,7 +156,7 @@ def _describe_telecoding(
     did: int,
     value_payload: bytes,
 ) -> TelecodingZoneInfo | None:
-    zone = kb.describe_telecoding_zone(ecu.family, did)
+    zone = kb.describe_telecoding_zone(ecu.family, did, ecu.telecoding_variant)
     if zone is None:
         return None
     parameters = kb.decode_telecoding_parameters(zone, value_payload)
@@ -199,6 +199,7 @@ def read_ecu_did(ecu_key: str, did: int, vehicle_profile: str | None = None) -> 
             read_only=settings.read_only,
             flow_control_id=ecu.flow_control_id,
             flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             try:
@@ -286,6 +287,9 @@ def read_ecu_dtc_snapshot(
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             try:
                 (
@@ -387,6 +391,9 @@ def sweep_ecu_dids(
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             for did in range(did_start, did_end + 1):
@@ -480,6 +487,9 @@ def read_engine_obd_dtcs(ecu_key: str = "engine", vehicle_profile: str | None = 
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             for mode, (state, state_label, state_detail) in _OBD_DTC_MODE_LABELS.items():
                 try:
@@ -825,6 +835,11 @@ def _scan_single_ecu(
     default_dtc_masks: list[int],
     trace: SessionWriter | None = None,
 ) -> EcuScanResult:
+    identification_dids = list(dict.fromkeys([
+        *identification_dids,
+        *ecu.identification_dids,
+    ]))
+    did_order = {did: index for index, did in enumerate(identification_dids)}
     addresses = _address_options(ecu)
     if trace:
         trace.write({
@@ -871,6 +886,7 @@ def _scan_single_ecu(
                 read_only=settings.read_only,
                 flow_control_id=ecu.flow_control_id,
                 flow_control_blocksize=ecu.flow_control_blocksize,
+                tx_padding=ecu.isotp_tx_padding,
             ) as session:
                 present, method, probe_raw, candidate_probe_attempts = _probe_session(
                     session,
@@ -913,6 +929,7 @@ def _scan_single_ecu(
                             confidence=definition.get("confidence", "experimental"),
                             request_hex=f"22{did:04X}",
                             response_hex=response.original_payload.hex().upper(),
+                            telecoding=_describe_telecoding(kb, ecu, did, value_payload),
                         ))
                         if did == 0xF190 and isinstance(value, str):
                             vin_value = value
@@ -1070,6 +1087,9 @@ def clear_ecu_dtcs(ecu_key: str, request: ClearDtcRequest) -> ClearDtcResult:
             timeout=settings.diagnostic_timeout,
             read_only=False,
             maintenance=True,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as uds_session:
             masks = ecu.dtc_status_masks or [0xFF, 0x09]
             before_dtcs, before_availability, before_mask, before_response = _read_dtc_snapshot(

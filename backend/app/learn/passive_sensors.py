@@ -21,6 +21,16 @@ VALIDATED_SIGNALS = {
     ("STEERING_ALT", "ANGLE"),
     ("STEERING_ALT", "RATE"),
     ("STEERING", "DRIVER_TORQUE"),
+    ("Dyn4_FRE", "P263_VehV_VPsvValWhlFrtL"),
+    ("Dyn4_FRE", "P264_VehV_VPsvValWhlFrtR"),
+    ("Dyn4_FRE", "P265_VehV_VPsvValWhlBckL"),
+    ("Dyn4_FRE", "P266_VehV_VPsvValWhlBckR"),
+    ("HS2_DYN_ABR_38D", "VITESSE_VEHICULE_ROUES"),
+    ("HS2_DYN_ABR_38D", "ACCEL_LONGI_ROUES"),
+    ("Dyn2_FRE", "P226_Com_stBrkActv"),
+    ("Dyn2_FRE", "BRAKE_PRESSURE"),
+    ("Dyn2_FRE", "LATERAL_ACCELERATION"),
+    ("Dyn2_FRE", "YAW_RATE"),
 }
 
 FIAT_500_CAN_NOTES_URL = (
@@ -708,8 +718,8 @@ def passive_sensor_snapshot(
         warnings.append(decoder.error or "Base OpenDBC indisponible.")
     if decoder.loaded:
         warnings.append(
-            "Les signaux OpenDBC restent à confirmer sur Peugeot 308 T9 2018; "
-            "les valeurs de direction marquées validées ont été vérifiées sur cette voiture."
+            "Le DBC R3 sert de catalogue externe de comparaison, pas d'identification du véhicule ; "
+            "la commande de couple R2/EVO sur 0x3F2 et les valeurs de direction marquées validées ont été vérifiées sur cette voiture."
         )
 
     obd_signals, obd_signal_count, obd_timestamps = _hybrid_obd_signals(since_us)

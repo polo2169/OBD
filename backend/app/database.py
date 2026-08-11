@@ -469,7 +469,29 @@ class KnowledgeBase:
             decoded.append(item)
         return decoded
 
-    def telecoding_zones_for_family(self, family: str | None) -> dict[str, dict]:
+    @staticmethod
+    def _legacy_telecoding_zones(raw_zones: dict) -> dict[str, dict]:
+        """Normalize one PyPSADiag variant to the lightweight read decoder."""
+        zones: dict[str, dict] = {}
+        for zone_id, zone in raw_zones.items():
+            if not isinstance(zone, dict):
+                continue
+            zones[str(zone_id).upper().zfill(4)] = {
+                "name": zone.get("name", zone_id),
+                "byte": zone.get("byte", 0),
+                "parameters": {
+                    key: value
+                    for key, value in zone.items()
+                    if isinstance(value, dict) and "mask" in value
+                },
+            }
+        return zones
+
+    def telecoding_zones_for_family(
+        self,
+        family: str | None,
+        variant_id: str | None = None,
+    ) -> dict[str, dict]:
         """Zone id -> {name, byte, parameters} for a vehicle.yaml ``family`` string.
 
         The pypsadiag ``ecu_definitions/`` folder names don't always match the
@@ -480,10 +502,20 @@ class KnowledgeBase:
         if not family:
             return {}
         folder = _PYPSADIAG_FAMILY_ALIASES.get(family, family)
+        if variant_id:
+            variant = self._pypsadiag_variants.get(folder, {}).get(variant_id)
+            if variant is None:
+                return {}
+            return self._legacy_telecoding_zones(variant.get("zones") or {})
         return self._pypsadiag_ecu_definitions.get(folder, {})
 
-    def describe_telecoding_zone(self, family: str | None, did: int) -> dict | None:
-        zones = self.telecoding_zones_for_family(family)
+    def describe_telecoding_zone(
+        self,
+        family: str | None,
+        did: int,
+        variant_id: str | None = None,
+    ) -> dict | None:
+        zones = self.telecoding_zones_for_family(family, variant_id)
         return zones.get(f"{did:04X}")
 
     def pypsadiag_source(self) -> str | None:

@@ -28,7 +28,7 @@ class Esp32SerialTransport(Transport):
         self.hello: dict | None = None
         self.last_stats: dict | None = None
         self.sequence_gap_count = 0
-        self._last_sequence: int | None = None
+        self._last_sequences: dict[str, int] = {}
         self._pending_frames: deque[CanFrame] = deque()
 
     @property
@@ -37,7 +37,7 @@ class Esp32SerialTransport(Transport):
 
     def open(self) -> None:
         self.sequence_gap_count = 0
-        self._last_sequence = None
+        self._last_sequences.clear()
         self.serial = serial.Serial(self.port, self.baud, timeout=0.1)
         self.debug("transport_open", transport=self.name, baud=self.baud)
         deadline = time.monotonic() + self.handshake_timeout
@@ -130,6 +130,11 @@ class Esp32SerialTransport(Transport):
                     continue
             self._handle_non_frame_message(message)
         return None
+
+    def set_live_mute(self, enabled: bool) -> None:
+        if not self.serial or not self.hello or not self.hello.get("live_mute_supported"):
+            return
+        self._write_command({"type": "live_mute", "enabled": enabled})
 
     def send(self, frame: CanFrame) -> None:
         if not self.tx_enabled:
@@ -268,8 +273,19 @@ class Esp32SerialTransport(Transport):
         sequence = int(message["seq"])
         if sequence < 0 or sequence > 0xFFFFFFFF:
             raise ValueError("Numéro de séquence hors plage.")
-        if self._last_sequence is not None:
-            expected = (self._last_sequence + 1) & 0xFFFFFFFF
+        scope = str((self.hello or {}).get("sequence_scope") or "").lower()
+        driver = str((self.hello or {}).get("driver") or "").lower()
+        # Firmware before sequence_scope was added relayed the UART satellite's
+        # own counter unchanged.  In that topology live and diagnostic frames
+        # therefore form two independent streams, not one lossy stream.
+        stream = (
+            str(message.get("bus", "default"))
+            if scope == "bus" or (not scope and driver == "twai+uart-twai")
+            else "gateway"
+        )
+        previous = self._last_sequences.get(stream)
+        if previous is not None:
+            expected = (previous + 1) & 0xFFFFFFFF
             if sequence != expected:
                 if sequence > expected:
                     missing = sequence - expected
@@ -280,14 +296,16 @@ class Esp32SerialTransport(Transport):
                         received=sequence,
                         missing=missing,
                         missing_total=self.sequence_gap_count,
+                        sequence_stream=stream,
                     )
                 else:
                     self.debug(
                         "gateway_sequence_reset",
-                        previous=self._last_sequence,
+                        previous=previous,
                         received=sequence,
+                        sequence_stream=stream,
                     )
-        self._last_sequence = sequence
+        self._last_sequences[stream] = sequence
 
     def _handle_non_frame_message(self, message: dict) -> None:
         message_type = message.get("type")

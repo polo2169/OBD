@@ -20,7 +20,12 @@ class VirtualVehicleTransport(Transport):
         (0x764, 0x2100): bytes.fromhex("0000"),
         (0x764, 0x2101): bytes.fromhex("0000"),
         (0x6A8, 0x2101): bytes.fromhex("00EFFFFFFDFFFFFF7F00"),
-        (0x6AD, 0x2101): bytes.fromhex("00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+        (0x6A9, 0x2100): bytes.fromhex("00FEFFFCFF003801"),
+        (0x6A9, 0x2101): bytes.fromhex("00FEFFFEFFBFBE"),
+        (0x6AD, 0x2100): bytes.fromhex("06A29212BDFB210000000040FF000000A420200B8CE3FFE0A01004FF01"),
+        (0x6AD, 0x2101): bytes.fromhex("06FFFFF7FFFFFFEFFFFFFFFFFFFFFDFFFF7FFFEFFFFBFFFFEFFE7EFF"),
+        (0x6AD, 0x2102): bytes.fromhex("06000000A400"),
+        (0x6AD, 0x2103): bytes.fromhex("06FFFDFFFF"),
     }
     _telecoding_values: dict[tuple[int, int], bytes] = dict(_DEFAULT_TELECODING_VALUES)
 

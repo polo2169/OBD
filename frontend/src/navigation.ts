@@ -19,7 +19,7 @@ export type EcuLiveView = typeof ECU_LIVE_VIEW_KEYS[number];
 
 export const ECU_LIVE_CATALOG: Record<EcuLiveView, { name: string; glyph: string }> = {
   gearbox: { name: "Boîte de vitesses pilotée / automatique", glyph: "BV" },
-  abs_esp: { name: "ABS / ESP", glyph: "ABS" },
+  abs_esp: { name: "ABS / ESP90 Bosch", glyph: "ESP" },
   bsi: { name: "Boîtier de servitude intelligent", glyph: "BSI" },
   airbag: { name: "Airbags / prétensionneurs", glyph: "SRS" },
   power_steering: { name: "Direction assistée électrique", glyph: "DIR" },

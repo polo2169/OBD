@@ -15,6 +15,9 @@ sources:
     license: GPL-3.0
 notes:
   - PSA-RE confirme l'architecture AEE2010.full pour la plateforme T9.
+  - Les captures locales identifient plus précisément une variante de direction compatible AEE2010 R2/EVO : commande de couple BSI vers EPS sur 0x3F2, tandis que la consigne d'angle reste nulle.
+  - Le DBC AEE2010 R3 conservé dans opendbc est une base externe de comparaison ; son nom ne constitue pas une identification R3 de cette 308.
+  - La révision multiplexée exacte restera à confirmer par l'identification BSI/EPS et la topologie des bus ; le profil conserve donc le libellé source AEE2010.full.
   - Les paires de diagnostic proviennent d'un catalogue communautaire de familles ECU.
   - La présence exacte des calculateurs optionnels dépend de l'équipement du véhicule.
   - Toute adresse doit être confirmée par une réponse UDS avant d'être considérée présente.
@@ -219,40 +222,83 @@ ecus:
       - MEVD17_4_4
 
   - key: gearbox
-    name: Boîte de vitesses pilotée / automatique
+    name: Aisin TF-71SC / AT6 III (EAT6)
     family: BOITEVIT
     request_id: 0x6A9
     response_id: 0x689
-    # Cette EAT6 répond aux lectures longues, mais s'arrête après la
-    # première trame avec FC 30 08 00. FC 30 00 00 autorise tout le bloc.
+    # Cette EAT6 exige à la fois BS=0 et un Flow Control au DLC naturel de
+    # trois octets. FC 30 00 00 rembourré à huit octets est ignoré.
     flow_control_blocksize: 0
+    isotp_tx_padding: null
     protocol: uds
-    confidence: community_family_catalog
+    confidence: vehicle_identified
     access: read_only
     network: diagnostic_can
     optional: true
     source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L250
+    aliases:
+      - EAT6
+      - AT6 III
+      - Aisin TF-71SC
+    telecoding_variant: BVA_AM6_AT6_UDS
+    telecoding_write_allowed: false
+    identification_dids:
+      - 0x2100
+      - 0x2101
     dtc_catalogs:
       - BVA_EATN8
       - BVA_AM6_AT6_UDS
     dtc_status_masks:
       - 0x09
       - 0xFF
+    notes:
+      - "F080 observé: PSA 9805709280 (deux occurrences dans la zone)."
+      - "F0FE observé: FFFF00003056100A0D02510708FFFFFF0002000001920681."
+      - "2100=00FEFFFCFF003801; 2101=00FEFFFEFFBFBE."
+      - "Réponses longues confirmées avec Flow Control 30 00 00 non rembourré (DLC=3)."
 
   - key: abs_esp
-    name: ABS / ESP
+    name: ABS / ESP90 Bosch 9.0
     family: ABRASR
     request_id: 0x6AD
     response_id: 0x68D
     protocol: uds
-    confidence: community_family_catalog
+    confidence: vehicle_identified
     access: read_only
     network: diagnostic_can
     optional: false
     source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L227
+    aliases:
+      - ESP90
+      - Bosch ESP 9.0
+    # Confirmé par les zones F080/F0FE et par les réponses 2100..2103 du VIN.
+    # La référence PSA 9812786180 est répertoriée comme Bosch ESP 9.0 ; le
+    # motif complet 2102=06000000A400 correspond aussi aux lectures ESP90
+    # communautaires. Ne plus proposer le schéma incompatible ESPMK100_UDS.
+    telecoding_variant: ESP90
+    # Plusieurs clés ESP90 existent. Une mauvaise clé peut verrouiller le
+    # télécodage du calculateur : sauvegarde/lecture oui, écriture non tant que
+    # la clé exacte de cet exemplaire n'est pas prouvée indépendamment.
+    telecoding_write_allowed: false
+    identification_dids:
+      - 0x2100
+      - 0x2101
+      - 0x2102
+      - 0x2103
     dtc_catalogs:
-      - ABSMK100_UDS
-      - ESPMK100
+      - ESP90
+      - ABRASR
+    # 0x09 cible d'abord les défauts échoués/confirmés. 0xFF reste un repli
+    # exhaustif, sans présenter les moniteurs 0x40/0x50 comme des pannes.
+    dtc_status_masks:
+      - 0x09
+      - 0xFF
+    notes:
+      - "F080 observé: PSA 9826694380 et 9812786180."
+      - "F0FE observé: 00000000039201061103D41802FFFFFF0002000001928338."
+      - "2100=06A29212BDFB210000000040FF000000A420200B8CE3FFE0A01004FF01."
+      - "2101=06FFFFF7FFFFFFEFFFFFFFFFFFFFFDFFFF7FFFEFFFFBFFFFEFFE7EFF."
+      - "2102=06000000A400; 2103=06FFFDFFFF; sens détaillé non documenté."
 
   - key: bsi
     name: Boîtier de servitude intelligent

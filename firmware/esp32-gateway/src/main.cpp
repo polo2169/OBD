@@ -27,6 +27,13 @@ static uint32_t live_tx_count = 0;
 static uint32_t live_tx_failed_count = 0;
 static uint32_t dropped_count = 0;
 static uint32_t filtered_count = 0;
+// Muted while a diagnostic ISO-TP transaction is in progress, so the live bus
+// (obd_6_14, several hundred frames/s) stops competing with the diagnostic
+// relay for the single USB serial link. Toggled by the "live_mute" command.
+static volatile bool live_relay_muted = false;
+static uint32_t live_muted_count = 0;
+static uint32_t live_mute_deadline_ms = 0;
+constexpr uint32_t LIVE_MUTE_FAILSAFE_MS = 120000;
 static uint32_t bus_off_count = 0;
 static uint32_t bus_recovered_count = 0;
 static uint32_t frame_sequence = 0;
@@ -138,6 +145,14 @@ static constexpr CanChannel native_can_channel() {
   return cfg::NATIVE_CAN_IS_DIAGNOSTIC
       ? CanChannel::Diagnostic
       : CanChannel::Live;
+}
+
+static void refresh_live_mute_watchdog() {
+#if DUAL_CAN || UART_DUAL_CAN_MASTER
+  if (live_relay_muted) {
+    live_mute_deadline_ms = millis() + LIVE_MUTE_FAILSAFE_MS;
+  }
+#endif
 }
 
 #if DIAGNOSTIC_READ_ONLY || PSA_LAB
@@ -463,6 +478,10 @@ static size_t format_hello(char *output, size_t capacity) {
       : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
   doc["can_ready"] = can_ready;
   doc["dual_can"] = (DUAL_CAN != 0) || cfg::UART_MASTER;
+  doc["live_mute_supported"] = (DUAL_CAN != 0) || cfg::UART_MASTER;
+  // A UART master relays frames carrying the satellite's independent sequence
+  // counter. Consumers must track one sequence per bus in that topology.
+  doc["sequence_scope"] = cfg::UART_MASTER ? "bus" : "gateway";
 #if UART_DUAL_CAN_MASTER
   doc["live_can_ready"] = live_can_ready;
   doc["diagnostic_can_ready"] = diagnostic_can_ready;
@@ -576,6 +595,7 @@ static void emit_stats() {
   doc["live_tx_failed"] = live_tx_failed_count;
   doc["tx_policy_blocked"] = tx_policy_blocked_count;
   doc["filtered"] = filtered_count;
+  doc["live_muted"] = live_muted_count;
   doc["bus_off"] = bus_off_count;
   doc["bus_recovered"] = bus_recovered_count;
 #if DUAL_CAN
@@ -1061,6 +1081,7 @@ static void transmit_can(JsonDocument &doc) {
 #if DUAL_CAN
   if (!live_request) ++diagnostic_tx_count;
 #endif
+  if (!live_request) refresh_live_mute_watchdog();
 
 #if PSA_LAB
   if (!live_request) psa_lab_update_deadman_after_host_tx(id, payload, length);
@@ -1146,6 +1167,24 @@ static void parse_command(const String &line) {
     return;
   }
 
+  if (strcmp(type, "live_mute") == 0) {
+    const bool enabled = doc["enabled"] | false;
+#if DUAL_CAN || UART_DUAL_CAN_MASTER
+    live_relay_muted = enabled;
+    live_mute_deadline_ms = enabled ? millis() + LIVE_MUTE_FAILSAFE_MS : 0;
+    constexpr bool supported = true;
+#else
+    constexpr bool supported = false;
+#endif
+    JsonDocument ack;
+    ack["type"] = "ack";
+    ack["command"] = "live_mute";
+    ack["enabled"] = supported && enabled;
+    ack["supported"] = supported;
+    emit_json(ack);
+    return;
+  }
+
   if (strcmp(type, "can_tx") == 0) {
 #if UART_DUAL_CAN_MASTER
     const char *requested_bus = doc["bus"] | "diagnostic";
@@ -1162,6 +1201,9 @@ static void parse_command(const String &line) {
       emit_error("DIAGNOSTIC_CAN_NOT_READY", "The UART diagnostic ESP32 is unavailable");
       return;
     }
+    // Keep the mute alive for long DID sweeps. It expires only when diagnostic
+    // activity itself stops, for example after a backend crash or USB loss.
+    refresh_live_mute_watchdog();
     interboard_uart.println(line);
     return;
 #else
@@ -1636,7 +1678,18 @@ static void drain_twai(uint8_t limit) {
 #if DUAL_CAN
     ++live_rx_count;
 #endif
-    if (id_allowed(message.identifier)) {
+    if (!id_allowed(message.identifier)) {
+      ++filtered_count;
+#if DUAL_CAN
+      ++live_filtered_count;
+#endif
+    }
+#if DUAL_CAN || UART_DUAL_CAN_MASTER
+    else if (live_relay_muted && native_can_channel() == CanChannel::Live) {
+      ++live_muted_count;
+    }
+#endif
+    else {
       emit_frame(
           native_can_channel(),
           message.identifier,
@@ -1644,11 +1697,6 @@ static void drain_twai(uint8_t limit) {
           message.data_length_code,
           message.rtr,
           message.data);
-    } else {
-      ++filtered_count;
-#if DUAL_CAN
-      ++live_filtered_count;
-#endif
     }
   }
 #else
@@ -1718,6 +1766,17 @@ void loop() {
   }
 
   const uint32_t now = millis();
+#if DUAL_CAN || UART_DUAL_CAN_MASTER
+  if (
+      live_relay_muted
+      && static_cast<int32_t>(now - live_mute_deadline_ms) >= 0) {
+    live_relay_muted = false;
+    live_mute_deadline_ms = 0;
+    emit_error(
+        "LIVE_MUTE_FAILSAFE",
+        "Live relay restored after diagnostic inactivity timeout");
+  }
+#endif
 #if UART_DUAL_CAN_MASTER
   if (satellite_connected && now - satellite_last_message_ms > 3000) {
     satellite_connected = false;

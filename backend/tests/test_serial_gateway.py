@@ -194,6 +194,51 @@ def test_gateway_records_stats_and_detects_sequence_gaps(monkeypatch):
     assert device.written[0] == b'{"type":"get_status"}\n'
 
 
+def test_uart_dual_gateway_tracks_main_and_satellite_sequences_per_bus():
+    transport = Esp32SerialTransport("/dev/fake", 921600)
+    transport.hello = {
+        "protocol": 7,
+        "driver": "twai+uart-twai",
+        "dual_can": True,
+        "sequence_scope": "bus",
+    }
+
+    for message in (
+        {"seq": 1525, "bus": "live"},
+        {"seq": 27, "bus": "diagnostic"},
+        {"seq": 1526, "bus": "live"},
+        {"seq": 28, "bus": "diagnostic"},
+    ):
+        transport._track_sequence(message)
+
+    assert transport.sequence_gap_count == 0
+
+
+def test_gateway_sends_live_mute_only_when_firmware_supports_it(monkeypatch):
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "diagnostic_can_ready": True,
+        "diagnostic_read_only": True,
+        "live_mute_supported": True,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport("/dev/fake", 921600, tx_enabled=True)
+    transport.open()
+
+    transport.set_live_mute(True)
+    transport.set_live_mute(False)
+
+    assert device.written[-2:] == [
+        b'{"type":"live_mute","enabled":true}\n',
+        b'{"type":"live_mute","enabled":false}\n',
+    ]
+
+
 def test_dual_gateway_decodes_buses_and_routes_diagnostic_tx(monkeypatch):
     from app.models import CanFrame
 

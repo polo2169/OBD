@@ -72,8 +72,8 @@ class SharedGatewayClient(Transport):
         self._hub.send(self, frame)
 
     @contextmanager
-    def diagnostic_transaction(self) -> Iterator[None]:
-        with self._hub.diagnostic_transaction():
+    def diagnostic_transaction(self, *, mute_live: bool = False) -> Iterator[None]:
+        with self._hub.diagnostic_transaction(mute_live=mute_live):
             # A client waiting behind another diagnostic session keeps receiving
             # its own copy of CAN traffic. Drop that stale backlog before the
             # next ISO-TP exchange so an old response cannot be mis-associated.
@@ -130,6 +130,7 @@ class SharedGatewayHub:
         self._lifecycle_lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._diagnostic_lock = threading.RLock()
+        self._live_mute_depth = 0
         self._stop = threading.Event()
         self._reader: threading.Thread | None = None
         self._reader_error: Exception | None = None
@@ -241,10 +242,44 @@ class SharedGatewayHub:
                     physical.safety_profile = previous_profile
 
     @contextmanager
-    def diagnostic_transaction(self) -> Iterator[None]:
-        """Serialize complete ISO-TP sessions on the shared physical bus."""
+    def diagnostic_transaction(self, *, mute_live: bool = False) -> Iterator[None]:
+        """Serialize complete ISO-TP sessions on the shared physical bus.
+
+        Also mutes the high-rate live bus relay for the outermost transaction:
+        it shares one serial/Wi-Fi link with the diagnostic bus, and its volume
+        can starve a multi-frame diagnostic response of the bandwidth it needs
+        to arrive within the ISO-TP consecutive-frame timeout. The lock is
+        reentrant, so only the outermost transaction toggles the mute.
+        """
         with self._diagnostic_lock:
-            yield
+            if mute_live:
+                self._live_mute_depth += 1
+                if self._live_mute_depth == 1:
+                    self._set_live_mute(True)
+            try:
+                yield
+            finally:
+                if mute_live:
+                    self._live_mute_depth -= 1
+                    if self._live_mute_depth == 0:
+                        self._set_live_mute(False)
+
+    def _set_live_mute(self, enabled: bool) -> None:
+        physical = self._physical
+        if physical is None:
+            return
+        try:
+            # Keep command bytes ordered with CAN TX commands even when a live
+            # capture and a diagnostic worker share the same gateway.
+            with self._send_lock:
+                physical.set_live_mute(enabled)
+        except Exception as exc:
+            self._broadcast_debug({
+                "type": "shared_transport_live_mute_failed",
+                "transport": self.name,
+                "enabled": enabled,
+                "error": str(exc),
+            })
 
     def _read_loop(self) -> None:
         physical = self._physical

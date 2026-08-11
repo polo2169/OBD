@@ -52,7 +52,9 @@ SECURITY_KEY_CANDIDATES: dict[str, list[dict[str, str]]] = {
         {"variant": "CIROCCO", "key_hex": "FAFA"},
         {"variant": "MATT", "key_hex": "ECEC"},
     ],
-    "abs_esp": [{"variant": "ESP81", "key_hex": "ABFB"}],
+    # Kept for catalog completeness only.  The T9 vehicle profile blocks ESP
+    # writes until one application key is independently proven on this ECU.
+    "abs_esp": [{"variant": "ESP90", "key_hex": "ABFB"}],
     "power_steering": [{"variant": "GEP", "key_hex": "4628"}],
     "gearbox": [
         {"variant": "EAT8", "key_hex": "4854"},
@@ -248,14 +250,31 @@ def advanced_catalog() -> dict:
     kb = KnowledgeBase()
     ecus = []
     for ecu in kb.ecus():
-        zones = kb.telecoding_zones_for_family(ecu.family)
+        zones = kb.telecoding_zones_for_family(ecu.family, ecu.telecoding_variant)
         variant_keys = []
         for variant in kb.telecoding_variants_for_family(ecu.family):
+            if ecu.telecoding_variant and variant["id"] != ecu.telecoding_variant:
+                continue
             if variant["request_id"] != ecu.request_id or variant["response_id"] != ecu.response_id:
                 continue
             for candidate in variant["security_keys"]:
                 if candidate not in variant_keys:
                     variant_keys.append(candidate)
+        zone_refs = [
+            {"did": zone_id, "name": zone.get("name", zone_id)}
+            for zone_id, zone in sorted(zones.items())
+        ]
+        known_zone_ids = {item["did"] for item in zone_refs}
+        did_definitions = kb.dids()
+        for did in ecu.identification_dids:
+            did_hex = f"{did:04X}"
+            if did_hex in known_zone_ids:
+                continue
+            definition = did_definitions.get(did, {})
+            zone_refs.append({
+                "did": did_hex,
+                "name": definition.get("name", f"Zone PSA 0x{did:04X}"),
+            })
         ecus.append({
             "key": ecu.key,
             "name": ecu.name,
@@ -264,11 +283,14 @@ def advanced_catalog() -> dict:
             "response_id": ecu.response_id,
             "protocol": ecu.protocol,
             "optional": ecu.optional,
-            "security_keys": variant_keys or SECURITY_KEY_CANDIDATES.get(ecu.key, []),
-            "telecoding_zones": [
-                {"did": zone_id, "name": zone.get("name", zone_id)}
-                for zone_id, zone in sorted(zones.items())
-            ][:12],
+            "telecoding_variant": ecu.telecoding_variant,
+            "telecoding_write_allowed": ecu.telecoding_write_allowed,
+            "security_keys": (
+                variant_keys or SECURITY_KEY_CANDIDATES.get(ecu.key, [])
+                if ecu.telecoding_write_allowed
+                else []
+            ),
+            "telecoding_zones": zone_refs[:12],
         })
     return {
         "enabled": settings.psa_advanced_enabled,
@@ -364,13 +386,14 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
             read_only=True,
             flow_control_id=ecu.flow_control_id,
             flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             response, value = read_data_by_identifier(session, did)
         printable = value.decode("ascii", errors="replace").strip("\x00 ")
         mostly_printable = bool(printable) and sum(character.isprintable() for character in printable) / len(printable) > 0.85
         telecoding = None
-        zone = kb.describe_telecoding_zone(ecu.family, did)
+        zone = kb.describe_telecoding_zone(ecu.family, did, ecu.telecoding_variant)
         if zone is not None:
             parameters = kb.decode_telecoding_parameters(zone, value)
             telecoding = TelecodingZoneInfo(
@@ -445,6 +468,9 @@ def unlock_configuration(ecu_key: str, request: PsaUnlockRequest) -> PsaUnlockRe
             timeout=settings.diagnostic_timeout,
             read_only=False,
             safety_policy=policy,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             session.request(bytes.fromhex("1003"))
             seed_hex, response_key, unlock_response = _unlock_security(session, request.application_key_hex)
@@ -505,6 +531,9 @@ def execute_named_action(action_key: str, request: PsaActionRequest) -> PsaActio
             timeout=settings.diagnostic_timeout,
             read_only=False,
             safety_policy=policy,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             session.request(bytes.fromhex("1003"))
             try:
@@ -570,6 +599,9 @@ def reset_ecu(ecu_key: str, request: EcuResetRequest) -> EcuResetResult:
             timeout=settings.diagnostic_timeout,
             read_only=False,
             safety_policy=policy,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             try:
@@ -656,6 +688,9 @@ def write_telecoding_parameter(ecu_key: str, request: TelecodingWriteRequest) ->
             timeout=settings.diagnostic_timeout,
             read_only=False,
             safety_policy=policy,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             session.request(bytes.fromhex("1003"))
             _unlock_security(session, request.application_key_hex)

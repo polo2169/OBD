@@ -466,6 +466,8 @@ export type PsaAdvancedEcu = {
   response_id?: number | null;
   protocol: string;
   optional: boolean;
+  telecoding_variant?: string | null;
+  telecoding_write_allowed: boolean;
   security_keys: PsaSecurityKey[];
   telecoding_zones: PsaTelecodingZoneRef[];
 };
@@ -1023,8 +1025,12 @@ export type ReplaySample = {
   obd_error?: boolean | null;
   mil_on?: boolean | null;
   mil_blinking?: boolean | null;
+  esp_acknowledged?: boolean | null;
   esp_fault_state?: number | null;
+  esp_intervention_state?: number | null;
   esp_intervention?: boolean | null;
+  tcs_intervention?: boolean | null;
+  esp_exclusive_intervention?: boolean | null;
   abs_intervention?: boolean | null;
   gearbox_fault?: boolean | null;
   generic_warning_requested?: boolean | null;
@@ -1038,6 +1044,7 @@ export type ReplaySample = {
   lane_departure?: number | null;
   lka_mode?: number | null;
   lka_active?: boolean | null;
+  lka_torque_command_raw?: number | null;
   lka_angle_setpoint_deg?: number | null;
   lka_torque_factor_raw?: number | null;
   acc_mode?: number | null;

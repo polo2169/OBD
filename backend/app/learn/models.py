@@ -378,8 +378,12 @@ class ReplaySample(BaseModel):
     obd_error: bool | None = None
     mil_on: bool | None = None
     mil_blinking: bool | None = None
+    esp_acknowledged: bool | None = None
     esp_fault_state: int | None = None
+    esp_intervention_state: int | None = None
     esp_intervention: bool | None = None
+    tcs_intervention: bool | None = None
+    esp_exclusive_intervention: bool | None = None
     abs_intervention: bool | None = None
     gearbox_fault: bool | None = None
     generic_warning_requested: bool | None = None
@@ -393,6 +397,7 @@ class ReplaySample(BaseModel):
     lane_departure: int | None = None
     lka_mode: int | None = None
     lka_active: bool | None = None
+    lka_torque_command_raw: int | None = None
     lka_angle_setpoint_deg: float | None = None
     lka_torque_factor_raw: float | None = None
     acc_mode: int | None = None

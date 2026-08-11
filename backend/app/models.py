@@ -32,6 +32,9 @@ class EcuDefinition(BaseModel):
     # allow a vehicle profile to override it per ECU.
     flow_control_id: int | None = None
     flow_control_blocksize: int = Field(default=8, ge=0, le=0xFF)
+    # ``None`` keeps outgoing ISO-TP frames at their natural DLC. The local
+    # Aisin EAT6 ignores a padded eight-byte Flow Control frame.
+    isotp_tx_padding: int | None = Field(default=0x00, ge=0, le=0xFF)
     protocol: str = "uds"
     confidence: str = "experimental"
     access: str = "read_only"
@@ -41,6 +44,15 @@ class EcuDefinition(BaseModel):
     source: str | None = None
     notes: list[str] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
+    # DIDs that only make sense for this ECU/variant.  They are appended to the
+    # vehicle-wide identification list during a scan instead of being sent to
+    # every ECU on the diagnostic bus.
+    identification_dids: list[int] = Field(default_factory=list)
+    # Exact PyPSADiag source file selected after vehicle identification.  This
+    # prevents similarly-addressed variants from being mixed in the UI.
+    telecoding_variant: str | None = None
+    # Reading and backing up zones remains available when writes are blocked.
+    telecoding_write_allowed: bool = True
     dtc_catalogs: list[str] = Field(default_factory=list)
     address_candidates: list[dict] = Field(default_factory=list)
     dtc_status_masks: list[int] = Field(default_factory=list)

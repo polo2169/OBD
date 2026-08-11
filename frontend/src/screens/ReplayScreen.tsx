@@ -462,7 +462,7 @@ export function ReplayScreen({
                 <div><span>GPS navigateur</span><strong>{replay.gps_available ? `${replay.gps_point_count} points` : "Absent"}</strong><small>Source privilégiée pour cette première version Fiat</small></div>
               </div>
             </> : <>
-              <div className="section-heading"><div><span className="eyebrow">Aides à la conduite</span><h2>Lecture ADAS</h2></div><span className="source-badge candidate">À confirmer</span></div>
+              <div className="section-heading"><div><span className="eyebrow">Aides à la conduite</span><h2>Lecture ADAS</h2></div><span className="source-badge measured">0x3F2 couple R2 observé</span></div>
               <div className={`lane-visual departure-${laneDeparture}`}>
                 <i className="lane-line left" /><i className="lane-line right" />
                 <span className="lane-car">▲</span>
@@ -488,8 +488,8 @@ export function ReplayScreen({
                       <small>LANE_DEPARTURE · alerte de ligne</small>
                     </div>
                     <div className={`lka-candidate-indicator${point.lka_active ? " active" : ""}`}>
-                      <span>Assistance réelle</span>
-                      <strong>{point.lka_active ? "Active" : "Inactive"}</strong>
+                      <span>État déclaré</span>
+                      <strong>{point.lka_active ? "Actif" : "Non actif"}</strong>
                       <small>Dérivée de STATUS = 4</small>
                     </div>
                     <div className="lka-candidate-indicator">
@@ -497,7 +497,12 @@ export function ReplayScreen({
                       <strong>{point.lka_mode === 0 ? "LKA" : point.lka_mode === 1 ? "LPA" : "—"}</strong>
                       <small>LXA_ACTIVATION · sélecteur, pas état actif</small>
                     </div>
-                    <div className={`lka-candidate-indicator${point.lka_active ? " active" : ""}`}>
+                    <div className={`lka-candidate-indicator${point.lka_torque_command_raw ? " active" : ""}`}>
+                      <span>Commande couple R2</span>
+                      <strong>{typeof point.lka_torque_command_raw === "number" ? `${point.lka_torque_command_raw > 0 ? "+" : ""}${point.lka_torque_command_raw} raw` : "—"}</strong>
+                      <small>0x3F2 · signé 11 bits · échelle physique inconnue</small>
+                    </div>
+                    <div className="lka-candidate-indicator">
                       <span>Consigne colonne</span>
                       <strong>{typeof point.lka_angle_setpoint_deg === "number" ? `${point.lka_angle_setpoint_deg.toFixed(1)}°` : "—"}</strong>
                       <small>SET_ANGLE · facteur {point.lka_torque_factor_raw ?? "—"}</small>
@@ -505,6 +510,7 @@ export function ReplayScreen({
                   </div>
                   <div className="lka-validation-footer">
                     <span>Franchissements enregistrés dans la session <strong>{laneDepartureEventCount}</strong></span>
+                    <span>API véhicule <strong>couple R2/EVO</strong> · angle observé nul</span>
                   </div>
                 </div>
                 <div className="cruise-validation-card">

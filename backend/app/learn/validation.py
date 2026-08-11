@@ -13,7 +13,7 @@ from app.learn.models import ReplayData, ReplayValidation, SignalValidation
 from app.learn.replay import prepare_replay
 
 
-VALIDATION_VERSION = 7
+VALIDATION_VERSION = 8
 
 LABELS = {
     "speed_kph": "Vitesse véhicule",
@@ -44,6 +44,7 @@ LABELS = {
     "steering_angle_deg": "Angle du volant",
     "steering_rate_deg_s": "Vitesse du volant",
     "driver_torque": "Effort conducteur",
+    "lka_torque_command_raw": "Commande de couple LKA brute",
     "accelerator_pct": "Pédale d’accélérateur",
     "accelerator_secondary_pct": "Pédale d’accélérateur (voie redondante)",
     "relative_accelerator_position_pct": "Position relative de l’accélérateur",
@@ -103,6 +104,7 @@ LABELS = {
 PLAUSIBLE_RANGES: dict[str, tuple[float, float]] = {
     "speed_kph": (0, 260),
     "engine_rpm": (0, 8_000),
+    "lka_torque_command_raw": (-1024, 1023),
     "engine_load_pct": (0, 100),
     "absolute_engine_load_pct": (0, 300),
     "fuel_pressure_kpa": (0, 765),

@@ -33,6 +33,7 @@ class UdsSession:
         tx_bus: Literal["default", "live", "diagnostic"] = "diagnostic",
         flow_control_id: int | None = None,
         flow_control_blocksize: int = 8,
+        tx_padding: int | None = 0x00,
     ) -> None:
         if (request_id > 0x7FF) != (response_id > 0x7FF):
             raise ValueError("Les identifiants ISO-TP doivent utiliser le même format CAN.")
@@ -53,13 +54,18 @@ class UdsSession:
         if not 0 <= flow_control_blocksize <= 0xFF:
             raise ValueError("La taille de bloc du contrôle de flux ISO-TP est hors plage.")
         self.flow_control_blocksize = flow_control_blocksize
+        if tx_padding is not None and not 0 <= tx_padding <= 0xFF:
+            raise ValueError("L'octet de remplissage ISO-TP est hors plage.")
+        self.tx_padding = tx_padding
         self.errors: list[str] = []
         self._client: Client | None = None
         self._connection: PythonIsoTpConnection | None = None
         self._transaction = None
 
     def __enter__(self) -> UdsSession:
-        transaction = self.transport.diagnostic_transaction()
+        transaction = self.transport.diagnostic_transaction(
+            mute_live=self.tx_bus == "diagnostic",
+        )
         transaction.__enter__()
         self._transaction = transaction
         try:
@@ -90,6 +96,7 @@ class UdsSession:
             tx_bus=self.tx_bus,
             flow_control_id=self.flow_control_id,
             flow_control_blocksize=self.flow_control_blocksize,
+            tx_padding=self.tx_padding,
         )
         stack = isotp.TransportLayer(
             rxfn=self._receive_can,
@@ -100,7 +107,7 @@ class UdsSession:
                 "blocking_send": True,
                 "blocksize": self.flow_control_blocksize,
                 "stmin": 0,
-                "tx_padding": 0x00,
+                "tx_padding": self.tx_padding,
                 "rx_flowcontrol_timeout": max(100, int(self.timeout * 1000)),
                 "rx_consecutive_frame_timeout": max(100, int(self.timeout * 1000)),
             },

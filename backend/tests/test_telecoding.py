@@ -24,6 +24,23 @@ def test_catalog_keeps_variants_separate_and_normalizes_structured_fields():
     assert telematics.status_code == 200
     assert {variant["id"] for variant in telematics.json()["variants"]} == {"IVI", "NAC", "RCC"}
 
+    esp = client.get("/api/diagnostic/psa/ecus/abs_esp/telecoding/catalog")
+    assert esp.status_code == 200
+    esp_variants = esp.json()["variants"]
+    assert [variant["id"] for variant in esp_variants] == ["ESP90"]
+    assert esp_variants[0]["write_supported"] is False
+    assert esp_variants[0]["security_keys"] == []
+    assert "écriture verrouillée" in esp.json()["warning"]
+
+
+def test_esp_profile_rejects_an_incompatible_mk100_schema():
+    response = client.post(
+        "/api/diagnostic/psa/ecus/abs_esp/telecoding/snapshots",
+        json={"variant_id": "ESPMK100_UDS", "did": 0x2101},
+    )
+    assert response.status_code == 422
+    assert "ESP90" in response.json()["detail"]
+
 
 def test_snapshot_preview_execute_and_backup_are_one_verified_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "session_dir", tmp_path / "sessions")

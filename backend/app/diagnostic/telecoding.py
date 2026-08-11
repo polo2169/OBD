@@ -87,6 +87,11 @@ def _active_vin() -> str | None:
 def _variant_and_zone(ecu_key: str, variant_id: str, did: int) -> tuple[object, dict, dict]:
     ecu = _find_ecu(ecu_key)
     kb = KnowledgeBase()
+    if ecu.telecoding_variant and variant_id != ecu.telecoding_variant:
+        raise ValueError(
+            f"La variante {variant_id} ne correspond pas à la variante identifiée "
+            f"sur ce véhicule ({ecu.telecoding_variant})."
+        )
     variant = kb.telecoding_variant(ecu.family, variant_id)
     if variant["request_id"] != ecu.request_id or variant["response_id"] != ecu.response_id:
         raise ValueError(
@@ -103,12 +108,20 @@ def telecoding_catalog(ecu_key: str) -> TelecodingCatalogResult:
     kb = KnowledgeBase()
     metadata = kb.pypsadiag_metadata()
     variants = kb.telecoding_variants_for_family(ecu.family)
+    if ecu.telecoding_variant:
+        variants = [item for item in variants if item["id"] == ecu.telecoding_variant]
     for variant in variants:
         address_matches = (
             variant["request_id"] == ecu.request_id
             and variant["response_id"] == ecu.response_id
         )
-        variant["write_supported"] = bool(variant["write_supported"] and address_matches)
+        variant["write_supported"] = bool(
+            variant["write_supported"]
+            and address_matches
+            and ecu.telecoding_write_allowed
+        )
+        if not ecu.telecoding_write_allowed:
+            variant["security_keys"] = []
     return TelecodingCatalogResult(
         ecu_key=ecu.key,
         ecu_name=ecu.name,
@@ -119,8 +132,12 @@ def telecoding_catalog(ecu_key: str) -> TelecodingCatalogResult:
         revision=metadata.get("revision"),
         license=metadata.get("license"),
         warning=(
-            "Données communautaires non validées sur ce VIN. La variante doit être confirmée "
-            "par l'identification du calculateur avant toute écriture."
+            f"Variante {ecu.telecoding_variant} confirmée par les lectures du véhicule. "
+            "Lecture et sauvegarde autorisées ; écriture verrouillée tant que la clé "
+            "application exacte de cet ESP n'est pas prouvée."
+            if ecu.telecoding_variant and not ecu.telecoding_write_allowed
+            else "Données communautaires non validées sur ce VIN. La variante doit être confirmée "
+                 "par l'identification du calculateur avant toute écriture."
         ),
         variants=variants,
     )
@@ -167,6 +184,9 @@ def create_telecoding_snapshot(ecu_key: str, request: TelecodingSnapshotRequest)
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=True,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             _, raw = read_data_by_identifier(session, request.did)
@@ -238,7 +258,6 @@ def _preview_payload(snapshot: dict, request: TelecodingPreviewRequest) -> Telec
     ecu, variant, zone = _variant_and_zone(
         snapshot["ecu_key"], snapshot["variant_id"], int(snapshot["did"])
     )
-    del ecu
     if request.snapshot_id != snapshot["snapshot_id"]:
         raise ValueError("La demande ne correspond pas à la sauvegarde chargée.")
     if len({change.field_key for change in request.changes}) != len(request.changes):
@@ -295,6 +314,11 @@ def _preview_payload(snapshot: dict, request: TelecodingPreviewRequest) -> Telec
     after = bytes(patched)
     changed_indexes = [index for index, pair in enumerate(zip(before, after)) if pair[0] != pair[1]]
     blockers: list[str] = []
+    if not ecu.telecoding_write_allowed:
+        blockers.append(
+            "L'écriture est verrouillée pour ce calculateur dans le profil véhicule ; "
+            "lecture et sauvegarde uniquement."
+        )
     if not variant["write_supported"]:
         blockers.append("La variante ou son protocole ne permet pas l'écriture UDS contrôlée.")
     if not zone["writable"]:
@@ -348,6 +372,11 @@ def execute_telecoding(request: TelecodingExecuteRequest) -> TelecodingExecuteRe
     ecu, variant, zone = _variant_and_zone(
         snapshot["ecu_key"], snapshot["variant_id"], int(snapshot["did"])
     )
+    if not ecu.telecoding_write_allowed:
+        raise PermissionError(
+            "Écriture interdite pour ce calculateur dans le profil véhicule ; "
+            "la clé application exacte n'est pas confirmée."
+        )
     expected_confirmation = f"TELECODER {ecu.key.upper()} {snapshot['did_hex']}"
     _require_lab_preconditions(
         ecu.key,
@@ -384,6 +413,9 @@ def execute_telecoding(request: TelecodingExecuteRequest) -> TelecodingExecuteRe
             timeout=settings.diagnostic_timeout,
             read_only=False,
             safety_policy=policy,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
+            tx_padding=ecu.isotp_tx_padding,
         ) as session:
             enter_extended_session(session)
             _unlock_security(session, request.application_key_hex.upper())

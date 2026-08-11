@@ -94,8 +94,17 @@ export function EcuLiveScreen({
     const activeReport = ecuLiveReport?.key === ecuKey ? ecuLiveReport : null;
     const ecuInfo = activeReport ?? scannedEcu;
     const ecuDtcs = ecuInfo?.dtcs ?? [];
+    const actionableDtcs = ecuDtcs.filter((item) => item.actionable);
+    const notTestedDtcs = ecuDtcs.filter((item) => item.state === "not_tested");
     const identification = ecuInfo?.identification ?? [];
     const sparePartNumber = identification.find((item) => item.did === 0xF187 && !item.error);
+    const psaZa = identification.find((item) => item.did === 0xF080 && !item.error);
+    const psaZaRaw = String(psaZa?.raw_hex ?? "").replace(/[^0-9A-F]/gi, "").toUpperCase();
+    const observedPsaReferences = ecuKey === "abs_esp" && psaZaRaw.length >= 24
+      ? [psaZaRaw.slice(0, 10), psaZaRaw.slice(14, 24)].filter(
+        (value, index, values) => value.length === 10 && !/^F+$/.test(value) && values.indexOf(value) === index,
+      )
+      : [];
     const liveSignals = (passiveSensors?.signals ?? []).filter(
       (signal) => psaEcuInfo?.family && signal.ecu_family === psaEcuInfo.family,
     );
@@ -118,7 +127,7 @@ export function EcuLiveScreen({
             <span className={`status-pill ${ecuInfo?.detected ? "good" : "neutral"}`}><i /> {ecuInfo?.detected ? (activeReport ? "Détecté · lecture directe" : "Détecté au dernier scan") : "Statut inconnu"}</span>
           </div>
           <div className="diagnostic-preflight">
-            <div><span>Famille</span><strong>{psaEcuInfo?.family ?? "—"}</strong></div>
+            <div><span>Famille / variante</span><strong>{psaEcuInfo?.family ?? "—"}{psaEcuInfo?.telecoding_variant ? ` · ${psaEcuInfo.telecoding_variant}` : ""}</strong></div>
             <div><span>Adressage diagnostic</span><strong>{psaEcuInfo?.request_id ? `0x${psaEcuInfo.request_id.toString(16).toUpperCase()} → 0x${psaEcuInfo.response_id?.toString(16).toUpperCase()}` : "Non documenté"}</strong></div>
             <div><span>Zones UDS connues</span><strong>{zones.length || "—"}</strong></div>
             <div><span>Surveillance UDS</span><strong>{watchReady ? "Active" : psaVehicleCompatible ? "En attente" : "Indisponible (non PSA)"}</strong></div>
@@ -130,7 +139,7 @@ export function EcuLiveScreen({
           <article><span>Signaux CAN attribués</span><strong>{liveSignals.length}</strong><small>Décodage OpenDBC, catégorisé par calculateur</small></article>
           <article><span>Zones UDS surveillées</span><strong>{zones.length}</strong><small>Catalogue PyPSADiag connu pour {psaEcuInfo?.family ?? "cette famille"}</small></article>
           <article><span>Valeurs UDS reçues</span><strong>{Object.keys(ecuWatchValues).length}</strong><small>Depuis l’ouverture de cette page</small></article>
-          <article><span>Défauts</span><strong>{ecuDtcs.length}</strong><small>{activeReport ? "Lecture directe" : "Dernier inventaire ECU"}</small></article>
+          <article><span>Défauts à traiter</span><strong>{actionableDtcs.length}</strong><small>{ecuDtcs.length} entrée(s) mémoire · {notTestedDtcs.length} test(s) non exécuté(s)</small></article>
         </section>
 
         <section className="panel">
@@ -147,6 +156,13 @@ export function EcuLiveScreen({
               <div><span>Référence pièce constructeur</span><strong>{String(sparePartNumber.value)}</strong></div>
               <code>DID 0xF187</code>
               <small>À communiquer telle quelle à un vendeur de pièces PSA pour l’échange standard.</small>
+            </div>
+          )}
+          {observedPsaReferences.length > 0 && (
+            <div className="psa-zone-result">
+              <div><span>Références PSA extraites de la zone ZA</span><strong>{observedPsaReferences.join(" · ")}</strong></div>
+              <code>F080 · {psaEcuInfo?.telecoding_variant ?? ecuInfo?.aliases.find((item) => item === "ESP90") ?? "variante à confirmer"}</code>
+              <small>Pour cet ESP : Bosch ESP 9.0 / ESP90 identifié sur le véhicule. La valeur brute reste conservée ci-dessous.</small>
             </div>
           )}
           {identification.length > 0 ? (
@@ -199,7 +215,7 @@ export function EcuLiveScreen({
             <div>
               <span className="eyebrow">UDS 0x22 · zones connues</span>
               <h2>Surveillance des zones</h2>
-              <p>{zones.length ? `Interroge en boucle (1 zone toutes les 1,2 s) les ${zones.length} zone(s) documentée(s) pour ${psaEcuInfo?.family ?? "ce calculateur"} chez PyPSADiag.` : "Aucune zone UDS documentée pour cette famille de calculateur — seul le balayage manuel ci-dessous peut en découvrir."}</p>
+              <p>{zones.length ? `Interroge en boucle (1 zone toutes les 1,2 s) les ${zones.length} zone(s) documentée(s) ou confirmée(s) sur ce véhicule pour ${psaEcuInfo?.telecoding_variant ?? psaEcuInfo?.family ?? "ce calculateur"}.` : "Aucune zone UDS documentée pour cette famille de calculateur — seul le balayage manuel ci-dessous peut en découvrir."}</p>
             </div>
           </div>
           {zones.length > 0 && (
@@ -217,7 +233,9 @@ export function EcuLiveScreen({
               })}
             </div>
           )}
-          <p className="inline-alert">Aucune zone connue ci-dessus ne contient de mesure analogique (température, tension) — le télécodage PyPSADiag ne documente que des drapeaux de configuration. Un balayage large peut révéler un DID non documenté dont la valeur brute varie de façon plausible (ex. octet qui évolue avec la chaleur moteur) ; ce serait alors un candidat à confirmer manuellement, pas une valeur validée.</p>
+          <p className="inline-alert">{ecuKey === "abs_esp"
+            ? "Ces zones sont des données de configuration, pas des mesures analogiques. Pour l’ESP90, 0x2100 et 0x2101 sont décodables via PyPSADiag; 0x2102 et 0x2103 sont confirmées en lecture mais leur sens détaillé reste inconnu. L’écriture ESP demeure verrouillée tant que la clé application exacte n’est pas prouvée."
+            : "Aucune zone connue ci-dessus ne doit être interprétée comme une mesure analogique sans définition explicite. Une réponse brute reste un candidat à confirmer, pas une valeur physique validée."}</p>
           <div className="did-sweep-form">
             <label>Début<input value={didSweepStart} onChange={(event) => setDidSweepStart(event.target.value)} placeholder="0000" /></label>
             <label>Fin<input value={didSweepEnd} onChange={(event) => setDidSweepEnd(event.target.value)} placeholder="01FF" /></label>

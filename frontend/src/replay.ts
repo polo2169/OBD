@@ -160,8 +160,8 @@ export const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "high_beam", label: "Feux de route", color: "blue", icon: "high-beam", fields: ["high_beam"], note: "État des feux de route." },
   { key: "parking_brake", label: "Frein de stationnement", color: "red", icon: "parking", fields: ["parking_brake"], note: "0x412 octet 0 masque 0x08, source-confirmé; état actif non encore observé localement." },
   { key: "brake_fault", label: "Défaut freinage", color: "red", icon: "brake", fields: ["brake_fault"], note: "Demande de témoin de défaut du frein principal." },
-  { key: "abs", label: "ABS", color: "amber", icon: "abs", fields: ["abs_intervention"], note: "La capture expose l'intervention ABS, pas un défaut ABS confirmé." },
-  { key: "esp", label: "ESP / antipatinage", color: "amber", icon: "esp", fields: ["esp_fault_state", "esp_intervention"], note: "Défaut ou intervention ESP selon les états CAN candidats." },
+  { key: "abs", label: "ABS", color: "amber", icon: "abs", fields: ["abs_intervention"], note: "Bit d'intervention présent mais jamais actif dans 95 515 trames locales; ce n'est pas un défaut ABS." },
+  { key: "esp", label: "ESP / antipatinage", color: "amber", icon: "esp", fields: ["esp_fault_state", "esp_intervention_state", "esp_intervention", "tcs_intervention", "esp_exclusive_intervention"], note: "États ESP90 passifs. Les bits actifs sont documentés mais n'ont pas encore été déclenchés pendant les captures." },
   { key: "oil_pressure", label: "Contacteur d'huile", color: "red", icon: "oil", fields: ["oil_pressure_switch"], note: "Contacteur logique brut; aucune pression en bar n'est disponible." },
   { key: "coolant", label: "Température moteur", color: "red", icon: "coolant", fields: ["coolant_temperature_c"], note: "Alerte visuelle estimée à partir de la température mesurée." },
   { key: "battery", label: "Charge batterie", color: "red", icon: "battery", fields: ["battery_voltage_v", "engine_rpm"], note: "Alerte estimée si la tension est basse moteur tournant." },
@@ -478,8 +478,12 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
     obd_error: logical("Dyn2_CMM.P343_Com_bOBDErr"),
     mil_on: logical("Dyn2_CMM.P344_Com_bMILOn"),
     mil_blinking: logical("Dyn2_CMM.P345_Com_bMILBln"),
+    esp_acknowledged: logical("Dyn2_CMM.P026_Com_bESPAck"),
     esp_fault_state: integer("Dyn2_CMM.P025_Com_stESPErr"),
+    esp_intervention_state: integer("Dyn_CDS.P047_Com_stESPIntv"),
     esp_intervention: logical("Dyn_CDS.P147_Com_bESPIntvActv"),
+    tcs_intervention: logical("Dyn_CDS.P352_StbIntv_bTCSIntvActv"),
+    esp_exclusive_intervention: logical("Dyn_CDS.P353_StbIntv_bESPExclvIntvActv"),
     abs_intervention: logical("Dat_ABR.P351_Com_bABSIntvActv"),
     gearbox_fault: logical("Dyn_STT_BV.P444_Com_bGbxSysFaultRaw"),
     generic_warning_requested: logical("HS2_DYN_ABR_38D.REQ_LAMPE_WARNING"),
@@ -493,6 +497,7 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
     lane_departure: integer("LANE_KEEP_ASSIST.LANE_DEPARTURE"),
     lka_mode: integer("LANE_KEEP_ASSIST.LXA_ACTIVATION"),
     lka_active: integer("LANE_KEEP_ASSIST.STATUS") === null ? null : integer("LANE_KEEP_ASSIST.STATUS") === 4,
+    lka_torque_command_raw: integer("LANE_KEEP_ASSIST.TORQUE"),
     lka_angle_setpoint_deg: numeric("LANE_KEEP_ASSIST.SET_ANGLE"),
     lka_torque_factor_raw: numeric("LANE_KEEP_ASSIST.TORQUE_FACTOR"),
     acc_mode: integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE"),
@@ -586,11 +591,27 @@ export function replayIndicatorState(
     case "brake_fault":
       return { available, active: Boolean(point.brake_fault), detail: point.brake_fault ? "Défaut demandé" : "Aucun défaut demandé" };
     case "abs":
-      return { available, active: Boolean(point.abs_intervention), detail: point.abs_intervention ? "Intervention détectée" : "Pas d'intervention" };
+      return { available, active: Boolean(point.abs_intervention), detail: point.abs_intervention ? "Intervention ABS détectée" : "Disponible · aucune intervention observée" };
     case "esp": {
       const fault = (point.esp_fault_state ?? 0) !== 0;
-      const active = fault || Boolean(point.esp_intervention);
-      return { available, active, detail: fault ? `Défaut brut ${point.esp_fault_state}` : point.esp_intervention ? "Intervention détectée" : "Veille" };
+      const corrections = [
+        point.esp_intervention ? "ESP" : "",
+        point.tcs_intervention ? "TCS" : "",
+        point.esp_exclusive_intervention ? "ESP exclusif" : "",
+      ].filter(Boolean);
+      const active = fault || corrections.length > 0;
+      const rawState = point.esp_intervention_state;
+      return {
+        available,
+        active,
+        detail: fault
+          ? `Défaut brut ${point.esp_fault_state}`
+          : corrections.length
+            ? `Correction active : ${corrections.join(" + ")}`
+            : typeof rawState === "number" && rawState !== 0
+              ? `État brut ${rawState} · sens à confirmer`
+              : "ESP90 en veille · aucune correction",
+      };
     }
     case "oil_pressure":
       return { available, active: Boolean(point.oil_pressure_switch), detail: point.oil_pressure_switch ? "Contacteur actif" : "Contacteur inactif" };

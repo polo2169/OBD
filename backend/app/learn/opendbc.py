@@ -22,8 +22,8 @@ from app.learn.models import (
 DBC_FILENAME = "psa_aee2010_r3.dbc"
 DEFAULT_SOURCE_URL = "https://github.com/commaai/opendbc"
 DEFAULT_COMPATIBILITY = (
-    "Base PSA AEE2010 R3 externe, port amont Peugeot 208 2019-2025 ; "
-    "non validée pour Peugeot 308 T9 2018"
+    "Catalogue PSA AEE2010 R3 externe utilisé pour comparaison passive ; "
+    "les captures de la Peugeot 308 T9 2018 indiquent une variante R2/EVO à commande de couple"
 )
 
 

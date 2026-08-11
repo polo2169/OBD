@@ -599,7 +599,7 @@ def analyze_behavior(
     ]
     if opendbc_info.loaded:
         warnings.append(
-            "Les libellés opendbc proviennent d'une base PSA externe non validée pour la 308 T9 2018."
+            "Le DBC AEE2010 R3 est un catalogue externe de comparaison, pas l'identification de cette 308 T9 ; les captures 0x3F2 indiquent une variante R2/EVO à commande de couple."
         )
     elif opendbc_info.enabled:
         warnings.append(opendbc_info.error or "La base opendbc n'a pas pu être chargée.")

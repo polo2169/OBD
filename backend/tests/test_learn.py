@@ -159,6 +159,74 @@ def test_vehicle_dbc_contains_validated_body_and_seatbelt_layouts():
     assert str(driver_seatbelt.choices[2]) == "Latched"
 
 
+def test_vehicle_dbc_contains_signed_r2_lane_keep_torque_layout():
+    dbc_path = Path(__file__).parents[2] / "database/psa/dbc/peugeot_308_t9_2018.dbc"
+    database = cantools.database.load_file(dbc_path, strict=True)
+    lane_keep = database.get_message_by_frame_id(0x3F2)
+    torque = lane_keep.get_signal_by_name("LKATorqueCommandRaw")
+
+    assert (torque.start, torque.length, torque.is_signed) == (31, 11, True)
+    decoded = lane_keep.decode(bytes.fromhex("000012FFCC000000"), decode_choices=False)
+    assert decoded["LKATorqueCommandRaw"] == -2
+    assert decoded["LKAState"] == 3
+    assert decoded["LKAUnknownByte2Raw"] == 0x12
+    assert decoded["ColumnAngleSetpointDeg"] == 0
+
+
+def test_opendbc_replay_exposes_signed_r2_lane_keep_torque():
+    decoder = get_opendbc_decoder()
+    raw = bytes.fromhex("000012FFCC000000")
+    message, values, error = decoder.decode_frame(0x3F2, False, raw)
+
+    assert error is None
+    assert message is not None
+    assert values is not None
+    state: dict = {}
+    _update_state(message.name, values, state, raw)
+
+    assert state["lka_torque_command_raw"] == -2
+    assert state["lane_assist_status"] == 3
+    assert state["lka_angle_setpoint_deg"] == 0
+
+
+def test_opendbc_replay_exposes_complete_esp_and_abs_states_without_inference():
+    decoder = get_opendbc_decoder()
+
+    esp_raw = bytes.fromhex("4723FACF300014FE")
+    message, values, error = decoder.decode_frame(0x34D, False, esp_raw)
+    assert error is None
+    assert message is not None
+    assert values is not None
+    state: dict = {}
+    _update_state(message.name, values, state, esp_raw)
+    assert state["esp_intervention_state"] == 7
+    assert state["esp_intervention"] is True
+    assert state["tcs_intervention"] is True
+    assert state["esp_exclusive_intervention"] is True
+
+    abs_raw = bytes.fromhex("20000000000000")
+    message, values, error = decoder.decode_frame(0x50D, False, abs_raw)
+    assert error is None
+    assert message is not None
+    assert values is not None
+    _update_state(message.name, values, state, abs_raw)
+    assert state["abs_intervention"] is True
+
+
+def test_vehicle_dbc_contains_esp90_intervention_candidates():
+    dbc_path = Path(__file__).parents[2] / "database/psa/dbc/peugeot_308_t9_2018.dbc"
+    database = cantools.database.load_file(dbc_path, strict=True)
+
+    esp = database.get_message_by_frame_id(0x34D)
+    assert (esp.get_signal_by_name("ESPInterventionStateRaw").start, esp.get_signal_by_name("ESPInterventionStateRaw").length) == (0, 3)
+    assert esp.get_signal_by_name("ESPInterventionActiveCandidate").start == 6
+    assert esp.get_signal_by_name("TCSInterventionActiveCandidate").start == 50
+    assert esp.get_signal_by_name("ESPExclusiveInterventionActiveCandidate").start == 52
+
+    abs_state = database.get_message_by_frame_id(0x50D)
+    assert abs_state.get_signal_by_name("ABSInterventionActiveCandidate").start == 5
+
+
 def test_driver_seatbelt_572_replays_dedicated_vehicle_toggle_sequence():
     # learn-20260805T154951Z-57acfc99: arrêt, porte conducteur fermée,
     # frein de stationnement constant; boucle 2→1→2→1→2.
@@ -226,7 +294,7 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
             (0x452, payload(0x452, TURN_SIGNAL_STATUS=turn_signal)),
             (0x612, payload(0x612, ETAT_FEUX_CROIST=1, DEF_FEU_CROISMNT_D=0, DEF_FEU_CROISMNT_G=0, DEF_FEU_ROUTE_D=0, DEF_FEU_ROUTE_G=0)),
             (0x412, payload(0x412, P013_MainBrake=brake, P040_MainBrakeFault=0, P012_Com_bFlMin=1 if index >= 3 else 0, P086_Com_stFlLvlDia=0)),
-            (0x3F2, payload(0x3F2, STATUS=2, LXA_ACTIVATION=1, SET_ANGLE=12.3, TORQUE_FACTOR=50)),
+            (0x3F2, payload(0x3F2, STATUS=2, LXA_ACTIVATION=1, TORQUE=-12, SET_ANGLE=12.3, TORQUE_FACTOR=50)),
             (0x488, payload(0x488, P005_CEngDst_tSens=88, P011_Oil_tSwmp=90, P158_Air_tAFS=32)),
             (0x50D, payload(0x50D, P351_Com_bABSIntvActv=1 if index == 3 else 0)),
             (0x572, payload(0x572, DRIVER_SEATBELT=2, PASSENGER_SEATBELT=1)),
@@ -286,6 +354,7 @@ def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypat
     assert replay.points[-1].lane_assist_status == 2
     assert replay.points[-1].lka_mode == 1
     assert replay.points[-1].lka_active is False
+    assert replay.points[-1].lka_torque_command_raw == -12
     assert replay.points[-1].lka_angle_setpoint_deg == 12.3
     assert replay.points[-1].lka_torque_factor_raw == 50
     assert replay.points[-1].lateral_accel_ms2 == 1.25

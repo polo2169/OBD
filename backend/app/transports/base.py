@@ -82,13 +82,24 @@ class Transport(ABC):
             pass
 
     @contextmanager
-    def diagnostic_transaction(self) -> Iterator[None]:
+    def diagnostic_transaction(self, *, mute_live: bool = False) -> Iterator[None]:
         """Reserve the diagnostic request/response channel for one ISO-TP session.
 
         Dedicated transports do not need additional arbitration. Shared gateways
         override this hook so two clients cannot consume each other's replies.
+        ``mute_live`` is only requested for exchanges on the dedicated diagnostic
+        bus; an OBD session running on the live bus must keep its own replies.
         """
+        del mute_live
         yield
+
+    def set_live_mute(self, enabled: bool) -> None:
+        """Suppress the high-rate live bus relay during a diagnostic exchange.
+
+        Only meaningful for dual-CAN ESP32 gateways sharing one serial/Wi-Fi
+        link between live and diagnostic traffic; a no-op everywhere else.
+        """
+        return
 
     @abstractmethod
     def open(self) -> None:

@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 33
+CACHE_VERSION = 35
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -154,9 +154,13 @@ FIELD_QUALITY = {
     "obd_error": "opendbc_candidate",
     "mil_on": "opendbc_candidate",
     "mil_blinking": "opendbc_candidate",
-    "esp_fault_state": "opendbc_candidate",
-    "esp_intervention": "opendbc_candidate",
-    "abs_intervention": "opendbc_candidate",
+    "esp_acknowledged": "source_confirmed_constant_on_vehicle",
+    "esp_fault_state": "source_confirmed_no_fault_transition_observed",
+    "esp_intervention_state": "vehicle_observed_raw_state_semantics_unknown",
+    "esp_intervention": "source_confirmed_active_state_not_observed",
+    "tcs_intervention": "source_confirmed_active_state_not_observed",
+    "esp_exclusive_intervention": "source_confirmed_active_state_not_observed",
+    "abs_intervention": "source_confirmed_active_state_not_observed",
     "gearbox_fault": "opendbc_candidate",
     "generic_warning_requested": "opendbc_candidate",
     "brake_fault": "opendbc_candidate",
@@ -169,6 +173,7 @@ FIELD_QUALITY = {
     "lane_departure": "opendbc_candidate",
     "lka_mode": "opendbc_candidate",
     "lka_active": "derived_from_lane_assist_status_4",
+    "lka_torque_command_raw": "vehicle_observed_candidate",
     "lka_angle_setpoint_deg": "opendbc_candidate_inactive_on_local_vehicle",
     "lka_torque_factor_raw": "opendbc_candidate_scale_not_vehicle_validated",
     "acc_mode": "opendbc_candidate",
@@ -310,6 +315,7 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["current_gear"] = int(current_gear) if current_gear is not None and 0 <= current_gear <= 9 else None
         esp_fault = _number(values, "P025_Com_stESPErr")
         state["esp_fault_state"] = int(esp_fault) if esp_fault is not None else None
+        state["esp_acknowledged"] = _boolean(values, "P026_Com_bESPAck")
         state["obd_error"] = _boolean(values, "P343_Com_bOBDErr")
         state["mil_on"] = _boolean(values, "P344_Com_bMILOn")
         state["mil_blinking"] = _boolean(values, "P345_Com_bMILBln")
@@ -320,7 +326,14 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         drivetrain_state = _number(values, "P030_Gbx_stDrvTrnEgd")
         state["drivetrain_engaged_state"] = int(drivetrain_state) if drivetrain_state is not None else None
     elif message == "Dyn_CDS":
+        esp_state = _number(values, "P047_Com_stESPIntv")
+        state["esp_intervention_state"] = int(esp_state) if esp_state is not None else None
         state["esp_intervention"] = _boolean(values, "P147_Com_bESPIntvActv")
+        state["tcs_intervention"] = _boolean(values, "P352_StbIntv_bTCSIntvActv")
+        state["esp_exclusive_intervention"] = _boolean(
+            values,
+            "P353_StbIntv_bESPExclvIntvActv",
+        )
     elif message == "Dyn_STT_BV":
         state["gearbox_fault"] = _boolean(values, "P444_Com_bGbxSysFaultRaw")
     elif message == "Dyn5_CMM":
@@ -440,6 +453,8 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         # signifie pas que l'assistance braque. L'état actif est STATUS == 4.
         state["lka_mode"] = int(mode) if mode is not None else None
         state["lka_active"] = int(status) == 4 if status is not None else None
+        torque = _number(values, "TORQUE")
+        state["lka_torque_command_raw"] = int(torque) if torque is not None else None
         state["lka_angle_setpoint_deg"] = _number(values, "SET_ANGLE")
         state["lka_torque_factor_raw"] = _number(values, "TORQUE_FACTOR")
     elif message == "DRIVER" and state.get("accelerator_pct") is None:
@@ -1519,7 +1534,8 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         ]
     else:
         warnings[:0] = [
-            "À l'exception de la direction validée sur ce véhicule, les libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
+            "Le DBC AEE2010 R3 est conservé comme catalogue externe de comparaison ; les captures 0x3F2 de cette 308 indiquent une variante R2/EVO à commande de couple.",
+            "Le couple signé 0x3F2 est observé sur le véhicule ; les autres libellés OpenDBC restent des candidats à confirmer sur Peugeot 308 T9.",
             "La pression d'huile disponible est un contacteur logique, pas une mesure en bar.",
         ]
     if route_method == "driver_confirmed_osrm":

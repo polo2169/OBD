@@ -1,3 +1,31 @@
+"0x2100":
+  name: PSA configuration group data list
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only
+
+"0x2101":
+  name: PSA configuration group data values
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only
+
+"0x2102":
+  name: PSA auxiliary configuration zone 0x2102
+  codec: bytes
+  source: vehicle_read_2026-08-11
+  confidence: vehicle_confirmed_raw_semantics_unknown
+  access: read_only
+
+"0x2103":
+  name: PSA auxiliary configuration zone 0x2103
+  codec: bytes
+  source: vehicle_read_2026-08-11
+  confidence: vehicle_confirmed_raw_semantics_unknown
+  access: read_only
+
 "0xF080":
   name: PSA ZA identification zone
   codec: bytes
