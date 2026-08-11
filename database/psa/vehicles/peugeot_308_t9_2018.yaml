@@ -105,17 +105,27 @@ diagnostic:
       - 0x4A
       - 0x5C
   identification_dids:
+    # Zones d'identification PSA utilisées par PyPSADiag :
+    # ZA = références équipement/type, ZI = fournisseur/système/calibration.
+    - 0xF080
+    - 0xF0FE
     - 0xF180
     - 0xF181
     - 0xF186
     - 0xF187
     - 0xF188
     - 0xF189
+    - 0xF18A
+    - 0xF18B
     - 0xF18C
+    - 0xF18E
     - 0xF190
     - 0xF191
+    - 0xF192
+    - 0xF193
     - 0xF194
     - 0xF195
+    - 0xF197
   vin_strategies:
     - key: psa_bsi_f190
       label: BSI Peugeot · DID F190
@@ -213,6 +223,9 @@ ecus:
     family: BOITEVIT
     request_id: 0x6A9
     response_id: 0x689
+    # Cette EAT6 répond aux lectures longues, mais s'arrête après la
+    # première trame avec FC 30 08 00. FC 30 00 00 autorise tout le bloc.
+    flow_control_blocksize: 0
     protocol: uds
     confidence: community_family_catalog
     access: read_only

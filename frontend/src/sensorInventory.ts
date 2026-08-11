@@ -96,7 +96,9 @@ export const vehicleSensorCandidates: VehicleSensorCandidate[] = [
 
   { id: "can-turn-signals", label: "Clignotants", system: "Habitacle", description: "Commande gauche, droite et feux de détresse.", source: "can", liveFields: ["turn_signal"], priority: 1 },
   { id: "can-headlamps", label: "Feux de croisement et route", system: "Habitacle", description: "États d'éclairage avant.", source: "can", liveFields: ["low_beam", "high_beam"], priority: 1 },
-  { id: "can-front-doors", label: "Portes avant", system: "Habitacle", description: "Ouverture conducteur et passager.", source: "can", liveFields: ["driver_door", "passenger_door"], priority: 1 },
+  { id: "can-front-doors", label: "Portes avant", system: "Habitacle", description: "Conducteur validé sur 0x412 octet 6 masque 0x08; état passager issu de la même trame.", source: "can", liveFields: ["driver_door", "passenger_door"], priority: 1 },
+  { id: "can-parking-brake", label: "Frein de stationnement", system: "Habitacle", description: "0x412 octet 0 masque 0x08; définition amont confirmée, état actif non encore observé localement.", source: "can", liveFields: ["parking_brake"], priority: 1 },
+  { id: "can-driver-seatbelt", label: "Ceinture conducteur", system: "Habitacle", description: "0x572 octet 0 bits 7-6 : 1 débouclée, 2 bouclée, validé par bascules répétées à l'arrêt.", source: "can", liveFields: ["driver_seatbelt_state"], priority: 1 },
   { id: "can-wipers", label: "Essuie-glace avant", system: "Habitacle", description: "État de commande de l'essuie-glace.", source: "can", liveFields: ["front_wiper_status"], priority: 2 },
   { id: "psa-rear-doors", label: "Portes arrière", system: "Habitacle", description: "Ouverture arrière gauche et droite.", source: "psa", priority: 2 },
   { id: "psa-tailgate", label: "Coffre / hayon", system: "Habitacle", description: "État d'ouverture et de verrouillage.", source: "psa", priority: 2 },
@@ -116,6 +118,7 @@ export const vehicleSensorCandidates: VehicleSensorCandidate[] = [
   { id: "psa-flaps", label: "Position des volets de climatisation", system: "Climatisation", description: "Mixage, distribution et recyclage.", source: "psa", priority: 3 },
 
   { id: "can-lane-assist", label: "Maintien dans la voie", system: "ADAS / stationnement", description: "État, mode LKA/LPA, consigne d'angle et alerte de franchissement.", source: "can", liveFields: ["lka_active", "lka_mode", "lka_angle_setpoint_deg", "lka_torque_factor_raw", "lane_departure", "lane_assist_status"], optional: true, priority: 1 },
+  { id: "can-cruise-stalk", label: "Commodo régulateur", system: "ADAS / stationnement", description: "ON, SET+, SET−, RESUME et CANCEL reconstruits depuis 0x50E et 0x208.", source: "can", liveFields: ["cruise_mode_raw", "cruise_on", "cruise_activation_request", "cruise_button_event", "cruise_setpoint_kph"], optional: true, priority: 1 },
   { id: "can-acc", label: "Régulation adaptative", system: "ADAS / stationnement", description: "Mode ACC, activation et consigne de vitesse.", source: "can", liveFields: ["acc_mode", "acc_requested", "speed_setpoint_kph"], optional: true, priority: 1 },
   { id: "psa-radar-target", label: "Cible radar principale", system: "ADAS / stationnement", description: "Distance, vitesse relative et angle de la cible.", source: "psa", optional: true, priority: 1 },
   { id: "psa-lane-model", label: "Modèle détaillé des lignes", system: "ADAS / stationnement", description: "Courbure, position et qualité des lignes gauche/droite.", source: "psa", optional: true, priority: 2 },

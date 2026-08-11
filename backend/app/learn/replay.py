@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 30
+CACHE_VERSION = 33
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -100,6 +100,8 @@ STATE_FIELDS = tuple(
         "cruise_detection_reason",
         "cruise_switch_candidate",
         "cruise_active_candidate",
+        "cruise_button_event",
+        "cruise_button_event_source",
         "cruise_setpoint_direction",
         "cruise_setpoint_step_kph",
     }
@@ -131,8 +133,8 @@ FIELD_QUALITY = {
     "low_beam": "opendbc_candidate",
     "high_beam": "opendbc_candidate",
     "reverse": "opendbc_candidate",
-    "parking_brake": "opendbc_candidate",
-    "driver_door": "opendbc_candidate",
+    "parking_brake": "upstream_confirmed_0x412_byte0_0x08_active_not_observed",
+    "driver_door": "validated_on_vehicle_0x412_byte6_0x08",
     "passenger_door": "opendbc_candidate",
     "rear_left_door": "validated_dedicated_test_0x412_byte6_0x20",
     "rear_right_door": "validated_dedicated_test_0x412_byte6_0x40",
@@ -161,7 +163,7 @@ FIELD_QUALITY = {
     "low_fuel_warning": "opendbc_candidate",
     "fuel_level_fault_state": "opendbc_candidate",
     "headlamp_fault": "opendbc_candidate",
-    "driver_seatbelt_state": "opendbc_candidate_raw_state",
+    "driver_seatbelt_state": "validated_dedicated_test_0x572_byte0_bits7_6",
     "passenger_seatbelt_state": "opendbc_candidate_raw_state",
     "lane_assist_status": "opendbc_candidate",
     "lane_departure": "opendbc_candidate",
@@ -174,6 +176,9 @@ FIELD_QUALITY = {
     "lvv_requested": "opendbc_candidate",
     "speed_setpoint_kph": "opendbc_candidate",
     "cruise_xvv_state": "vehicle_observed_candidate",
+    "cruise_mode_raw": "validated_on_vehicle_0x50e_byte7_bits5_6",
+    "cruise_on": "derived_from_validated_cruise_mode_raw_1",
+    "cruise_activation_request": "validated_on_vehicle_0x50e_byte7_bit7",
     "cruise_setpoint_kph": "vehicle_observed_candidate",
     "climate_ac_active": "opendbc_candidate",
     "climate_ac_power_kw": "opendbc_candidate",
@@ -325,7 +330,14 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
             state["accelerator_pct"] = secondary_accelerator
     elif message == "Dat_CLIM":
         setpoint = _number(values, "P219_Com_xPrpReqRaw")
+        mode = _number(values, "P221_Speed_setPoint_Typ")
         state["cruise_setpoint_kph"] = setpoint if setpoint is not None and setpoint < 255 else None
+        state["cruise_mode_raw"] = int(mode) if mode is not None else None
+        state["cruise_on"] = int(mode) == 1 if mode is not None else None
+        # La définition PSA source place DDE_ACTIVATION_RVV_ACC sur le bit 7
+        # du dernier octet de 0x50E. Le signal est absent du DBC OpenDBC
+        # nettoyé, donc on le conserve explicitement depuis la trame brute.
+        state["cruise_activation_request"] = bool(data[7] & 0x80) if data is not None and len(data) == 8 else None
         state["climate_ac_active"] = _boolean(values, "P050_Com_stAC")
         power_watts = _number(values, "P210_Com_pwrACDem")
         state["climate_ac_power_kw"] = round(power_watts / 1000, 3) if power_watts is not None else None
@@ -1036,34 +1048,85 @@ def _detect_probable_cruise(points: list[ReplaySample]) -> bool:
     return populated
 
 
-def _detect_cruise_setpoint_direction(points: list[ReplaySample]) -> bool:
-    """Détecte les appuis +/- du commodo régulateur à partir des sauts de
-    cruise_setpoint_kph (0x50E Dat_CLIM.P219_Com_xPrpReqRaw).
+def _detect_cruise_controls(points: list[ReplaySample]) -> bool:
+    """Reconstruit les commandes visibles du commodo régulateur.
 
-    Aucun bit dédié à la direction n'a été identifié sur le bus observé : le
-    commodo remonte directement la nouvelle consigne, et le sens de l'appui
-    est déduit du signe de la variation d'une trame à l'autre. Confirmé sur
-    les essais learn-20260805T1553xx (paliers de ±1 à ±2 km/h par trame).
+    ON vient directement du mode 0x50E (1 = RVV). SET+ et SET- sont déduits
+    du signe des sauts de consigne. CANCEL est une désactivation RVV sans
+    freinage et sans sortie du mode RVV. RESUME est un réengagement après une
+    désactivation dans la même session; c'est donc une déduction d'effet et
+    non la lecture d'un contact électrique dédié.
     """
     populated = False
-    direction: Literal["up", "down"] | None = None
-    step: float | None = None
+    previous_engaged: bool | None = None
     previous_setpoint: float | None = None
+    saved_setpoint: float | None = None
+    resume_armed = False
+    active_event: Literal["set_plus", "set_minus", "resume", "cancel"] | None = None
+    active_source: Literal["setpoint_delta", "state_transition"] | None = None
+    active_step: float | None = None
+    event_until_ms = -1
+
     for point in points:
+        on = point.cruise_on
+        engaged = point.cruise_activation_request
         setpoint = point.cruise_setpoint_kph
-        if setpoint is None:
-            direction = None
-            step = None
-            previous_setpoint = None
-        else:
-            if previous_setpoint is not None and setpoint != previous_setpoint:
-                delta = setpoint - previous_setpoint
-                direction = "up" if delta > 0 else "down"
-                step = round(delta, 1)
-                populated = True
-            previous_setpoint = setpoint
-        point.cruise_setpoint_direction = direction
-        point.cruise_setpoint_step_kph = step
+        event: Literal["set_plus", "set_minus", "resume", "cancel"] | None = None
+        source: Literal["setpoint_delta", "state_transition"] | None = None
+        step: float | None = None
+
+        if on is False:
+            resume_armed = False
+            saved_setpoint = None
+
+        if previous_engaged is True and engaged is False:
+            if previous_setpoint is not None:
+                saved_setpoint = previous_setpoint
+            if on is True and point.brake_active is False and point.cruise_xvv_state != 3:
+                event = "cancel"
+                source = "state_transition"
+                resume_armed = saved_setpoint is not None
+            else:
+                resume_armed = False
+
+        elif previous_engaged is False and engaged is True:
+            if resume_armed and on is True and saved_setpoint is not None:
+                event = "resume"
+                source = "state_transition"
+            resume_armed = False
+
+        elif (
+            engaged is True
+            and setpoint is not None
+            and previous_setpoint is not None
+            and setpoint != previous_setpoint
+        ):
+            delta = setpoint - previous_setpoint
+            event = "set_plus" if delta > 0 else "set_minus"
+            source = "setpoint_delta"
+            step = round(delta, 1)
+
+        if event is not None:
+            active_event = event
+            active_source = source
+            active_step = step
+            event_until_ms = point.t_ms + 800
+            populated = True
+        elif point.t_ms > event_until_ms:
+            active_event = None
+            active_source = None
+            active_step = None
+
+        point.cruise_button_event = active_event
+        point.cruise_button_event_source = active_source
+        point.cruise_setpoint_direction = (
+            "up" if active_event == "set_plus" else "down" if active_event == "set_minus" else None
+        )
+        point.cruise_setpoint_step_kph = active_step
+
+        previous_engaged = engaged if engaged is not None else previous_engaged
+        previous_setpoint = setpoint
+
     return populated
 
 
@@ -1095,17 +1158,25 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
                         value=point.cruise_probable,
                     )
                 )
-            if (
-                point.cruise_setpoint_kph is not None
-                and previous.cruise_setpoint_kph is not None
-                and point.cruise_setpoint_kph != previous.cruise_setpoint_kph
-            ):
-                delta = point.cruise_setpoint_kph - previous.cruise_setpoint_kph
+            if point.cruise_on is not None and point.cruise_on != previous.cruise_on:
                 events.append(ReplayEvent(
                     t_ms=point.t_ms,
                     kind="cruise",
-                    label=f"Régulateur {'+' if delta > 0 else '-'} ({previous.cruise_setpoint_kph:.0f}→{point.cruise_setpoint_kph:.0f} km/h)",
-                    value=delta,
+                    label="Régulateur ON" if point.cruise_on else "Régulateur OFF",
+                    value=point.cruise_on,
+                ))
+            if point.cruise_button_event is not None and point.cruise_button_event != previous.cruise_button_event:
+                labels = {
+                    "set_plus": "Commodo SET+",
+                    "set_minus": "Commodo SET−",
+                    "resume": "Commodo RESUME (déduit)",
+                    "cancel": "Commodo CANCEL",
+                }
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="cruise",
+                    label=labels[point.cruise_button_event],
+                    value=point.cruise_button_event,
                 ))
             if point.current_gear is not None and point.current_gear != previous.current_gear:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="gear", label=f"Rapport {point.current_gear}", value=point.current_gear))
@@ -1395,9 +1466,14 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "cruise_active_candidate",
         })
 
-    cruise_setpoint_steps_available = _detect_cruise_setpoint_direction(points)
-    if cruise_setpoint_steps_available:
-        available_fields.update({"cruise_setpoint_direction", "cruise_setpoint_step_kph"})
+    cruise_controls_available = _detect_cruise_controls(points)
+    if cruise_controls_available:
+        available_fields.update({
+            "cruise_button_event",
+            "cruise_button_event_source",
+            "cruise_setpoint_direction",
+            "cruise_setpoint_step_kph",
+        })
 
     steering_zero, distance_m, route_bounds = _reconstruct_route(points)
     raw_distances = [point.distance_m for point in points]
@@ -1501,12 +1577,11 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "répartis sur 4 essais indépendants, mais non validé officiellement pour cette "
             "Peugeot 308 T9 2018."
         )
-    if cruise_setpoint_steps_available:
+    if cruise_controls_available:
         warnings.append(
-            "cruise_setpoint_direction et cruise_setpoint_step_kph détectent "
-            "automatiquement les appuis + et - du commodo régulateur à partir des sauts "
-            "de cruise_setpoint_kph : aucun bit dédié à la direction n'a été identifié "
-            "sur le bus observé, la détection est donc déduite du signe de la variation."
+            "Les commandes du régulateur sont reconstruites depuis 0x50E : ON vient du mode "
+            "RVV, SET+/SET- des sauts de consigne et CANCEL d'une désactivation sans frein. "
+            "RESUME reste une déduction de réengagement, aucun contact dédié n'étant visible."
         )
     if "front_sensor_b4_raw" in available_fields:
         warnings.append(
@@ -1579,8 +1654,10 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "cruise_switch_candidate": "opendbc_candidate",
             "cruise_active_candidate": "opendbc_candidate",
         })
-    if cruise_setpoint_steps_available:
+    if cruise_controls_available:
         field_quality.update({
+            "cruise_button_event": "vehicle_observed_effect_candidate",
+            "cruise_button_event_source": "vehicle_observed_effect_candidate",
             "cruise_setpoint_direction": "vehicle_observed_candidate",
             "cruise_setpoint_step_kph": "vehicle_observed_candidate",
         })

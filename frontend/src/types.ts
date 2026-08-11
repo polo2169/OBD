@@ -1051,6 +1051,11 @@ export type ReplaySample = {
   cruise_switch_candidate?: boolean | null;
   cruise_xvv_state?: number | null;
   cruise_active_candidate?: boolean | null;
+  cruise_mode_raw?: number | null;
+  cruise_on?: boolean | null;
+  cruise_activation_request?: boolean | null;
+  cruise_button_event?: "set_plus" | "set_minus" | "resume" | "cancel" | null;
+  cruise_button_event_source?: "setpoint_delta" | "state_transition" | null;
   cruise_setpoint_kph?: number | null;
   cruise_setpoint_direction?: "up" | "down" | null;
   cruise_setpoint_step_kph?: number | null;

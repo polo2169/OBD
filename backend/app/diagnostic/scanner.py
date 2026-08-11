@@ -197,6 +197,8 @@ def read_ecu_did(ecu_key: str, did: int, vehicle_profile: str | None = None) -> 
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
         ) as session:
             enter_extended_session(session)
             try:
@@ -867,6 +869,8 @@ def _scan_single_ecu(
                 response_id,
                 timeout=settings.diagnostic_timeout,
                 read_only=settings.read_only,
+                flow_control_id=ecu.flow_control_id,
+                flow_control_blocksize=ecu.flow_control_blocksize,
             ) as session:
                 present, method, probe_raw, candidate_probe_attempts = _probe_session(
                     session,

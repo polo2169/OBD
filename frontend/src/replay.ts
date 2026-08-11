@@ -43,6 +43,9 @@ export const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "target_gear", label: "Rapport cible", unit: "rapport", minimum: 0, maximum: 9, color: "#ffb45f", note: "Rapport demandé pendant la stratégie de changement de vitesse. Le code 9 est affiché R." },
   { key: "steering_angle_deg", label: "Angle du volant", unit: "°", minimum: -540, maximum: 540, precision: 1, color: "#b384ff", note: "Angle du volant validé sur ce véhicule; négatif vers la droite." },
   { key: "brake_pressure_raw", label: "Pression de freinage brute", unit: "brut", minimum: 0, maximum: 255, color: "#ff6b65", note: "Signal de freinage non calibré : aucune unité physique ne doit être déduite." },
+  { key: "parking_brake", label: "Frein de stationnement", unit: "état", minimum: 0, maximum: 1, color: "#ff6b65", note: "0x412 Dat_BSI, octet 0 masque 0x08. Définition amont confirmée; l'état actif n'a pas encore été observé dans les captures locales.", status: true },
+  { key: "driver_door", label: "Porte conducteur", unit: "état", minimum: 0, maximum: 1, color: "#ffb45f", note: "0x412 Dat_BSI, octet 6 masque 0x08. États fermé/ouvert validés dans cinq sessions avec transitions.", status: true },
+  { key: "driver_seatbelt_state", label: "Ceinture conducteur", unit: "code", minimum: 0, maximum: 3, color: "#ffcf66", note: "0x572 RESTRAINTS, octet 0 bits 7-6. Essai local répété : 1 débouclée, 2 bouclée; 0/3 réservés.", status: true },
   { key: "oil_temperature_c", label: "Température d'huile", unit: "°C", minimum: 40, maximum: 150, color: "#ffb45f", note: "Température du carter moteur issue du message Dat_CMM." },
   { key: "coolant_temperature_c", label: "Liquide de refroidissement", unit: "°C", minimum: 40, maximum: 120, color: "#59a8ff", note: "Température d'eau moteur diffusée par le calculateur." },
   { key: "oil_pressure_switch", label: "Contacteur pression d'huile", unit: "état", minimum: 0, maximum: 1, color: "#ffcf66", note: "Signal logique uniquement : aucune pression en bar n'est disponible.", status: true },
@@ -59,6 +62,8 @@ export const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "relative_accelerator_position_pct", label: "Accélérateur relatif", unit: "%", minimum: 0, maximum: 100, precision: 1, color: "#b8efc9", note: "Position relative de l'accélérateur EOBD 01/5A." },
   { key: "cruise_xvv_state", label: "Régulateur · état brut", unit: "code", minimum: 0, maximum: 3, color: "#f2cc60", note: "0x208 Dyn_CMM, octet 4 bits 2-3 : 0 inactif, 2 actif, 3 transitoire (bascule). Candidat confirmé par corrélation sur plusieurs essais.", experimental: true },
   { key: "cruise_active_candidate", label: "Régulateur", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "Actif quand cruise_xvv_state = 2.", status: true, experimental: true },
+  { key: "cruise_mode_raw", label: "Régulateur · sélecteur", unit: "code", minimum: 0, maximum: 3, color: "#f2cc60", note: "0x50E, dernier octet bits 5-6 : 0 OFF, 1 régulateur RVV, 2 limiteur LVV. Validé par l'essai dédié régulateur arrêt.", experimental: true },
+  { key: "cruise_activation_request", label: "Régulateur · activation", unit: "état", minimum: 0, maximum: 1, color: "#62e39a", note: "0x50E, dernier octet bit 7 : demande RVV active, validée contre la consigne et l'état XVV.", status: true, experimental: true },
   { key: "cruise_setpoint_kph", label: "Régulateur · consigne", unit: "km/h", minimum: 0, maximum: 150, precision: 0, color: "#89d7ff", note: "0x50E Dat_CLIM.P219_Com_xPrpReqRaw (255 = inactif). Confirmé sur 5 engagements, 4 essais indépendants.", experimental: true },
   { key: "cruise_setpoint_step_kph", label: "Régulateur · pas détecté", unit: "km/h", minimum: -10, maximum: 10, precision: 1, color: "#89d7ff", note: "Amplitude du dernier saut de cruise_setpoint_kph (0x50E) : détection automatique des appuis + et - du commodo, aucun bit de direction dédié identifié sur le bus observé.", experimental: true },
   { key: "acc_mode", label: "ACC · type de régulation", unit: "code", minimum: 0, maximum: 3, color: "#ffb45f", note: "0x452 HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE (2 bits, code caméra ACC/LVV). Toujours à 0 sur les essais disponibles.", experimental: true },
@@ -135,12 +140,25 @@ export function cruiseXvvStateLabel(state?: number | null): string {
     : "Signal absent";
 }
 
+export const cruiseModeLabels: Record<number, string> = {
+  0: "OFF",
+  1: "Régulateur RVV",
+  2: "Limiteur LVV",
+  3: "Réservé",
+};
+
+export function cruiseModeLabel(mode?: number | null): string {
+  return typeof mode === "number"
+    ? cruiseModeLabels[mode] ?? `Mode inconnu ${mode}`
+    : "Mode absent";
+}
+
 export const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "turn_left", label: "Clignotant gauche", color: "green", icon: "arrow-left", fields: ["turn_signal"], note: "Commande de clignotant enregistrée." },
   { key: "turn_right", label: "Clignotant droit", color: "green", icon: "arrow-right", fields: ["turn_signal"], note: "Commande de clignotant enregistrée." },
   { key: "low_beam", label: "Feux de croisement", color: "green", icon: "low-beam", fields: ["low_beam"], note: "État des feux de croisement." },
   { key: "high_beam", label: "Feux de route", color: "blue", icon: "high-beam", fields: ["high_beam"], note: "État des feux de route." },
-  { key: "parking_brake", label: "Frein de stationnement", color: "red", icon: "parking", fields: ["parking_brake"], note: "État candidat du frein de stationnement." },
+  { key: "parking_brake", label: "Frein de stationnement", color: "red", icon: "parking", fields: ["parking_brake"], note: "0x412 octet 0 masque 0x08, source-confirmé; état actif non encore observé localement." },
   { key: "brake_fault", label: "Défaut freinage", color: "red", icon: "brake", fields: ["brake_fault"], note: "Demande de témoin de défaut du frein principal." },
   { key: "abs", label: "ABS", color: "amber", icon: "abs", fields: ["abs_intervention"], note: "La capture expose l'intervention ABS, pas un défaut ABS confirmé." },
   { key: "esp", label: "ESP / antipatinage", color: "amber", icon: "esp", fields: ["esp_fault_state", "esp_intervention"], note: "Défaut ou intervention ESP selon les états CAN candidats." },
@@ -149,10 +167,10 @@ export const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "battery", label: "Charge batterie", color: "red", icon: "battery", fields: ["battery_voltage_v", "engine_rpm"], note: "Alerte estimée si la tension est basse moteur tournant." },
   { key: "fuel", label: "Réserve carburant", color: "amber", icon: "fuel", fields: ["low_fuel_warning"], note: "Demande de témoin de niveau carburant minimal." },
   { key: "engine", label: "Voyant moteur", color: "amber", icon: "engine", fields: ["mil_on", "mil_blinking", "obd_error"], note: "États OBD/MIL candidats diffusés par le moteur." },
-  { key: "door", label: "Porte ouverte", color: "red", icon: "door", fields: ["driver_door", "passenger_door"], note: "Ouverture des portes avant enregistrée." },
+  { key: "door", label: "Porte ouverte", color: "red", icon: "door", fields: ["driver_door", "passenger_door"], note: "Porte conducteur validée dans 0x412 octet 6 masque 0x08; porte passager issue de la même définition amont." },
   { key: "rear_door", label: "Porte arrière", color: "red", icon: "door", fields: ["rear_left_door", "rear_right_door"], note: "Validé par essais dédiés : 0x412 Dat_BSI, octet 6, bits 0x20 (gauche) / 0x40 (droite), non documentés dans opendbc." },
   { key: "rear_door_ajar_candidate", label: "Porte arrière (générique, candidat)", color: "amber", icon: "door", fields: ["rear_door_ajar_candidate"], note: "0x78D octet 7, non documenté. Hypothèse d'indicateur générique, non confirmée individuellement." },
-  { key: "seatbelt", label: "Ceintures", color: "red", icon: "seatbelt", fields: ["driver_seatbelt_state", "passenger_seatbelt_state"], note: "États bruts présents; leur codage exact reste à valider." },
+  { key: "seatbelt", label: "Ceintures", color: "red", icon: "seatbelt", fields: ["driver_seatbelt_state", "passenger_seatbelt_state"], note: "Conducteur 0x572 validé : 1 débouclée, 2 bouclée. Passager encore affiché brut." },
   { key: "lane", label: "Aide au maintien de voie", color: "green", icon: "lane", fields: ["lka_active", "lane_departure", "lane_assist_status", "lka_mode"], note: "STATUS 4 indique l'assistance active; LXA_ACTIVATION sélectionne LKA ou LPA." },
   { key: "lane_fault", label: "Défaut aide à la conduite", color: "amber", icon: "lane", fields: ["lane_assist_status"], note: "STATUS 5 = DEFECT dans la définition CAN observée sur cette 308." },
   { key: "reverse", label: "Marche arrière", color: "green", icon: "reverse", fields: ["reverse"], note: "État de marche arrière candidat BSI." },
@@ -373,6 +391,8 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
     return value !== null && value >= minimum && value <= maximum ? value : null;
   };
   const turnSignalValue = integer("HS2_DAT_MDD_CMD_452.TURN_SIGNAL_STATUS");
+  const cruiseModeRaw = integer("Dat_CLIM.P221_Speed_setPoint_Typ");
+  const cruiseXvvState = integer("Dyn_CMM.P037_VehV_stXVV");
   const headlampFaults = [
     logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_G"),
     logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_G"),
@@ -487,11 +507,16 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
       integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE") === null
         ? null
         : integer("HS2_DAT_MDD_CMD_452.LONGITUDINAL_REGULATION_TYPE") !== 0,
-    cruise_xvv_state: integer("Dyn_CMM.P037_VehV_stXVV"),
+    cruise_xvv_state: cruiseXvvState,
     cruise_active_candidate:
-      integer("Dyn_CMM.P037_VehV_stXVV") === null
+      cruiseXvvState === null
         ? null
-        : integer("Dyn_CMM.P037_VehV_stXVV") === 2,
+        : cruiseXvvState === 2,
+    cruise_mode_raw: cruiseModeRaw,
+    cruise_on: cruiseModeRaw === null ? null : cruiseModeRaw === 1,
+    cruise_activation_request: null,
+    cruise_button_event: null,
+    cruise_button_event_source: null,
     cruise_setpoint_kph:
       (integer("Dat_CLIM.P219_Com_xPrpReqRaw") ?? 255) >= 255
         ? null
@@ -594,8 +619,11 @@ export function replayIndicatorState(
     }
     case "rear_door_ajar_candidate":
       return { available, active: Boolean(point.rear_door_ajar_candidate), detail: point.rear_door_ajar_candidate ? "Au moins une porte arrière ouverte (candidat)" : "Portes arrière fermées (candidat)" };
-    case "seatbelt":
-      return { available, active: null, detail: `États bruts C ${point.driver_seatbelt_state ?? "—"} · P ${point.passenger_seatbelt_state ?? "—"}` };
+    case "seatbelt": {
+      const driverState = point.driver_seatbelt_state;
+      const driverLabel = driverState === 1 ? "conducteur débouclé" : driverState === 2 ? "conducteur bouclé" : `conducteur état ${driverState ?? "—"}`;
+      return { available, active: driverState === 1 ? true : driverState === 2 ? false : null, detail: `${driverLabel} · passager brut ${point.passenger_seatbelt_state ?? "—"}` };
+    }
     case "lane":
       return { available, active: Boolean(point.lka_active || point.lane_departure), detail: point.lane_departure ? `Alerte ligne brute ${point.lane_departure}` : laneAssistStatusLabel(point.lane_assist_status) };
     case "lane_fault": {

@@ -1,5 +1,8 @@
 import json
 import time
+from pathlib import Path
+
+import cantools
 
 from app.config import settings
 from app.learn.analyzer import analyze_behavior, list_sessions
@@ -8,7 +11,7 @@ from app.learn.isotp import parse_isotp_frame, uds_service
 from app.learn.models import CaptureGpsPosition, CaptureStatus, CorrelationOptions, PassiveSensorOverride, ReplayGpsPoint, ReplaySample, SessionVehicleAssignment
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.passive_sensors import passive_sensor_snapshot
-from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _filter_fuel_level, prepare_replay, replay_geojson
+from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _detect_cruise_controls, _filter_fuel_level, _update_state, prepare_replay, replay_geojson
 from app.learn.sensor_metadata import save_override
 from app.learn.session_vehicle import assign_session_vehicle
 from app.learn.validation import validate_replay
@@ -86,6 +89,103 @@ def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
     assert values is not None
     assert values["P000_Com_nEng"]["value"] == 1000.0
     assert values["P000_Com_nEng"]["unit"] == "1/min"
+
+
+def test_cruise_50e_mode_and_activation_are_decoded_from_vehicle_layout():
+    decoder = get_opendbc_decoder()
+    raw = bytes.fromhex("021B00145E4255A3")
+    message, values, error = decoder.decode_frame(0x50E, False, raw)
+    assert error is None
+    assert message is not None
+    assert values is not None
+
+    state: dict = {}
+    _update_state(message.name, values, state, raw)
+
+    assert state["cruise_mode_raw"] == 1
+    assert state["cruise_on"] is True
+    assert state["cruise_activation_request"] is True
+    assert state["cruise_setpoint_kph"] == 85
+
+
+def test_cruise_controls_find_set_cancel_and_resume_effects():
+    points = [
+        ReplaySample(t_ms=0, cruise_mode_raw=0, cruise_on=False, cruise_activation_request=False, cruise_xvv_state=0),
+        ReplaySample(t_ms=100, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=False, cruise_xvv_state=0),
+        ReplaySample(t_ms=200, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=80),
+        ReplaySample(t_ms=300, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=81),
+        ReplaySample(t_ms=1_200, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=81),
+        ReplaySample(t_ms=1_300, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=79),
+        ReplaySample(t_ms=2_200, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=False, cruise_xvv_state=0, cruise_setpoint_kph=None, brake_active=False),
+        ReplaySample(t_ms=3_100, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=False, cruise_xvv_state=0, cruise_setpoint_kph=None),
+        ReplaySample(t_ms=3_200, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=79),
+    ]
+
+    assert _detect_cruise_controls(points)
+    assert points[1].cruise_on is True
+    assert points[3].cruise_button_event == "set_plus"
+    assert points[3].cruise_setpoint_step_kph == 1
+    assert points[4].cruise_button_event is None
+    assert points[5].cruise_button_event == "set_minus"
+    assert points[5].cruise_setpoint_step_kph == -2
+    assert points[6].cruise_button_event == "cancel"
+    assert points[8].cruise_button_event == "resume"
+    assert points[8].cruise_button_event_source == "state_transition"
+
+
+def test_cruise_controls_do_not_mistake_brake_disengagement_for_cancel():
+    points = [
+        ReplaySample(t_ms=0, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=80, brake_active=False),
+        ReplaySample(t_ms=100, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=False, cruise_xvv_state=3, cruise_setpoint_kph=None, brake_active=True),
+        ReplaySample(t_ms=1_000, cruise_mode_raw=1, cruise_on=True, cruise_activation_request=True, cruise_xvv_state=2, cruise_setpoint_kph=80, brake_active=False),
+    ]
+
+    assert not _detect_cruise_controls(points)
+    assert all(point.cruise_button_event is None for point in points)
+
+
+def test_vehicle_dbc_contains_validated_body_and_seatbelt_layouts():
+    dbc_path = Path(__file__).parents[2] / "database/psa/dbc/peugeot_308_t9_2018.dbc"
+    database = cantools.database.load_file(dbc_path, strict=True)
+
+    body = database.get_message_by_frame_id(0x412)
+    assert (body.get_signal_by_name("DriverDoorOpen").start, body.get_signal_by_name("DriverDoorOpen").length) == (51, 1)
+    assert (body.get_signal_by_name("ParkingBrakeActive").start, body.get_signal_by_name("ParkingBrakeActive").length) == (3, 1)
+
+    restraints = database.get_message_by_frame_id(0x572)
+    driver_seatbelt = restraints.get_signal_by_name("DriverSeatbeltState")
+    assert (driver_seatbelt.start, driver_seatbelt.length) == (7, 2)
+    assert str(driver_seatbelt.choices[1]) == "Unlatched"
+    assert str(driver_seatbelt.choices[2]) == "Latched"
+
+
+def test_driver_seatbelt_572_replays_dedicated_vehicle_toggle_sequence():
+    # learn-20260805T154951Z-57acfc99: arrêt, porte conducteur fermée,
+    # frein de stationnement constant; boucle 2→1→2→1→2.
+    decoder = get_opendbc_decoder()
+    raw_frames = (
+        "98807D4089000009",
+        "58807D4089000009",
+        "98807D4089000009",
+        "58807D4089000009",
+        "98807D4089000008",
+    )
+    driver_states: list[int] = []
+    passenger_states: list[int] = []
+
+    for raw_hex in raw_frames:
+        raw = bytes.fromhex(raw_hex)
+        message, values, error = decoder.decode_frame(0x572, False, raw)
+        assert error is None
+        assert message is not None
+        assert values is not None
+        state: dict = {}
+        _update_state(message.name, values, state, raw)
+        driver_states.append(state["driver_seatbelt_state"])
+        passenger_states.append(state["passenger_seatbelt_state"])
+
+    assert driver_states == [2, 1, 2, 1, 2]
+    assert passenger_states == [1, 1, 1, 1, 1]
 
 
 def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypatch):

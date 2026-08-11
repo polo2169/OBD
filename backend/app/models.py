@@ -26,6 +26,12 @@ class EcuDefinition(BaseModel):
     name: str
     request_id: int | None = None
     response_id: int | None = None
+    # Some PSA ECUs (notably the Aisin EAT6 observed on the 308 T9) only
+    # continue a multi-frame response when the tester advertises an unlimited
+    # ISO-TP block size (FC: 30 00 00).  Keep the usual value as the default and
+    # allow a vehicle profile to override it per ECU.
+    flow_control_id: int | None = None
+    flow_control_blocksize: int = Field(default=8, ge=0, le=0xFF)
     protocol: str = "uds"
     confidence: str = "experimental"
     access: str = "read_only"

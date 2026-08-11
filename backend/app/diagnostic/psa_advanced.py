@@ -362,6 +362,8 @@ def read_raw_did(ecu_key: str, did: int) -> DidReadResult:
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=True,
+            flow_control_id=ecu.flow_control_id,
+            flow_control_blocksize=ecu.flow_control_blocksize,
         ) as session:
             enter_extended_session(session)
             response, value = read_data_by_identifier(session, did)

@@ -1,3 +1,17 @@
+"0xF080":
+  name: PSA ZA identification zone
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only
+
+"0xF0FE":
+  name: PSA ZI identification zone
+  codec: bytes
+  source: https://github.com/Barracuda09/PyPSADiag
+  confidence: community_documented_read_candidate
+  access: read_only
+
 "0xF180":
   name: Boot software identification
   codec: bytes

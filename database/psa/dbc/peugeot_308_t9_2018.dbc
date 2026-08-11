@@ -71,6 +71,8 @@ BO_ 841 T9_GEARBOX_TARGET_349: 8 GEARBOX
 BO_ 909 T9_VEHICLE_DYNAMICS_38D: 8 ABS_ESP
  SG_ VehicleSpeedKph : 7|16@0+ (0.01,0) [0|300] "km/h" Vector__XXX
  SG_ LongitudinalAccelerationMs2 : 39|8@0+ (0.08,-14) [-14|6.32] "m/s2" Vector__XXX
+ SG_ FrameChecksum : 43|4@0+ (1,0) [0|15] "raw" Vector__XXX
+ SG_ FrameCounter : 47|4@0+ (1,0) [0|15] "raw" Vector__XXX
 
 BO_ 952 T9_ENGINE_CLIMATE_SHADOW_3B8: 7 ENGINE
  SG_ EngineRPMShadow : 0|8@1+ (-32,8160) [0|8160] "rpm" Vector__XXX
@@ -84,6 +86,8 @@ BO_ 973 T9_BRAKE_DYNAMICS_3CD: 8 ABS_ESP
  SG_ BrakePressureRelativeRaw : 47|12@0+ (1,0) [0|4095] "raw" Vector__XXX
 
 BO_ 1010 T9_LANE_KEEP_COMMAND_3F2: 8 BSI
+ SG_ LKAUnknownByte2Raw : 23|8@0+ (1,0) [0|255] "raw" STEERING
+ SG_ LKATorqueCommandRaw : 31|11@0- (1,0) [-1024|1023] "raw" STEERING
  SG_ LKAState : 36|3@0+ (1,0) [0|7] "state" STEERING
  SG_ LaneDeparture : 33|2@0+ (1,0) [0|3] "state" STEERING
  SG_ LXAMode : 40|1@0+ (1,0) [0|1] "state" STEERING
@@ -92,7 +96,9 @@ BO_ 1010 T9_LANE_KEEP_COMMAND_3F2: 8 BSI
 
 BO_ 1042 T9_BODY_STATUS_412: 8 BSI
  SG_ ReverseGearActive : 2|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ ParkingBrakeActive : 3|1@0+ (1,0) [0|1] "state" Vector__XXX
  SG_ BrakePedalActive : 5|1@1+ (1,0) [0|1] "state" Vector__XXX
+ SG_ DriverDoorOpen : 51|1@0+ (1,0) [0|1] "state" Vector__XXX
  SG_ PassengerDoorOpen : 52|1@0+ (1,0) [0|1] "state" Vector__XXX
  SG_ RearLeftDoorOpen : 53|1@1+ (1,0) [0|1] "state" Vector__XXX
  SG_ RearRightDoorOpen : 54|1@1+ (1,0) [0|1] "state" Vector__XXX
@@ -124,8 +130,11 @@ BO_ 1160 T9_ENGINE_TEMPERATURES_488: 8 ENGINE
 
 BO_ 1294 T9_CRUISE_SETPOINT_50E: 8 BSI
  SG_ CruiseSetpointKph : 48|8@1+ (1,0) [0|255] "km/h" Vector__XXX
+ SG_ CruiseMode : 61|2@1+ (1,0) [0|3] "state" Vector__XXX
+ SG_ CruiseActivationRequest : 63|1@1+ (1,0) [0|1] "state" Vector__XXX
 
 BO_ 1394 T9_RESTRAINTS_572: 8 BSI
+ SG_ DriverSeatbeltState : 7|2@0+ (1,0) [0|3] "state" Vector__XXX
  SG_ PassengerSeatbeltState : 5|2@0+ (1,0) [0|3] "state" Vector__XXX
 
 BO_ 1416 T9_ENGINE_PRESSURE_STATUS_588: 8 ENGINE
@@ -153,6 +162,7 @@ BO_ 2024 T9_EOBD_RESPONSE_7E8: 8 ENGINE
 
 CM_ "Peugeot 308 II T9 2018 AEE2010.full. This file contains only signals decoded and validated or manually confirmed on the local vehicle captures. It is a receive-only description and does not authorize CAN transmission.";
 CM_ "Signal layouts are derived in part from commaai/opendbc psa_aee2010_r3.dbc revision a0febba355168a5cb6168b535144c8c41a5ce323, Copyright (c) 2020 Comma.ai, Inc., MIT License. Vehicle-specific validation was performed by the local OBD project.";
+CM_ "Vehicle BSI identification recorded 2026-08-10: BSI-EL5-CEM00, HW D5, SW 4.04, PSA P/N 9819851480-01. The serial number is intentionally not embedded in this shared DBC.";
 CM_ "CVM-family UDS DTCs B1004 and B117F are intentionally absent: diagnostic service responses are not periodic sensor signals and cannot be represented safely as fixed DBC fields. The exact CVM2/CVM3 generation is not proven by the current scan.";
 
 CM_ BO_ 520 "Validated engine speed, pedal position and torque. CruiseStateCandidate was correlated across several vehicle tests: raw 0 inactive, 2 active, 3 transient.";
@@ -169,20 +179,30 @@ CM_ SG_ 773 SteeringRateMagnitudeDegS "Validated rate magnitude. Signed steering
 CM_ BO_ 781 "All four wheel speeds validated together over a road capture; mean inter-wheel spread 0.86 km/h.";
 CM_ SG_ 909 VehicleSpeedKph "Validated against the mean of the four wheel speeds; observed mean difference 0.35 km/h.";
 CM_ SG_ 909 LongitudinalAccelerationMs2 "Validated by comparison with the derivative of vehicle speed.";
+CM_ SG_ 909 FrameChecksum "PSA nibble-sum checksum with initial value 0x7. Revalidated over 213198 local 0x38D frames with zero mismatches.";
+CM_ SG_ 909 FrameCounter "Four-bit rolling counter, layout cross-checked against the checksum-valid local captures.";
 CM_ BO_ 952 "Undocumented frame with two exact redundant engine/pedal formulas and one manually confirmed temperature candidate.";
 CM_ SG_ 952 InteriorTemperatureCandidateC "Manually confirmed on the T9. The physical sensor location is not independently documented, so Candidate remains in the name.";
 CM_ SG_ 973 LateralAccelerationMs2 "Scale and direction validated during a road capture.";
 CM_ SG_ 973 YawRateDegS "Scale and direction validated against steering and wheel-speed differential.";
 CM_ SG_ 973 BrakePressureRelativeRaw "Validated as a relative brake-pressure indicator only. It must not be displayed as bar.";
-CM_ BO_ 1010 "BSI to EPS lane-assist command. Observed locally at about 20 Hz: 128357 frames across 43 sessions. Receive-only diagnostic definition: no STATUS=4 Active was observed, STATUS=5 Defect was observed, and ColumnAngleSetpointDeg remained zero.";
-CM_ SG_ 1010 LKAState "State table recovered from the PSA community definition and cross-checked against opendbc. On the local faulty vehicle: Selected, Authorized and Defect occur; Active does not.";
+CM_ BO_ 1010 "BSI to EPS lane-assist command. Observed locally at about 20 Hz: 170749 frames across 52 sessions. In learn-20260805T081220Z-a182e602, the signed 11-bit torque field was nonzero for 536 frames in 10 coherent 20 Hz bursts at 66.07..84.99 km/h. This is strong passive evidence for the AEE2010 R2 torque API, but the DBC remains receive-only and does not authorize transmission.";
+CM_ SG_ 1010 LKAUnknownByte2Raw "Undocumented byte 2. It was 0x12 throughout the locally observed nonzero-torque bursts; other inactive/fault states use different values. It must not be hard-coded for transmission until the complete state machine is validated.";
+CM_ SG_ 1010 LKATorqueCommandRaw "Signed 11-bit BSI-to-EPS command layout cross-checked against the cristianku PSA torque branch. Locally observed nonzero range -7..60 raw; 536 nonzero frames at 20 Hz while driving 66.07..84.99 km/h. No physical Nm scale is asserted.";
+CM_ SG_ 1010 LKAState "State table recovered from the PSA community definition and cross-checked against opendbc. Nonzero torque was observed with states Selected and Authorized; STATUS=4 Active was not observed, and STATUS=5 Defect was observed in other sessions.";
 CM_ SG_ 1010 LXAMode "Function selector, not an activation flag: 0=LKA, 1=LPA.";
 CM_ SG_ 1010 LKATorqueFactorRaw "The current DBC represents this as 0..127 raw. A historical community file used a 0.01 factor; the physical scale is therefore intentionally not asserted here.";
-CM_ SG_ 1010 ColumnAngleSetpointDeg "Angle-command layout is source-confirmed but could not be dynamically validated on the local vehicle because LKA never reached Active.";
+CM_ SG_ 1010 ColumnAngleSetpointDeg "Angle-command layout is source-confirmed. It remained zero in every local frame, including all ten nonzero-torque bursts, which supports use of the torque rather than angle API on this T9.";
+CM_ SG_ 1042 DriverDoorOpen "Source-confirmed at Dat_BSI.DRIVER_DOOR (byte 6 mask 0x08). Both closed and open states were observed locally; five learn sessions contain transitions.";
+CM_ SG_ 1042 ParkingBrakeActive "Source-confirmed at Dat_BSI.PARKING_BRAKE (byte 0 mask 0x08). The active state was not observed in the 170566 local 0x412 frames inspected, so vehicle activation semantics remain untested.";
 CM_ SG_ 1042 RearLeftDoorOpen "Undocumented byte 6 mask 0x20, confirmed by repeated closed-open-closed tests on the rear-left door.";
 CM_ SG_ 1042 RearRightDoorOpen "Undocumented byte 6 mask 0x40, confirmed by repeated closed-open-closed tests on the rear-right door.";
 CM_ BO_ 1106 "BSI driver/ACC command frame. Observed locally at about 20 Hz but with longitudinal regulation and ACC requests inactive; signal layout is source-confirmed for AEE2010 R3.";
+CM_ BO_ 1294 "CruiseMode and CruiseActivationRequest were recovered from the original PSA source DBC and confirmed by local selector/road tests. Last-byte high nibble observed: 0x0 off, 0x2 cruise selected, 0x4 limiter selected, 0xA cruise active; the low nibble contains the rolling counter.";
 CM_ SG_ 1294 CruiseSetpointKph "Confirmed over five cruise engagements in four independent tests. Raw 255 means inactive/unavailable.";
+CM_ SG_ 1294 CruiseMode "Validated during learn-20260805T065418Z-fca10a57: the selector sequence cruise-off-limiter-off-cruise produced 1-0-2-0-1.";
+CM_ SG_ 1294 CruiseActivationRequest "Validated against five engagements and the 0x208 XVV state. This is the BSI activation request/effect, not a direct electrical button contact.";
+CM_ SG_ 1394 DriverSeatbeltState "Vehicle-validated on learn-20260805T154951Z-57acfc99 at standstill: 2-1-2-1-2 while DriverDoorOpen and ParkingBrakeActive stayed false. Seven local sessions contain 1/2 transitions; road captures support 1=unlatched and 2=latched. Values 0 and 3 remain reserved/unknown.";
 CM_ SG_ 1416 OilPressureSwitch "Validated as a logical warning contact: active with engine stopped and inactive with engine running. This is not an oil-pressure measurement in bar.";
 CM_ SG_ 1426 BatteryVoltageV "Validated by comparison of engine-running and engine-stopped voltage medians.";
 CM_ SG_ 1554 FuelLevelLitersRaw "Validated raw tank level, affected by fuel slosh. The application field fuel_liters applies a 120 s causal filter which DBC cannot express.";
@@ -195,12 +215,17 @@ VAL_ 1010 LKAState 0 "Unavailable" 1 "Unselected" 2 "Selected" 3 "Authorized" 4 
 VAL_ 1010 LaneDeparture 0 "None" 1 "Right" 2 "Left" 3 "Both_or_reserved";
 VAL_ 1010 LXAMode 0 "LKA" 1 "LPA";
 VAL_ 1042 ReverseGearActive 0 "Inactive" 1 "Active";
+VAL_ 1042 ParkingBrakeActive 0 "Inactive" 1 "Active";
 VAL_ 1042 BrakePedalActive 0 "Released" 1 "Pressed";
+VAL_ 1042 DriverDoorOpen 0 "Closed" 1 "Open";
 VAL_ 1042 PassengerDoorOpen 0 "Closed" 1 "Open";
 VAL_ 1042 RearLeftDoorOpen 0 "Closed" 1 "Open";
 VAL_ 1042 RearRightDoorOpen 0 "Closed" 1 "Open";
 VAL_ 1106 SpeedSetpointKph 255 "Inactive_or_unavailable";
 VAL_ 1106 TurnSignalStatus 0 "Off" 1 "Right" 2 "Left" 3 "Hazard";
 VAL_ 1294 CruiseSetpointKph 255 "Inactive_or_unavailable";
+VAL_ 1294 CruiseMode 0 "Off" 1 "Cruise_RVV" 2 "Limiter_LVV" 3 "Reserved";
+VAL_ 1294 CruiseActivationRequest 0 "Inactive" 1 "Active";
+VAL_ 1394 DriverSeatbeltState 0 "Unknown_or_reserved" 1 "Unlatched" 2 "Latched" 3 "Unknown_or_reserved";
 VAL_ 1416 OilPressureSwitch 0 "Pressure_OK_observed" 1 "Warning_contact_active_observed";
 VAL_ 2024 OBD_ResponseService 65 "Mode01_CurrentDataResponse";

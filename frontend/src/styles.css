@@ -2090,6 +2090,54 @@ button:disabled { opacity: .5; cursor: wait; }
   gap: 12px;
 }
 
+.cruise-control-pad {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(84px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cruise-control-button {
+  display: flex;
+  min-height: 60px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(4, 11, 17, 0.42);
+  text-align: center;
+}
+
+.cruise-control-button > span {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.cruise-control-button > small {
+  font-size: 0.64rem;
+  opacity: 0.58;
+}
+
+.cruise-control-button.active {
+  border-color: rgba(98, 227, 154, 0.65);
+  background: rgba(98, 227, 154, 0.13);
+  color: #8ce9b4;
+  box-shadow: inset 0 0 20px rgba(98, 227, 154, 0.08);
+}
+
+.cruise-control-button.candidate.active {
+  border-color: rgba(242, 204, 96, 0.65);
+  background: rgba(242, 204, 96, 0.13);
+  color: #f2cc60;
+}
+
+.cruise-control-button.pulse.active {
+  animation: cruise-candidate-pulse 0.55s ease-out;
+}
+
 .cruise-validation-heading > span {
   font-size: 0.82rem;
   text-transform: uppercase;
@@ -2160,6 +2208,10 @@ button:disabled { opacity: .5; cursor: wait; }
   .cruise-validation-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .cruise-control-pad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

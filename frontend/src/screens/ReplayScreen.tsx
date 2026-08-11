@@ -7,7 +7,7 @@ import { EmptyState } from "../components/ui";
 import { formatDate, formatDuration, formatReplayTime } from "../format";
 import type { View } from "../navigation";
 import {
-  FIAT_500_HANDBOOK_URL, PEUGEOT_308_HANDBOOK_URL, cruiseXvvStateLabel, laneAssistStatusLabel,
+  FIAT_500_HANDBOOK_URL, PEUGEOT_308_HANDBOOK_URL, cruiseModeLabel, cruiseXvvStateLabel, laneAssistStatusLabel,
   replayGaugeCatalog, replayIndicatorCatalog, replayIndicatorState, vehicleVisualForProfile,
 } from "../replay";
 import type {
@@ -509,36 +509,48 @@ export function ReplayScreen({
                 </div>
                 <div className="cruise-validation-card">
                   <div className="cruise-validation-heading">
-                    <span>Régulateur — candidats 0x208 / 0x50E</span>
-                    <strong className={point.cruise_active_candidate ? "success-text" : ""}>
-                      {cruiseXvvStateLabel(point.cruise_xvv_state)}
+                    <span>Régulateur — états directs et commandes déduites</span>
+                    <strong className={point.cruise_activation_request ? "success-text" : ""}>
+                      {point.cruise_activation_request ? "RVV actif" : cruiseModeLabel(point.cruise_mode_raw)}
                     </strong>
                   </div>
                   <div className="cruise-candidate-grid">
-                    <div className={`cruise-candidate-indicator${point.cruise_active_candidate ? " active" : ""}`}>
-                      <span>État XVV</span>
-                      <strong>{point.cruise_xvv_state ?? "—"}</strong>
-                      <small>0x208 Dyn_CMM · octet 4 · bits 2-3</small>
+                    <div className={`cruise-candidate-indicator${point.cruise_on ? " active" : ""}`}>
+                      <span>Mode sélectionné</span>
+                      <strong>{cruiseModeLabel(point.cruise_mode_raw)}</strong>
+                      <small>0x50E · octet 7 bits 5-6</small>
                     </div>
-                    <div className={`cruise-candidate-indicator${point.cruise_active_candidate ? " active" : ""}`}>
+                    <div className={`cruise-candidate-indicator${point.cruise_activation_request ? " active" : ""}`}>
                       <span>Consigne</span>
                       <strong>{typeof point.cruise_setpoint_kph === "number" ? `${point.cruise_setpoint_kph.toFixed(0)} km/h` : "—"}</strong>
                       <small>0x50E Dat_CLIM · octet 6</small>
                     </div>
-                    <div className={`cruise-candidate-indicator${point.cruise_setpoint_direction ? " active pulse" : ""}`}>
-                      <span>Dernier appui</span>
-                      <strong>
-                        {point.cruise_setpoint_direction === "up"
-                          ? `▲ +${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)}`
-                          : point.cruise_setpoint_direction === "down"
-                            ? `▼ -${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)}`
-                            : "—"}
-                      </strong>
-                      <small>Sens déduit du saut de consigne, aucun bit dédié identifié</small>
+                    <div className={`cruise-candidate-indicator${point.cruise_active_candidate ? " active" : ""}`}>
+                      <span>État moteur XVV</span>
+                      <strong>{cruiseXvvStateLabel(point.cruise_xvv_state)}</strong>
+                      <small>0x208 · code {point.cruise_xvv_state ?? "—"}</small>
+                    </div>
+                  </div>
+                  <div className="cruise-control-pad" aria-label="Commandes détectées du régulateur">
+                    <div className={`cruise-control-button${point.cruise_on ? " active" : ""}`}>
+                      <span>ON</span><small>mode RVV = 1</small>
+                    </div>
+                    <div className={`cruise-control-button pulse${point.cruise_button_event === "set_plus" ? " active" : ""}`}>
+                      <span>SET+</span><small>{point.cruise_button_event === "set_plus" ? `+${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)} km/h` : "variation +"}</small>
+                    </div>
+                    <div className={`cruise-control-button pulse${point.cruise_button_event === "set_minus" ? " active" : ""}`}>
+                      <span>SET−</span><small>{point.cruise_button_event === "set_minus" ? `−${Math.abs(point.cruise_setpoint_step_kph ?? 0).toFixed(0)} km/h` : "variation −"}</small>
+                    </div>
+                    <div className={`cruise-control-button candidate pulse${point.cruise_button_event === "resume" ? " active" : ""}`}>
+                      <span>RESUME</span><small>réengagement déduit</small>
+                    </div>
+                    <div className={`cruise-control-button pulse${point.cruise_button_event === "cancel" ? " active" : ""}`}>
+                      <span>CANCEL</span><small>coupure sans frein</small>
                     </div>
                   </div>
                   <div className="cruise-validation-footer">
-                    <span>Détection comportementale <strong>{point.cruise_probable ? `oui · ${Math.round((point.cruise_confidence ?? 0) * 100)} %` : "non"}</strong></span>
+                    <span>Activation directe 0x50E <strong>{point.cruise_activation_request ? "oui" : "non"}</strong></span>
+                    <span>RESUME <strong>candidat</strong> · aucun contact dédié visible</span>
                   </div>
                 </div>
                 <div className="cruise-validation-card">

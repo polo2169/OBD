@@ -30,8 +30,10 @@ Il s'agit d'une documentation **de réception et de diagnostic**. Elle ne valide
 4. Les DTC caméra `B1004` et `B117F` sont devenus actifs (`0x89`) dans le scan du 2026-08-07 à 10:29, après avoir été historiques (`0x08`) à 10:03. Le BSI reflète les mêmes défauts (`0x09`).
 5. `0x305` est abondante et cohérente avec l'angle volant réel : 612 725 trames, 40 sessions, période médiane 9,989 ms (~100 Hz), angle observé -536,9° à +541,1°.
 6. `0x452` est présente à ~20 Hz, mais les champs de régulation longitudinale, consigne et activation ACC restent inactifs dans les captures étudiées.
-7. `0x50E` est présente à ~10 Hz et sa consigne a été corrélée lors de cinq engagements sur quatre essais. La valeur 255 correspond à l'état inactif/indisponible observé.
+7. `0x50E` est présente à ~10 Hz. Le sélecteur `OFF / RVV / LVV`, la demande d'activation RVV et la consigne ont été corrélés sur les essais dédiés. La valeur de consigne 255 correspond à l'état inactif/indisponible observé.
 8. `0x2B6` et `0x2F6` n'ont jamais été observées dans les 337 sessions rattachées au VIN inspectées. Cela signifie « absentes du bus capturé », pas « absentes du véhicule ».
+9. `0x412` contient `DriverDoorOpen` sur l'octet 6 masque `0x08`; les deux états ont été observés. `ParkingBrakeActive` est défini sur l'octet 0 masque `0x08`, mais aucune activation locale n'a encore été capturée.
+10. `0x572` contient `DriverSeatbeltState` sur les bits 7–6 du premier octet. Sept sessions montrent des transitions; l'essai le plus propre valide `1 = débouclée` et `2 = bouclée`.
 
 ### Conclusion diagnostic CVM
 
@@ -77,7 +79,9 @@ Le connecteur décrit est le connecteur BSI `EP` 60 voies. Une mesure d'environ 
 | `0x305` | HS1 / chaîne EPS | EPS ou distribution BSI selon variante | BSI / consommateurs direction | Angle volant réel, vitesse de rotation, compteur, checksum | 612 725 trames; angle et sens validés | `vehicle_confirmed` pour les signaux; sens exact à préciser |
 | `0x3F2` | HS1, BSI → EPS | BSI/gateway | EPS 7126 | Commande de maintien de voie, état LKA/LPA, consigne de colonne | 128 357 trames; jamais Active; Defect présent | `vehicle_diagnostic` + `upstream_confirmed` |
 | `0x452` | HS2/ADAS, diffusé par BSI | BSI | ARTIV, moteur, freinage, autres | Type régulation, consigne, demandes RVV/ACC, temps inter-véhicule | 128 273 trames; fonctions ACC inactives | `upstream_confirmed`, présence locale confirmée |
-| `0x50E` | BSI → ECU moteur | BSI | ECU moteur | Ordres régulateur classique; consigne `P219` | 64 285 trames; consigne validée | `vehicle_confirmed` |
+| `0x50E` | BSI → ECU moteur | BSI | ECU moteur | Ordres régulateur classique; mode, activation et consigne | 64 285 trames; mode/activation/consigne validés | `vehicle_confirmed` |
+| `0x412` | Données carrosserie BSI | BSI | Combiné et consommateurs habitacle | Porte conducteur, frein de stationnement, portes et frein principal | 170 566 trames; porte validée, frein de stationnement actif non observé | `vehicle_confirmed` porte; `upstream_confirmed` frein stationnement |
+| `0x572` | Données de retenue/habitacle | BSI | Combiné et consommateurs retenue | États des ceintures conducteur/passager | 86 396 trames; conducteur 1/2 validé, passager constant | `vehicle_confirmed` conducteur |
 | `0x2B6` | HS2/ADAS | ARTIV/radar | moteur, freinage, BSI, CMF | Demande de décélération et couple longitudinal ACC | Non observée sur le bus local | `upstream_confirmed` + `not_observed` |
 | `0x2F6` | HS2/ADAS | ARTIV/radar | BSI, moteur, freinage, CMF | Cible, distance, alertes collision, AEB, état ACC | Non observée sur le bus local | `upstream_confirmed` + `not_observed` |
 
@@ -149,9 +153,35 @@ Le message `Dat_CLIM`, malgré son nom historique, est émis par le BSI et conti
 | `P219_Com_xPrpReqRaw` | `48|8@1+` | Consigne observée en km/h; 255 inactif/indisponible |
 | `P231_Com_ctBSIFrm` | `56|4@1+` | Compteur BSI |
 | `P222_Typ_PrpCtl_Req` | `60|1@1+` | Type de requête; enum à confirmer |
+| `P221_Speed_setPoint_Typ` / `TYPE_REGUL_LONGI` | `61|2@1+` | 0 OFF, 1 RVV/régulateur, 2 LVV/limiteur, 3 réservé/ACC selon variante |
+| `DDE_ACTIVATION_RVV_ACC` | bit 7 du dernier octet (`63|1`) | Demande d'activation RVV; 1 pendant la régulation active |
 | `P232_Com_stXVVChkSum` | `4|2@1+` | Checksum XVV |
 
-Statistiques locales : 64 285 trames dans 42 sessions, DLC 8, période médiane 100,001 ms. `P219` prend 49 valeurs distinctes de 37 à 255; 255 domine hors régulation. La consigne a été confirmée sur cinq engagements dans quatre essais.
+Statistiques locales : 64 285 trames dans 42 sessions, DLC 8, période médiane 100,001 ms. `P219` prend 49 valeurs distinctes de 37 à 255; 255 domine hors régulation. La consigne a été confirmée sur cinq engagements dans quatre essais. Dans les 337 sessions rattachées au VIN, les valeurs du dernier octet confirment notamment les familles `0x00` (OFF), `0x20` (RVV sélectionné), `0x40` (LVV sélectionné) et `0xA0` (RVV actif).
+
+### Commandes du commodo visibles dans le replay
+
+| Commande affichée | Méthode | Validation locale |
+|---|---|---|
+| `ON` | Lecture directe du mode `TYPE_REGUL_LONGI = 1` | Bascule `ON → OFF → LVV → OFF → ON` observée dans l'essai `learn-20260805T065418Z-fca10a57` |
+| `SET+` | Effet déduit d'une hausse de la consigne pendant l'activation RVV | +1 km/h à 77,9 s dans `learn-20260805T155300Z-757befbc`; reproduit dans deux autres essais |
+| `SET−` | Effet déduit d'une baisse de la consigne pendant l'activation RVV | −1 km/h à 87,1 s dans la même session; reproduit dans un autre essai |
+| `CANCEL` | Front actif → inactif, mode RVV conservé, sans frein et sans état XVV de coupure par frein | 44,1 s dans la session principale; autre occurrence à 35,3 s |
+| `RESUME` | Réengagement après un `CANCEL` dans la même session | Candidat cohérent à 68,7 s; aucun bit de contact électrique dédié n'a été isolé |
+
+`ON` et `DDE_ACTIVATION_RVV_ACC` sont des lectures directes de la trame. `SET+`, `SET−`, `CANCEL` et surtout `RESUME` sont des événements reconstruits à partir de leurs effets véhicule. Ils sont destinés au diagnostic passif et ne constituent pas une définition de trame d'injection.
+
+## Compléments habitacle `0x412` et `0x572`
+
+Le fork [`cristianku/openpilot`](https://github.com/cristianku/openpilot) ne contient aucun commit propre par rapport à son amont et référence `commaai/opendbc` comme sous-module au commit `58b89559ede390a9a4b389f2276ab3863a3ecc52`. Cette révision confirme les positions ci-dessous. Au 2026-08-10, le fork était 245 commits derrière `commaai/openpilot`; il sert donc ici de confirmation historique, pas de source plus récente.
+
+| CAN ID | Signal DBC T9 | Position | Résultat local |
+|---|---|---:|---|
+| `0x412` | `DriverDoorOpen` | `51|1@0+`, octet 6 masque `0x08` | 168 223 trames fermées, 2 343 ouvertes; transitions dans 5 sessions |
+| `0x412` | `ParkingBrakeActive` | `3|1@0+`, octet 0 masque `0x08` | Position source-confirmée, mais 0 état actif sur 170 566 trames de 50 sessions; activation véhicule non validée |
+| `0x572` | `DriverSeatbeltState` | `7|2@0+`, octet 0 bits 7–6 | 12 172 états `1`, 74 224 états `2`; transitions dans 7 sessions |
+
+L'essai le plus propre pour la ceinture est `learn-20260805T154951Z-57acfc99` : véhicule à 0 km/h, porte conducteur fermée et bit de frein de stationnement constant, la séquence est `2 → 1 → 2 → 1 → 2`. Les autres captures routières montrent généralement `1 → 2` avant le départ et `2 → 1` après l'arrêt. L'enum retenu est donc `1 = débouclée`, `2 = bouclée`; `0` et `3` restent réservés/inconnus. Le champ passager est resté à `1` dans les 86 396 trames inspectées et n'est pas déclaré validé dynamiquement.
 
 ## Détail `0x2B6` — dynamique longitudinale ARTIV
 
@@ -318,4 +348,3 @@ Les liens ouvrent le message original dans le canal exporté.
 - DBC spécifique véhicule : `database/psa/dbc/peugeot_308_t9_2018.dbc`
 - Scan CVM actif : `data/diagnostics/peugeot/VF3LPHNYWJS141966/scans/scan-20260807T102946956596Z-21700cb0.json`
 - Extraction machine : `database/psa/community/comma/peugeot_technical_extract.json`
-

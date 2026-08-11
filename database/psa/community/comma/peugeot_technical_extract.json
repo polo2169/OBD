@@ -246,6 +246,64 @@
       ]
     },
     {
+      "id_hex": "0x412",
+      "id_decimal": 1042,
+      "dbc_name": "Dat_BSI",
+      "dlc": 8,
+      "bus": "BSI body data",
+      "transmitter": "BSI",
+      "receivers": ["instrument cluster", "body-data consumers"],
+      "function": "Body, door, brake and reverse states",
+      "confidence": "vehicle_confirmed",
+      "vehicle_observed": {
+        "frame_count": 170566,
+        "session_count": 50,
+        "driver_door_counts": {"closed": 168223, "open": 2343},
+        "driver_door_transition_sessions": 5,
+        "parking_brake_counts": {"inactive": 170566, "active": 0},
+        "parking_brake_note": "Layout is source-confirmed but the active state was not observed locally"
+      },
+      "signals": [
+        {"name": "ParkingBrakeActive", "upstream_name": "PARKING_BRAKE", "start_bit": 3, "length": 1, "byte_order": "big_endian", "enum": {"0": "inactive", "1": "active"}, "confidence": "upstream_confirmed"},
+        {"name": "DriverDoorOpen", "upstream_name": "DRIVER_DOOR", "start_bit": 51, "length": 1, "byte_order": "big_endian", "enum": {"0": "closed", "1": "open"}, "confidence": "vehicle_confirmed"}
+      ],
+      "sources": [
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc",
+        "https://github.com/commaai/opendbc/blob/58b89559ede390a9a4b389f2276ab3863a3ecc52/opendbc/dbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
+      "id_hex": "0x572",
+      "id_decimal": 1394,
+      "dbc_name": "RESTRAINTS",
+      "dlc": 8,
+      "bus": "BSI / restraints data",
+      "transmitter": "BSI",
+      "receivers": ["instrument cluster", "restraints-data consumers"],
+      "function": "Driver and passenger seatbelt states",
+      "confidence": "vehicle_confirmed",
+      "vehicle_observed": {
+        "frame_count": 86396,
+        "session_count": 78,
+        "driver_state_counts": {"1_unlatched": 12172, "2_latched": 74224},
+        "driver_transition_sessions": 7,
+        "dedicated_test_session": "learn-20260805T154951Z-57acfc99",
+        "dedicated_test_sequence": [2, 1, 2, 1, 2],
+        "test_conditions": {"speed_kph": 0, "driver_door_open": false, "parking_brake_active": false},
+        "passenger_state_counts": {"1_only": 86396},
+        "passenger_note": "No passenger transition was observed; physical enum not locally validated"
+      },
+      "signals": [
+        {"name": "DriverSeatbeltState", "upstream_name": "DRIVER_SEATBELT", "start_bit": 7, "length": 2, "byte_order": "big_endian", "enum": {"0": "unknown_or_reserved", "1": "unlatched", "2": "latched", "3": "unknown_or_reserved"}, "confidence": "vehicle_confirmed"},
+        {"name": "PassengerSeatbeltState", "upstream_name": "PASSENGER_SEATBELT", "start_bit": 5, "length": 2, "byte_order": "big_endian", "confidence": "upstream_confirmed"}
+      ],
+      "sources": [
+        "database/psa/dbc/opendbc/psa_aee2010_r3.dbc",
+        "data/sessions/learn-20260805T154951Z-57acfc99.jsonl",
+        "https://github.com/commaai/opendbc/blob/58b89559ede390a9a4b389f2276ab3863a3ecc52/opendbc/dbc/psa_aee2010_r3.dbc"
+      ]
+    },
+    {
       "id_hex": "0x50E",
       "id_decimal": 1294,
       "dbc_name": "Dat_CLIM",
@@ -263,12 +321,27 @@
         "setpoint_max": 255,
         "setpoint_unique_values": 49,
         "inactive_value": 255,
-        "validation": "Five cruise engagements across four tests"
+        "validation": "Mode, activation and setpoint correlated across dedicated local tests",
+        "last_byte_family_counts_across_vin_sessions": {
+          "0x00_off": 6099,
+          "0x20_rvv_selected": 51634,
+          "0x40_lvv_selected": 28,
+          "0xA0_rvv_active": 5075
+        },
+        "control_observations": [
+          {"control": "ON", "method": "direct_mode_equals_1", "confidence": "vehicle_confirmed", "session": "learn-20260805T065418Z-fca10a57"},
+          {"control": "SET+", "method": "positive_setpoint_delta_while_active", "confidence": "vehicle_confirmed", "example_session": "learn-20260805T155300Z-757befbc", "example_t_s": 77.9},
+          {"control": "SET-", "method": "negative_setpoint_delta_while_active", "confidence": "vehicle_confirmed", "example_session": "learn-20260805T155300Z-757befbc", "example_t_s": 87.1},
+          {"control": "CANCEL", "method": "activation_falling_edge_without_brake_while_rvv_selected", "confidence": "vehicle_confirmed", "example_session": "learn-20260805T155300Z-757befbc", "example_t_s": 44.1},
+          {"control": "RESUME", "method": "reactivation_after_cancel_in_same_session", "confidence": "vehicle_diagnostic", "example_session": "learn-20260805T155300Z-757befbc", "example_t_s": 68.7, "note": "Dedicated electrical contact bit not isolated"}
+        ]
       },
       "signals": [
         {"name": "P219_Com_xPrpReqRaw", "start_bit": 48, "length": 8, "byte_order": "little_endian", "factor": 1, "unit": "km/h_observed", "function": "Cruise setpoint"},
         {"name": "P231_Com_ctBSIFrm", "start_bit": 56, "length": 4, "byte_order": "little_endian", "factor": 1, "function": "BSI frame counter"},
         {"name": "P222_Typ_PrpCtl_Req", "start_bit": 60, "length": 1, "byte_order": "little_endian", "factor": 1, "function": "Cruise request type"},
+        {"name": "P221_Speed_setPoint_Typ", "alias": "TYPE_REGUL_LONGI", "start_bit": 61, "length": 2, "byte_order": "little_endian", "factor": 1, "enum": {"0": "off", "1": "rvv_cruise", "2": "lvv_limiter", "3": "reserved_or_acc_variant"}, "function": "Longitudinal regulation selector", "confidence": "vehicle_confirmed"},
+        {"name": "DDE_ACTIVATION_RVV_ACC", "start_bit": 63, "length": 1, "byte_order": "little_endian", "factor": 1, "enum": {"0": "inactive", "1": "activation_requested"}, "function": "RVV activation request", "confidence": "vehicle_confirmed"},
         {"name": "P232_Com_stXVVChkSum", "start_bit": 4, "length": 2, "byte_order": "little_endian", "factor": 1, "function": "XVV checksum"}
       ],
       "sources": [

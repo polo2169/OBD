@@ -406,6 +406,11 @@ class ReplaySample(BaseModel):
     cruise_switch_candidate: bool | None = None
     cruise_xvv_state: int | None = None
     cruise_active_candidate: bool | None = None
+    cruise_mode_raw: int | None = None
+    cruise_on: bool | None = None
+    cruise_activation_request: bool | None = None
+    cruise_button_event: Literal["set_plus", "set_minus", "resume", "cancel"] | None = None
+    cruise_button_event_source: Literal["setpoint_delta", "state_transition"] | None = None
     cruise_setpoint_kph: float | None = None
     cruise_setpoint_direction: Literal["up", "down"] | None = None
     cruise_setpoint_step_kph: float | None = None
