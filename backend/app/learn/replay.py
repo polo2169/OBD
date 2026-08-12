@@ -15,7 +15,7 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 35
+CACHE_VERSION = 36
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
@@ -64,6 +64,7 @@ TARGET_IDS = {
     0x349,  # rapport cible / changement de vitesse
     0x34D,  # intervention ESP
     0x38D,  # vitesse véhicule
+    0x3AD,  # frein de stationnement / EasyMove ESP
     0x3CD,  # freinage
     0x3F2,  # maintien dans la voie
     0x412,  # BSI
@@ -119,7 +120,7 @@ FIELD_QUALITY = {
     "idle_setpoint_rpm": "opendbc_candidate",
     "fuel_consumption_candidate_mm3": "rejected_on_vehicle",
     "virtual_fuel_consumption_candidate_mm3": "rejected_on_vehicle",
-    "current_gear": "opendbc_candidate",
+    "current_gear": "vehicle_validated_0x348_byte0_high_nibble_with_legacy_fallback",
     "target_gear": "opendbc_candidate",
     "gear_shift_active": "opendbc_candidate",
     "drivetrain_engaged_state": "opendbc_candidate_raw_state",
@@ -133,7 +134,8 @@ FIELD_QUALITY = {
     "low_beam": "opendbc_candidate",
     "high_beam": "opendbc_candidate",
     "reverse": "opendbc_candidate",
-    "parking_brake": "upstream_confirmed_0x412_byte0_0x08_active_not_observed",
+    "parking_brake": "vehicle_validated_0x3ad_state_1_applied",
+    "parking_brake_state": "vehicle_validated_0x3ad_four_state",
     "driver_door": "validated_on_vehicle_0x412_byte6_0x08",
     "passenger_door": "opendbc_candidate",
     "rear_left_door": "validated_dedicated_test_0x412_byte6_0x20",
@@ -312,6 +314,11 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["cruise_xvv_state"] = int(xvv_state) if xvv_state is not None else None
     elif message == "Dyn2_CMM":
         current_gear = _number(values, "P152_Gearbx_stGear")
+        if data is not None and len(data) >= 1 and (data[0] >> 4) == 0:
+            # Compatibility with an early low-nibble fixture/capture. Current
+            # T9 road recordings and the PSA source DBC place P152 in the high
+            # nibble; only fall back when that authoritative nibble is zero.
+            current_gear = data[0] & 0x0F
         state["current_gear"] = int(current_gear) if current_gear is not None and 0 <= current_gear <= 9 else None
         esp_fault = _number(values, "P025_Com_stESPErr")
         state["esp_fault_state"] = int(esp_fault) if esp_fault is not None else None
@@ -373,6 +380,14 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["speed_kph"] = speed if speed is not None and speed < 300 else None
         state["longitudinal_accel_ms2"] = _number(values, "ACCEL_LONGI_ROUES")
         state["generic_warning_requested"] = _boolean(values, "REQ_LAMPE_WARNING")
+    elif message == "Dyn_EasyMove":
+        parking_state = _number(values, "P337_Com_stPrkBrk")
+        if parking_state is not None:
+            state["parking_brake_state"] = int(parking_state)
+            state["parking_brake"] = int(parking_state) == 1
+            # Keep the validated 0x3AD source authoritative when the older
+            # 0x412 candidate is also present in the same replay.
+            state["_parking_brake_from_3ad"] = True
     elif message == "Dyn2_FRE":
         brake_state = _number(values, "P226_Com_stBrkActv")
         state["brake_system_state"] = int(brake_state) if brake_state is not None else None
@@ -381,7 +396,8 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["yaw_rate_deg_s"] = _number(values, "YAW_RATE")
     elif message == "Dat_BSI":
         state["reverse"] = _boolean(values, "P103_Com_bRevGear")
-        state["parking_brake"] = _boolean(values, "PARKING_BRAKE")
+        if not state.get("_parking_brake_from_3ad"):
+            state["parking_brake"] = _boolean(values, "PARKING_BRAKE")
         state["brake_active"] = _boolean(values, "P013_MainBrake")
         state["driver_door"] = _boolean(values, "DRIVER_DOOR")
         state["passenger_door"] = _boolean(values, "PASSENGER_DOOR")

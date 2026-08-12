@@ -43,7 +43,8 @@ export const replayGaugeCatalog: ReplayGaugeDefinition[] = [
   { key: "target_gear", label: "Rapport cible", unit: "rapport", minimum: 0, maximum: 9, color: "#ffb45f", note: "Rapport demandé pendant la stratégie de changement de vitesse. Le code 9 est affiché R." },
   { key: "steering_angle_deg", label: "Angle du volant", unit: "°", minimum: -540, maximum: 540, precision: 1, color: "#b384ff", note: "Angle du volant validé sur ce véhicule; négatif vers la droite." },
   { key: "brake_pressure_raw", label: "Pression de freinage brute", unit: "brut", minimum: 0, maximum: 255, color: "#ff6b65", note: "Signal de freinage non calibré : aucune unité physique ne doit être déduite." },
-  { key: "parking_brake", label: "Frein de stationnement", unit: "état", minimum: 0, maximum: 1, color: "#ff6b65", note: "0x412 Dat_BSI, octet 0 masque 0x08. Définition amont confirmée; l'état actif n'a pas encore été observé dans les captures locales.", status: true },
+  { key: "parking_brake", label: "Frein de stationnement", unit: "état", minimum: 0, maximum: 1, color: "#ff6b65", note: "0x3AD Dyn_EasyMove. L'état serré a été observé 74 389 fois dans les captures T9; 0x412 ne sert plus que de secours.", status: true },
+  { key: "parking_brake_state", label: "Frein de stationnement · état brut", unit: "code", minimum: 0, maximum: 3, color: "#ffb45f", note: "0x3AD : 0 relâché, 1 serré, 2 réservé/transition, 3 actionneur en mouvement." },
   { key: "driver_door", label: "Porte conducteur", unit: "état", minimum: 0, maximum: 1, color: "#ffb45f", note: "0x412 Dat_BSI, octet 6 masque 0x08. États fermé/ouvert validés dans cinq sessions avec transitions.", status: true },
   { key: "driver_seatbelt_state", label: "Ceinture conducteur", unit: "code", minimum: 0, maximum: 3, color: "#ffcf66", note: "0x572 RESTRAINTS, octet 0 bits 7-6. Essai local répété : 1 débouclée, 2 bouclée; 0/3 réservés.", status: true },
   { key: "oil_temperature_c", label: "Température d'huile", unit: "°C", minimum: 40, maximum: 150, color: "#ffb45f", note: "Température du carter moteur issue du message Dat_CMM." },
@@ -158,7 +159,7 @@ export const replayIndicatorCatalog: ReplayIndicatorDefinition[] = [
   { key: "turn_right", label: "Clignotant droit", color: "green", icon: "arrow-right", fields: ["turn_signal"], note: "Commande de clignotant enregistrée." },
   { key: "low_beam", label: "Feux de croisement", color: "green", icon: "low-beam", fields: ["low_beam"], note: "État des feux de croisement." },
   { key: "high_beam", label: "Feux de route", color: "blue", icon: "high-beam", fields: ["high_beam"], note: "État des feux de route." },
-  { key: "parking_brake", label: "Frein de stationnement", color: "red", icon: "parking", fields: ["parking_brake"], note: "0x412 octet 0 masque 0x08, source-confirmé; état actif non encore observé localement." },
+  { key: "parking_brake", label: "Frein de stationnement", color: "red", icon: "parking", fields: ["parking_brake", "parking_brake_state"], note: "État validé sur 0x3AD Dyn_EasyMove; 1 = serré et 3 = actionneur en mouvement." },
   { key: "brake_fault", label: "Défaut freinage", color: "red", icon: "brake", fields: ["brake_fault"], note: "Demande de témoin de défaut du frein principal." },
   { key: "abs", label: "ABS", color: "amber", icon: "abs", fields: ["abs_intervention"], note: "Bit d'intervention présent mais jamais actif dans 95 515 trames locales; ce n'est pas un défaut ABS." },
   { key: "esp", label: "ESP / antipatinage", color: "amber", icon: "esp", fields: ["esp_fault_state", "esp_intervention_state", "esp_intervention", "tcs_intervention", "esp_exclusive_intervention"], note: "États ESP90 passifs. Les bits actifs sont documentés mais n'ont pas encore été déclenchés pendant les captures." },
@@ -393,6 +394,7 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
   const turnSignalValue = integer("HS2_DAT_MDD_CMD_452.TURN_SIGNAL_STATUS");
   const cruiseModeRaw = integer("Dat_CLIM.P221_Speed_setPoint_Typ");
   const cruiseXvvState = integer("Dyn_CMM.P037_VehV_stXVV");
+  const parkingBrakeState = integer("Dyn_EasyMove.P337_Com_stPrkBrk");
   const headlampFaults = [
     logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_CROISMNT_G"),
     logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_D"), logical("HS2_DAT7_BSI_612.DEF_FEU_ROUTE_G"),
@@ -461,7 +463,8 @@ export function passiveSnapshotToReplaySample(snapshot: PassiveSensorSnapshot): 
     low_beam: logical("HS2_DAT7_BSI_612.ETAT_FEUX_CROIST"),
     high_beam: logical("HS2_DAT7_BSI_612.ETAT_FEUX_ROUTE"),
     reverse: logical("Dat_BSI.P103_Com_bRevGear"),
-    parking_brake: logical("Dat_BSI.PARKING_BRAKE") ?? logical("FIAT_BODY.PARKING_BRAKE"),
+    parking_brake: parkingBrakeState === null ? logical("Dat_BSI.PARKING_BRAKE") ?? logical("FIAT_BODY.PARKING_BRAKE") : parkingBrakeState === 1,
+    parking_brake_state: parkingBrakeState,
     driver_door: logical("Dat_BSI.DRIVER_DOOR") ?? logical("FIAT_BODY.DRIVER_DOOR_OPEN"),
     passenger_door: logical("Dat_BSI.PASSENGER_DOOR"),
     front_wiper_status: integer("HS2_DAT_MDD_CMD_452.FRONT_WIPER_STATUS"),

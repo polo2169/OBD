@@ -233,6 +233,208 @@ GET /api/learn/replay/{session_id}?force=true
 GET /api/learn/replay/{session_id}/route.geojson
 ```
 
+#### Vidéo caméra + CAN synchronisée
+
+Les sessions produites par l'enregistreur caméra/CAN d'openpilot peuvent être
+rendues hors ligne avec le DBC spécifique à la 308 T9 :
+
+```bash
+cd backend
+.venv/bin/python tools/render_camera_can_replay.py \
+  /chemin/vers/record-YYYYMMDDTHHMMSSZ
+```
+
+Le rendu utilise `frames.jsonl` comme horloge caméra et l'ancre ESP32 de
+`meta.json` pour sélectionner l'état CAN de chaque image. Il ne suppose donc pas
+que les images ont réellement été capturées au débit nominal inscrit dans le
+MP4. Les sorties (vidéo H.264, télémétrie JSONL, rapport et sous-titres) sont
+écrites dans `data/runtime/camera_can_replays/`, hors Git. L'opération est
+strictement hors ligne : aucun port série n'est ouvert et aucune trame CAN n'est
+émise.
+
+Le décodage nécessite l'environnement Python du backend (`cantools`). Le dessin
+des images nécessite un Python contenant OpenCV ; l'environnement openpilot
+frère est détecté automatiquement, ou peut être indiqué avec
+`--renderer-python /chemin/vers/python`.
+
+#### Perception openpilot sur une vidéo enregistrée
+
+Le vrai modèle `driving_supercombo` installé dans le dépôt openpilot frère peut
+être exécuté hors ligne sur la vidéo. Le résultat superpose le chemin prédit, les
+quatre lignes de voie avec leur confiance, les deux bords de route et le meilleur
+véhicule précédent possible :
+
+```bash
+cd backend
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_perception.py \
+  /chemin/vers/record-YYYYMMDDTHHMMSSZ
+```
+
+Pour valider rapidement le cadrage avant de traiter toute la capture :
+
+```bash
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_perception.py \
+  /chemin/vers/record-YYYYMMDDTHHMMSSZ \
+  --start-frame 7350 --max-frames 600
+```
+
+L'outil reproduit le redressement optique et le recadrage décrits dans
+`camera_intrinsics.json`, respecte les horodatages réels de `frames.jsonl`, puis
+alimente le modèle à 20 Hz. Si la télémétrie du replay caméra/CAN existe, la
+vitesse décodée sert aussi au calibrateur openpilot. Les prédictions JSONL, le
+rapport et la vidéo H.264 sont écrits dans
+`data/runtime/openpilot_perception/<session>/`, hors Git.
+
+Cette commande ne démarre ni `manager`, ni `camerad`, ni `controlsd`, n'ouvre
+aucun adaptateur et n'émet aucune trame CAN. Le modèle openpilot ne fournit pas
+des boîtes pour tous les objets visibles : ses trois sorties `lead` représentent
+les horizons de probabilité à 0, 2 et 4 secondes, et non trois voitures. Le
+losange orange utilise toujours l'horizon courant `t=0`. Sa distance suit le
+calcul officiel de `radard.py`, soit la coordonnée longitudinale du modèle moins
+`RADAR_TO_CAMERA = 1,52 m`. Il matérialise une estimation, pas une mesure radar
+ni une détection certifiée de chaque voiture.
+
+#### Caméra + openpilot + CAN en direct sur le Mac
+
+Le même modèle peut fonctionner en direct dans une fenêtre OpenCV, avec le CAN
+308 T9 décodé en parallèle. Le processus modèle ne conserve que la dernière
+image caméra : si l'inférence est plus lente que la caméra, les anciennes images
+sont abandonnées au lieu de former une file et d'augmenter continuellement la
+latence.
+
+Lister les caméras disponibles :
+
+```bash
+cd backend
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_live.py --list-cameras
+```
+
+Lancer la caméra et l'ESP32 connecté sur le port validé :
+
+```bash
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_live.py \
+  --camera 0 \
+  --rotate-180 \
+  --port /dev/cu.usbserial-0001
+```
+
+Le redressement optique, la rotation de la caméra et le cadrage sont repris de
+`camera_intrinsics.json`. Sur le Mac de test, AVFoundation associe l'index `0` à
+la Lenovo FHD montée à l'envers et l'index `1` à la caméra FaceTime. La rotation
+180° est donc activée par défaut pour la caméra route et peut être rendue
+explicite avec `--rotate-180`. Pour tester la caméra du Mac, utiliser
+`--camera 1 --no-rotate-180`. Cette option est ignorée avec `--video`, car les
+captures enregistrées sont déjà orientées. Le lecteur CAN utilise le DBC 308 T9 du dépôt et
+affiche notamment vitesse, rapport/cible EAT6, frein, accélérateur, volant, RVV,
+clignotants gauche/droite/warning, portes, ceinture et frein de parking. Les
+flèches du HUD reproduisent le clignotement du combiné à partir de l'état `0x452`.
+Au-dessus de 20 mph (environ 32 km/h), un clignotant unique suivi d'un effort
+conducteur validé (`DriverTorqueRaw > +5` à gauche ou `< -5` à droite) injecte
+une impulsion `laneChangeLeft` ou `laneChangeRight` dans le modèle. Le HUD passe
+de **ATTENTE EFFORT** à **MODELE GAUCHE/DROITE**. La voiture ne possédant pas de
+détection d'angle mort, aucun état de ce type n'est inventé. Cette fonction ne
+change que le chemin prédit et peut être désactivée avec `--no-blinker-desire` ;
+elle ne produit toujours aucune commande véhicule.
+`q` ou Échap ferme la fenêtre ; `s`
+enregistre une capture d'écran.
+
+Une session brute synchronisée peut aussi être enregistrée :
+
+```bash
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_live.py \
+  --camera 0 \
+  --port /dev/cu.usbserial-0001 \
+  --record
+```
+
+`--record` conserve `road.mp4`, `frames.jsonl`, le CAN brut, les prédictions et
+les métadonnées dans `data/runtime/openpilot_live/`. `--record-overlay` ajoute
+la vidéo de l'interface et sa propre chronologie, avec un coût CPU supérieur.
+À la fermeture propre, les horodatages des deux MP4 sont automatiquement remis
+à la cadence réellement mesurée, sans réencoder les images. Les sessions créées
+avant ce correctif peuvent être réparées sans écraser les originaux avec :
+
+```bash
+cd backend
+.venv/bin/python tools/retime_openpilot_live.py \
+  data/runtime/openpilot_live/live-YYYYMMDDTHHMMSSZ
+```
+
+Cette commande crée `road-realtime.mp4` et `overlay-realtime.mp4`.
+Une vidéo existante peut simuler la caméra pour valider le montage sans voiture :
+
+```bash
+env -u DEBUG ../../openpilot/.venv/bin/python \
+  tools/run_openpilot_live.py \
+  --video /chemin/vers/road.mp4 \
+  --video-start-frame 7350 \
+  --no-can
+```
+
+Le lecteur série est un processus isolé exécuté avec l'environnement backend.
+Il effectue uniquement des lectures série par blocs et ne contient aucune
+écriture série, aucune publication `sendcan` et aucune commande véhicule. Les
+trames brutes sont toutes conservées, tandis que seul le dernier exemplaire de
+chaque identifiant est décodé à 20 Hz pour empêcher le flux T9 d'environ
+1 570 trames/s de prendre du retard. Le HUD distingue désormais `OK`, `RETARD`
+et `PERDU`; le débit, le retard maximal, les pertes firmware et le backlog final
+sont aussi enregistrés dans `meta.json`. Un seul programme peut ouvrir
+la caméra et le port ESP32 : arrêter l'enregistreur, le backend direct ou un
+scanner UDS avant de lancer le live. Ne pas effectuer de diagnostic actif en
+parallèle.
+
+Sur le Mac utilisé pour les essais, la caméra traitée atteint environ 25 Hz sans
+enregistrement, le modèle 6,5 Hz et la latence observée 160–220 ms. Ce mode est
+adapté à l'observation et au développement, pas à une boucle de contrôle de la
+direction ou du freinage.
+
+#### Simulateur latéral T9 hors ligne
+
+Les sessions `--record` peuvent alimenter un simulateur de couple strictement
+hors ligne. Il synchronise le chemin prédit avec la vitesse, le lacet, le couple
+conducteur, le frein et les interverrouillages CAN, puis compare plusieurs
+hypothèses de réponse de la direction :
+
+```bash
+cd backend
+.venv/bin/python tools/simulate_t9_torque.py \
+  ../data/runtime/openpilot_live/live-20260812T084624Z \
+  ../data/runtime/openpilot_live/live-20260812T085627Z
+```
+
+Le dossier `data/runtime/t9_torque_simulator/sim-*/` contient un rapport HTML,
+le rapport JSON complet et les traces JSONL/CSV. Le calcul distingue la consigne
+fantôme sans conducteur de la consigne qui aurait été neutralisée par un effort
+au volant supérieur à `DriverTorqueRaw = 5`. Il applique aussi une limite brute
+de ±10, des rampes, la vitesse minimale, le frein, la marche avant EAT6
+confirmée, la porte, la ceinture, le frein de parking et la fraîcheur du CAN.
+
+Le simulateur exploite aussi, uniquement comme référence de recherche, la
+branche `cristianku/openpilot:psa-torque-sunny` et son openDBC associé. Il
+décodera `EPS_STATE_LKA`, le couple EPS candidat et l'état « volant tenu » dans
+`0x495`, puis simulera le réarmement périodique de 8 s du fork avec plusieurs
+latences hypothétiques (`0,1`, `0,3`, `0,7` et `1,0 s`). Le rapport indique la
+fraction d'indisponibilité et les coupures qui tomberaient pendant une courbe.
+Il compare également ces hypothèses à la capture usine T9 contenant 536
+commandes `0x3F2` non nulles.
+
+Ce profil R3 reste séparé : ses limites ±150/±200, son facteur 25–100, son octet
+`0x18` et son interprétation `EPS_STATE_LKA=3` ne sont pas appliqués à la T9
+R2/EVO. Les injections utilisées par le fork pour simuler les mains sur le
+volant ou un couple conducteur ne sont ni reproduites ni encodées.
+
+La corrélation entre l'effort conducteur et le lacet sert uniquement à centrer
+l'analyse de sensibilité. Elle ne mesure pas le transfert réel de la commande
+EPS `0x3F2`. Les gains produits optimisent donc un modèle numérique simplifié et
+ne sont pas des paramètres prêts pour un essai routier. Le programme n'importe
+aucun pilote série, n'accepte aucun port, n'encode aucune trame et n'émet aucune
+commande véhicule.
+
 ### Garage, véhicule actif et historique
 
 Ouvrir **Garage & historique** avant de travailler sur une voiture. Le véhicule

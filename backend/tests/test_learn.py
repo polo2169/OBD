@@ -91,6 +91,55 @@ def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
     assert values["P000_Com_nEng"]["unit"] == "1/min"
 
 
+def test_t9_eat6_keeps_legacy_low_nibble_fallback_for_current_gear():
+    # Compatibility fixture for an early low-nibble capture. Current road
+    # recordings use the source-confirmed high nibble and are tested below.
+    state: dict = {}
+    _update_state(
+        "Dyn2_CMM",
+        {"P152_Gearbx_stGear": {"value": 0}},
+        state,
+        bytes.fromhex("04274E3D11036059"),
+    )
+
+    assert state["current_gear"] == 4
+
+
+def test_t9_eat6_uses_high_nibble_in_current_road_recordings():
+    state: dict = {}
+    _update_state(
+        "Dyn2_CMM",
+        {"P152_Gearbx_stGear": {"value": 4}},
+        state,
+        bytes.fromhex("403A824011037059"),
+    )
+
+    assert state["current_gear"] == 4
+
+
+def test_t9_parking_brake_uses_validated_3ad_state_over_412_candidate():
+    decoder = get_opendbc_decoder()
+    state: dict = {}
+
+    message, values, error = decoder.decode_frame(
+        0x3AD,
+        False,
+        bytes.fromhex("500000018072008E"),
+    )
+    assert error is None
+    assert message is not None
+    assert values is not None
+    _update_state(message.name, values, state, bytes.fromhex("500000018072008E"))
+
+    assert state["parking_brake_state"] == 1
+    assert state["parking_brake"] is True
+
+    # The old 0x412 candidate is false in the local corpus and must not erase
+    # the authoritative EasyMove state when its frame arrives afterwards.
+    _update_state("Dat_BSI", {"PARKING_BRAKE": {"value": 0}}, state)
+    assert state["parking_brake"] is True
+
+
 def test_cruise_50e_mode_and_activation_are_decoded_from_vehicle_layout():
     decoder = get_opendbc_decoder()
     raw = bytes.fromhex("021B00145E4255A3")
@@ -157,6 +206,13 @@ def test_vehicle_dbc_contains_validated_body_and_seatbelt_layouts():
     assert (driver_seatbelt.start, driver_seatbelt.length) == (7, 2)
     assert str(driver_seatbelt.choices[1]) == "Unlatched"
     assert str(driver_seatbelt.choices[2]) == "Latched"
+
+    engine_gear = database.get_message_by_frame_id(0x348)
+    current_gear = engine_gear.get_signal_by_name("CurrentGear")
+    assert (current_gear.start, current_gear.length) == (4, 4)
+    assert engine_gear.decode(
+        bytes.fromhex("403A824011037059"), decode_choices=False
+    )["CurrentGear"] == 4
 
 
 def test_vehicle_dbc_contains_signed_r2_lane_keep_torque_layout():
@@ -717,6 +773,45 @@ def test_passive_sensor_snapshot_prefers_valid_steering_angle(tmp_path, monkeypa
     assert angle.raw_value == 9.5
     assert angle.unit == "tour"
     assert angle.customized
+
+
+def test_passive_snapshot_exposes_t9_eat6_gear_and_3ad_parking_brake(monkeypatch):
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-t9-transmission",
+        active=True,
+        source="fixture",
+        frame_count=2,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=True,
+        vehicle_profile="peugeot_308_t9_2018",
+    ))
+    monkeypatch.setattr(capture_manager, "latest_obd_values", lambda: [])
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [
+        {
+            "timestamp_us": 2_000_000,
+            "arbitration_id": 0x348,
+            "extended": False,
+            "data": bytes.fromhex("04274E3D11036059"),
+            "raw_hex": "04274E3D11036059",
+        },
+        {
+            "timestamp_us": 2_000_100,
+            "arbitration_id": 0x3AD,
+            "extended": False,
+            "data": bytes.fromhex("500000018072008E"),
+            "raw_hex": "500000018072008E",
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+    by_key = {signal.key: signal for signal in snapshot.signals}
+
+    assert by_key["Dyn2_CMM.P152_Gearbx_stGear"].value == 4
+    assert by_key["Dyn2_CMM.P152_Gearbx_stGear"].confidence == "validated"
+    assert by_key["Dyn_EasyMove.P337_Com_stPrkBrk"].value == 1
+    assert by_key["Dyn_EasyMove.P337_Com_stPrkBrk"].confidence == "validated"
+    assert by_key["Dyn_EasyMove.P337_Com_stPrkBrk"].ecu_family == "ABRASR"
 
 
 def test_passive_sensor_snapshot_uses_fiat_profile_without_psa_decoding(tmp_path, monkeypatch):

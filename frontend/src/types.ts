@@ -1005,6 +1005,7 @@ export type ReplaySample = {
   high_beam?: boolean | null;
   reverse?: boolean | null;
   parking_brake?: boolean | null;
+  parking_brake_state?: number | null;
   driver_door?: boolean | null;
   passenger_door?: boolean | null;
   rear_left_door?: boolean | null;

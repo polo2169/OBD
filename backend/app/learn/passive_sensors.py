@@ -31,6 +31,8 @@ VALIDATED_SIGNALS = {
     ("Dyn2_FRE", "BRAKE_PRESSURE"),
     ("Dyn2_FRE", "LATERAL_ACCELERATION"),
     ("Dyn2_FRE", "YAW_RATE"),
+    ("Dyn2_CMM", "P152_Gearbx_stGear"),
+    ("Dyn_EasyMove", "P337_Com_stPrkBrk"),
 }
 
 FIAT_500_CAN_NOTES_URL = (
@@ -51,6 +53,8 @@ FIAT_500_CANDIDATE_IDS = {
 
 def _category(message: str) -> str:
     upper = message.upper()
+    if "EASYMOVE" in upper:
+        return "Freinage / ABS"
     if upper in {"STEERING", "STEERING_ALT", "IS_DAT_DIRA"}:
         return "Direction"
     if upper in {"LANE_KEEP_ASSIST", "DRIVER", "NEW_MSG_42D"}:
@@ -61,7 +65,7 @@ def _category(message: str) -> str:
         return "Moteur"
     if "BSI" in upper or "MDD" in upper:
         return "Habitacle / BSI"
-    if any(token in upper for token in ("_BV", "BVMP", "EASYMOVE")):
+    if any(token in upper for token in ("_BV", "BVMP")):
         return "Transmission"
     if "CLIM" in upper:
         return "Climatisation"
@@ -78,9 +82,11 @@ def _ecu_family(message: str) -> str | None:
     rather than guessed.
     """
     upper = message.upper()
+    if "EASYMOVE" in upper:
+        return "ABRASR"
     if any(token in upper for token in ("CMM", "EOBD", "OBD01")):
         return "INJ"
-    if any(token in upper for token in ("_BV", "BVMP", "EASYMOVE")):
+    if any(token in upper for token in ("_BV", "BVMP")):
         return "BOITEVIT"
     if any(token in upper for token in ("FRE", "ABR", "VROUES", "CDS")):
         return "ABRASR"
@@ -660,6 +666,13 @@ def passive_sensor_snapshot(
         )
         if values is None or error is not None:
             continue
+        data = bytes(frame["data"])
+        if arbitration_id == 0x348 and data and (data[0] >> 4) == 0:
+            # Keep compatibility with an early low-nibble fixture/capture.
+            # Current T9 road recordings use the source-confirmed high nibble.
+            gear = values.get("P152_Gearbx_stGear")
+            if gear is not None:
+                gear["value"] = data[0] & 0x0F
         if is_steering:
             decoded_by_message[message.name] = values
         if not is_selected:

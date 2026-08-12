@@ -410,6 +410,8 @@ static size_t filter_count = 0;
 
 static size_t format_hello(char *output, size_t capacity);
 static void parse_command(const String &line);
+static void drain_twai(uint8_t limit);
+static void service_twai_alerts();
 
 #if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
 static void poll_interboard_uart();
@@ -1539,6 +1541,12 @@ void setup() {
   while (!satellite_connected
       && static_cast<int32_t>(millis() - satellite_deadline) < 0) {
     const uint32_t now = millis();
+    // The T9 live bus carries about 1,570 frames/s. CAN is already running at
+    // this point, so leaving the 256-entry TWAI queue untouched while waiting
+    // for the diagnostic satellite overflows it in roughly 160 ms. Keep the
+    // passive live stream flowing during the UART handshake.
+    drain_twai(64);
+    service_twai_alerts();
     if (now - satellite_last_request_ms >= 200) {
       interboard_uart.println("{\"type\":\"get_status\"}");
       satellite_last_request_ms = now;

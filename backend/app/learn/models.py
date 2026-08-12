@@ -358,6 +358,7 @@ class ReplaySample(BaseModel):
     high_beam: bool | None = None
     reverse: bool | None = None
     parking_brake: bool | None = None
+    parking_brake_state: int | None = None
     driver_door: bool | None = None
     passenger_door: bool | None = None
     rear_left_door: bool | None = None

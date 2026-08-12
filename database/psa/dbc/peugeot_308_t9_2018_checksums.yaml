@@ -1,0 +1,127 @@
+vehicle: peugeot_308_t9_2018
+generated_at: 2026-08-11
+mode: passive_read_only
+corpus:
+  glob: data/sessions/learn-*.jsonl
+  sessions: 72
+  size_gb: 2.9
+algorithm:
+  name: psa_nibble_sum_4bit
+  expression: checksum = (initial - sum(payload_nibbles_with_checksum_cleared)) & 0xF
+  invariant: sum(all_transmitted_nibbles) & 0xF == initial
+
+validated:
+  - arbitration_id: 0x228
+    dlc: 8
+    message: T9_ENGINE_DYNAMICS_REDUNDANT_228
+    checksum: {byte: 3, nibble: low, initial: 0x3}
+    counter: {byte: 3, nibble: high, modulo: 16}
+    frames: 942978
+    valid: 942978
+
+  - arbitration_id: 0x2ED
+    dlc: 7
+    message: T9_PROTECTED_STATUS_2ED
+    checksum: {byte: 0, nibble: high, initial: 0x2}
+    counter: {byte: 0, nibble: low, modulo: 16}
+    frames: 239935
+    valid: 239935
+
+  - arbitration_id: 0x2F5
+    dlc: 7
+    message: T9_STEERING_TORQUE_2F5
+    checksum: {byte: 0, nibble: high, initial: 0xB}
+    counter: {byte: 0, nibble: low, modulo: 16}
+    frames: 933226
+    valid: 933226
+
+  - arbitration_id: 0x329
+    dlc: 4
+    message: T9_GEARBOX_STATUS_329
+    checksum: {byte: 0, nibble: high, initial: 0xD}
+    counter: {byte: 0, nibble: low, modulo: 16}
+    frames: 476787
+    valid: 476787
+
+  - arbitration_id: 0x349
+    dlc: 8
+    message: T9_GEARBOX_TARGET_349
+    checksum: {byte: 6, nibble: high, initial: 0x6}
+    counter: {byte: 6, nibble: low, modulo: 16}
+    frames: 952844
+    valid: 952844
+
+  - arbitration_id: 0x38D
+    dlc: 8
+    message: T9_VEHICLE_DYNAMICS_38D
+    checksum: {byte: 5, nibble: low, initial: 0x7}
+    counter: {byte: 5, nibble: high, modulo: 16}
+    frames: 240282
+    valid: 240282
+
+  - arbitration_id: 0x3AD
+    dlc: 8
+    message: T9_EASY_MOVE_3AD
+    checksum: {byte: 7, nibble: low, initial: 0xD}
+    counter: {byte: 7, nibble: high, modulo: 16}
+    frames: 480554
+    valid: 480554
+
+  - arbitration_id: 0x3C9
+    dlc: 8
+    message: T9_GEARBOX_PROTECTED_3C9
+    checksum: {byte: 3, nibble: high, initial: 0xE}
+    counter: {byte: 3, nibble: low, modulo: 16}
+    frames: 952253
+    valid: 952251
+    note: Two isolated payloads are capture corruption or outliers.
+
+  - arbitration_id: 0x3CD
+    dlc: 8
+    message: T9_BRAKE_DYNAMICS_3CD
+    checksum: {byte: 7, nibble: high, initial: 0x3}
+    counter: {byte: 7, nibble: low, modulo: 16}
+    frames: 961914
+    valid: 961913
+    note: One isolated payload is capture corruption or an outlier.
+
+  - arbitration_id: 0x42D
+    dlc: 4
+    message: T9_PROTECTED_STATUS_42D
+    checksum: {byte: 2, nibble: high, initial: 0xC}
+    counter: {byte: 2, nibble: low, modulo: 16}
+    frames: 192087
+    valid: 192087
+
+  - arbitration_id: 0x50D
+    dlc: 8
+    message: T9_ABS_INTERVENTION_50D
+    checksum: {byte: 7, nibble: low, initial: 0xC}
+    counter: {byte: 7, nibble: high, modulo: 16}
+    frames: 96106
+    valid: 96106
+
+counter_only_no_global_nibble_checksum:
+  - {arbitration_id: 0x305, byte: 4, nibble: low, frames: 932094}
+  - {arbitration_id: 0x34D, byte: 5, nibble: low, frames: 480593}
+  - {arbitration_id: 0x3B8, byte: 6, nibble: high, frames: 235668}
+  - {arbitration_id: 0x40D, byte: 7, nibble: low, frames: 480593}
+  - {arbitration_id: 0x432, byte: 1, nibble: low, frames: 192107}
+
+special_or_unresolved:
+  - arbitration_id: 0x452
+    field: SpeedSetpointChecksum
+    width_bits: 2
+    status: source_confirmed_static_locally
+    algorithm: bit1=parity(high_nibble(setpoint)); bit0=parity(low_nibble(setpoint))
+    note: The local non-ACC payload kept its R3 frame checksum and frame counter at zero, so the generic CHK_INI=0x4 protection is not validated on this T9.
+
+  - arbitration_id: 0x50E
+    field: XVVChecksum
+    width_bits: 2
+    status: layout_and_values_observed_algorithm_unresolved
+    note: Values 0..3 correlate with RVV setpoint changes. BSIFrameCounter is a shared four-bit counter and normally advances by two between consecutive 10 Hz frames.
+
+  - arbitration_id: 0x3F2
+    status: r2_no_checksum_observed
+    note: The R3 checksum and counter locations stayed zero over 191254 local frames; they must not be synthesized for the vehicle's R2/EVO torque layout.
