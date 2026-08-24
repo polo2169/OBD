@@ -1,0 +1,135 @@
+manufacturer: Renault
+model: Trafic II Ph2/Ph3
+platform: X83
+year: 2006-2014
+architecture: Renault CAN 250 kbit/s · injection CAN selon calculateur
+confidence: community_cross_checked
+sources:
+  renault_network_diagnostics:
+    url: https://manualzz.com/doc/5292984/renault-trafic-%C3%A9quipement-%C3%A9lectrique-manuel-de-r%C3%A9paration
+    description: Manuel de réparation Trafic II décrivant le diagnostic du réseau multiplexé sur les broches OBD 6/14.
+  rencom_ecu_coverage:
+    url: https://www.obdtester.com/rencom-eculist/renault/trafic_ii_ph2_3_%5B2006_2014%5D
+    description: Catalogue Trafic II phases 2/3 montrant une architecture mixte CAN et ISO/KWP suivant les calculateurs.
+  ddt4all_can_configuration:
+    url: https://github.com/cedricp/ddt4all/blob/master/src/ddt4all/core/elm/elm.py
+    description: Configuration communautaire Renault utilisant le protocole CAN 11 bits à 250 kbit/s pour les réseaux X83 concernés.
+  obd_vehicle_information:
+    url: https://github.com/OBDb/SAEJ1979
+    license: CC-BY-SA-4.0
+notes:
+  - "Ce profil couvre les Trafic II phases 2/3 à partir de 2006. Pour un véhicule de 2001 à 2005, utiliser le profil X83 Ph1 K-Line."
+  - "Le Trafic II est la plateforme X83. Le profil X82 correspond au Trafic III et ne doit pas être utilisé sur ce véhicule."
+  - "Le réseau CAN véhicule/diagnostic retenu est à 250 kbit/s, identifiants 11 bits, sur les broches OBD 6/14. Le CAN multimédia Renault à 500 kbit/s est un autre réseau."
+  - "Certaines variantes et certains calculateurs auxiliaires utilisent encore ISO 9141/KWP2000 sur K-Line. Une absence de réponse CAN ne prouve donc pas une panne de la passerelle."
+  - "Ce premier profil est volontairement limité aux lectures EOBD normalisées. Aucun inventaire UDS constructeur n'est lancé sur les adresses Renault non validées."
+
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable: []
+  conditional:
+    - oil_service_reset
+    - injector_coding
+    - dpf_regeneration
+    - egr_adaptation
+    - abs_bleed
+  not_applicable: []
+  notes:
+    - Aucune procédure d'écriture X83 n'est autorisée tant que la phase, la motorisation et le protocole de chaque calculateur ne sont pas confirmés sur véhicule.
+
+networks:
+  diagnostic_can:
+    bitrate: 250000
+    access: obd_pins_6_14
+    addressing: 11bit
+    confidence: community_cross_checked
+
+diagnostic:
+  identity_scope: identity_only
+  obd_request_id: 0x7DF
+  obd_response_id: 0x7E8
+  live_obd:
+    enabled: true
+    interval_ms: 1000
+    pids:
+      - 0x04
+      - 0x05
+      - 0x0B
+      - 0x0C
+      - 0x0D
+      - 0x0F
+      - 0x10
+      - 0x11
+      - 0x1F
+      - 0x23
+      - 0x2C
+      - 0x2D
+      - 0x2F
+      - 0x33
+      - 0x42
+      - 0x5C
+  vin_strategies:
+    - key: obd_mode09_vin
+      label: EOBD moteur · Mode 09 PID 02 · CAN 250 kbit/s
+      protocol: obd
+      bus: live
+      request_id: 0x7E0
+      response_id: 0x7E8
+      command: 0x0902
+      confidence: standardized_on_can_variants
+      source: https://github.com/OBDb/SAEJ1979
+    - key: obd_mode09_vin_functional
+      label: EOBD fonctionnel · Mode 09 PID 02 · CAN 250 kbit/s
+      protocol: obd
+      bus: live
+      request_id: 0x7DF
+      response_id: 0x7E8
+      command: 0x0902
+      confidence: standardized_on_can_variants
+      source: https://github.com/OBDb/SAEJ1979
+  identity_fields:
+    - key: calibration_id
+      name: Identifiant de calibration
+      protocol: obd
+      bus: live
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x04
+      codec: indexed_ascii
+      confidence: standardized_on_can_variants
+      source: https://github.com/OBDb/SAEJ1979
+    - key: calibration_verification_number
+      name: Numéro de vérification de calibration (CVN)
+      protocol: obd
+      bus: live
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x06
+      codec: indexed_hex
+      confidence: standardized_on_can_variants
+      source: https://github.com/OBDb/SAEJ1979
+    - key: ecu_name
+      name: Nom du calculateur EOBD
+      protocol: obd
+      bus: live
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x0A
+      codec: indexed_ascii
+      confidence: standardized_on_can_variants
+      source: https://github.com/OBDb/SAEJ1979
+
+ecus:
+  - key: engine
+    name: Calculateur moteur EOBD
+    family: EDC15_EDC16_EDC17_variant_dependent
+    request_id: 0x7E0
+    response_id: 0x7E8
+    protocol: obd
+    confidence: standardized_on_can_variants
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://www.obdtester.com/rencom-eculist/renault/trafic_ii_ph2_3_%5B2006_2014%5D
+    notes:
+      - Les variantes K-Line ne répondront pas avec le transport CAN actuel.

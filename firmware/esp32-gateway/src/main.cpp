@@ -42,6 +42,9 @@ static uint32_t last_stats_ms = 0;
 static bool can_ready = false;
 static bool live_can_ready = false;
 static bool diagnostic_can_ready = false;
+static uint32_t live_can_bitrate = cfg::CAN_BITRATE;
+
+static bool reconfigure_live_bitrate(uint32_t bitrate);
 
 #if UART_DUAL_CAN_MASTER || UART_DUAL_CAN_SATELLITE
 static HardwareSerial interboard_uart(2);
@@ -60,7 +63,7 @@ static const char *live_obd_tx_rejection(
   const bool allowed_id = extended
       ? (id == 0x18DB33F1 || id == 0x18DA10F1)
       : (id == 0x7DF || id == 0x7E0);
-  if (!allowed_id) return "CAN identifier is outside the OBD Mode 01/09 allowlist on OBD 6/14";
+  if (!allowed_id) return "CAN identifier is outside the read-only OBD allowlist on OBD 6/14";
   if (length == 0 || length > 8) return "invalid ISO-TP frame length on OBD 6/14";
 
   const uint8_t pci_type = payload[0] >> 4;
@@ -76,13 +79,14 @@ static const char *live_obd_tx_rejection(
   if (pci_type != 0x0) return "multi-frame OBD requests are locked on OBD 6/14";
 
   const uint8_t application_length = payload[0] & 0x0F;
-  if (application_length != 2 || length < 3) {
-    return "OBD 6/14 reads must contain exactly one mode and one PID";
+  if ((application_length != 1 && application_length != 2)
+      || length < application_length + 1) {
+    return "invalid OBD read length on OBD 6/14";
   }
   const uint8_t mode = payload[1];
-  return (mode == 0x01 || mode == 0x09)
-      ? nullptr
-      : "only OBD Mode 01 and Mode 09 reads are allowed on OBD 6/14";
+  if ((mode == 0x01 || mode == 0x09) && application_length == 2) return nullptr;
+  if ((mode == 0x03 || mode == 0x07) && application_length == 1) return nullptr;
+  return "only read-only OBD Modes 01, 03, 07 and 09 are allowed on OBD 6/14";
 }
 #endif
 
@@ -468,13 +472,13 @@ static bool id_allowed(uint32_t id) {
 static size_t format_hello(char *output, size_t capacity) {
   JsonDocument doc;
   doc["type"] = "hello";
-  doc["protocol"] = (DUAL_CAN || cfg::UART_MASTER) ? 7 : 6;
+  doc["protocol"] = (DUAL_CAN || cfg::UART_MASTER || !cfg::NATIVE_CAN_IS_DIAGNOSTIC) ? 8 : 6;
   doc["device"] = "opendiag-esp32";
   doc["firmware"] = READ_ONLY
-      ? "0.9.0-passive"
+      ? "0.10.0-passive"
       : (DIAGNOSTIC_READ_ONLY
-          ? "0.9.0-multibrand-readonly"
-          : (PSA_LAB ? "0.9.0-psa-lab-allowlist" : "0.9.0-active"));
+          ? "0.10.0-multibrand-readonly"
+          : (PSA_LAB ? "0.10.0-psa-lab-allowlist" : "0.10.0-active"));
   doc["driver"] = DUAL_CAN
       ? "twai+mcp2515"
       : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
@@ -514,7 +518,7 @@ static size_t format_hello(char *output, size_t capacity) {
   doc["psa_lab"] = PSA_LAB != 0;
   doc["write_services_locked"] = (READ_ONLY != 0) || (DIAGNOSTIC_READ_ONLY != 0) || (PSA_LAB != 0);
   doc["live_obd_read_only"] = cfg::LIVE_OBD_READ_ENABLED;
-  doc["live_tx_policy"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "strict_passive";
+  doc["live_tx_policy"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_03_07_09_read_only" : "strict_passive";
   doc["tx_policy"] = READ_ONLY
       ? "strict_passive"
       : (DIAGNOSTIC_READ_ONLY
@@ -534,7 +538,11 @@ static size_t format_hello(char *output, size_t capacity) {
   doc["telecoding_bounded"] = true;
   doc["telecoding_max_payload"] = PSA_LAB_MAX_TELECODING_PAYLOAD;
 #endif
-  doc["bitrate"] = cfg::CAN_BITRATE;
+  doc["bitrate"] = live_can_bitrate;
+  doc["live_bitrate"] = live_can_bitrate;
+#if DUAL_CAN || UART_DUAL_CAN_MASTER || CAN_BUS_ROLE_DIAGNOSTIC
+  doc["diagnostic_bitrate"] = cfg::CAN_BITRATE;
+#endif
 #if USE_MCP2515 || DUAL_CAN
   doc["spi_sck_pin"] = cfg::MCP2515_SPI_SCK_PIN;
   doc["spi_miso_pin"] = cfg::MCP2515_SPI_MISO_PIN;
@@ -1169,6 +1177,35 @@ static void parse_command(const String &line) {
     return;
   }
 
+  if (strcmp(type, "set_bitrate") == 0) {
+    const char *bus = doc["bus"] | "";
+    if (strcmp(bus, "live") != 0) {
+      emit_error("INVALID_BUS", "Only the live OBD 6/14 bitrate can be configured");
+      return;
+    }
+    if (!doc["bitrate"].is<uint32_t>()) {
+      emit_error("INVALID_BITRATE", "bitrate must be an integer");
+      return;
+    }
+    const uint32_t bitrate = doc["bitrate"].as<uint32_t>();
+    if (bitrate != 250000 && bitrate != 500000) {
+      emit_error("INVALID_BITRATE", "Only 250000 and 500000 bit/s are supported");
+      return;
+    }
+    if (!reconfigure_live_bitrate(bitrate)) {
+      emit_error("BITRATE_CONFIGURATION_FAILED", "Unable to restart live CAN at the requested bitrate");
+      return;
+    }
+    JsonDocument ack;
+    ack["type"] = "ack";
+    ack["command"] = "set_bitrate";
+    ack["bus"] = "live";
+    ack["bitrate"] = live_can_bitrate;
+    emit_json(ack);
+    emit_hello();
+    return;
+  }
+
   if (strcmp(type, "live_mute") == 0) {
     const bool enabled = doc["enabled"] | false;
 #if DUAL_CAN || UART_DUAL_CAN_MASTER
@@ -1483,7 +1520,9 @@ static bool start_twai(bool force_listen_only = false) {
       listen_only ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
   general.rx_queue_len = 256;
   general.tx_queue_len = listen_only ? 0 : 16;
-  const twai_timing_config_t timing = TWAI_TIMING_CONFIG_500KBITS();
+  const twai_timing_config_t timing_250 = TWAI_TIMING_CONFIG_250KBITS();
+  const twai_timing_config_t timing_500 = TWAI_TIMING_CONFIG_500KBITS();
+  const twai_timing_config_t timing = live_can_bitrate == 250000 ? timing_250 : timing_500;
   const twai_filter_config_t filter = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
   if (twai_driver_install(&general, &timing, &filter) != ESP_OK) return false;
@@ -1506,10 +1545,36 @@ static bool start_twai(bool force_listen_only = false) {
 #endif
 }
 
+static bool reconfigure_live_bitrate(uint32_t bitrate) {
+#if !USE_MCP2515 || DUAL_CAN
+  if (cfg::NATIVE_CAN_IS_DIAGNOSTIC) return false;
+  if (bitrate == live_can_bitrate && live_can_ready) return true;
+
+  const uint32_t previous_bitrate = live_can_bitrate;
+  twai_stop();
+  twai_driver_uninstall();
+  live_can_bitrate = bitrate;
+  const bool force_listen_only =
+      (READ_ONLY != 0) || (cfg::UART_MASTER && !cfg::LIVE_OBD_READ_ENABLED);
+  bool started = start_twai(force_listen_only);
+  if (!started) {
+    twai_driver_uninstall();
+    live_can_bitrate = previous_bitrate;
+    started = start_twai(force_listen_only);
+  }
+  live_can_ready = started;
+  can_ready = started;
+  return started && live_can_bitrate == bitrate;
+#else
+  (void)bitrate;
+  return false;
+#endif
+}
+
 static bool start_can() {
 #if DUAL_CAN
   // OBD 6/14 only leaves listen-only mode in builds whose local firmware
-  // enforces the Mode 01/09 allowlist. PSA diagnostics remain on OBD 3/8.
+  // enforces the read-only OBD allowlist. PSA diagnostics remain on OBD 3/8.
   live_can_ready = start_twai(!cfg::LIVE_OBD_READ_ENABLED);
   diagnostic_can_ready = start_mcp2515();
   can_ready = live_can_ready;
@@ -1519,7 +1584,7 @@ static bool start_can() {
   can_ready = diagnostic_can_ready;
   return can_ready;
 #else
-  // The UART main may transmit only its locally filtered OBD Mode 01/09 reads.
+  // The UART main may transmit only its locally filtered OBD reads.
   // The satellite keeps the independent PSA diagnostic allowlist on 3/8.
   live_can_ready = start_twai(cfg::UART_MASTER && !cfg::LIVE_OBD_READ_ENABLED);
   can_ready = live_can_ready;
@@ -1576,12 +1641,13 @@ void setup() {
     status["driver"] = DUAL_CAN
         ? "twai+mcp2515"
         : (cfg::UART_MASTER ? "twai+uart-twai" : (USE_MCP2515 ? "mcp2515" : "twai"));
-    status["bitrate"] = cfg::CAN_BITRATE;
+    status["bitrate"] = live_can_bitrate;
+    status["live_bitrate"] = live_can_bitrate;
 #if DUAL_CAN
-    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "listen_only";
+    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_03_07_09_read_only" : "listen_only";
     status["diagnostic_bus"] = diagnostic_can_ready ? "read_only_diagnostics" : "unavailable";
 #elif UART_DUAL_CAN_MASTER
-    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_09_read_only" : "listen_only";
+    status["live_bus"] = cfg::LIVE_OBD_READ_ENABLED ? "obd_01_03_07_09_read_only" : "listen_only";
     status["diagnostic_bus"] = diagnostic_can_ready ? "uart_read_only_diagnostics" : "unavailable";
 #endif
     emit_json(status);

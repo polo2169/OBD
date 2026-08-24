@@ -21,6 +21,9 @@ notes:
   - Les paires de diagnostic proviennent d'un catalogue communautaire de familles ECU.
   - La présence exacte des calculateurs optionnels dépend de l'équipement du véhicule.
   - Toute adresse doit être confirmée par une réponse UDS avant d'être considérée présente.
+  - "Kilométrage absolu validé sur véhicule : trame 0x552 (DAT4_BSI_AEE2010), signal P015_Com_lTotDst, octets 5-7 (24 bits big-endian), 1 km/unité. Confirmé par la documentation constructeur PSA du champ 552 et recoupé sur 29 captures matérielles indépendantes du 2026-08-01 au 2026-08-13 : progression strictement monotone de 104 473 à 104 975 km, cohérente avec l'usage quotidien réel du véhicule."
+  - "Niveau d'huile (P275_EngOilLvl, trame 0x588 Dat2_CMM) reste candidat, non validé : constant à -6 sur 28 des 29 mêmes captures, avec un unique écart isolé (207) sur une courte capture stationnaire, sans commentaire DBC ni plage physique définie ([0|0]). Insuffisant pour conclure ; nécessite soit un recoupement documentaire indépendant, soit une action annotée (appoint d'huile observé pendant une capture)."
+  - "Pression climatisation (P056_ACCD_p, octet 7 de 0x488 Dat_CMM, commentaire DBC d'origine \"Kältemitteldruck\") : position confirmée indépendamment, mais constante à 6375 kPa (octet brut 0xFF, hors plage déclarée 100-3100 kPa) sur trois captures véhicule distinctes. Probable sentinelle invalide/non disponible, cohérente avec une climatisation non sollicitée pendant ces trajets plutôt qu'un mauvais décodage ; nécessite une capture avec clim active pour confirmer."
 
 maintenance:
   policy: catalog_only_until_vehicle_validated

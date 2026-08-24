@@ -34,6 +34,7 @@ def isolate_runtime_settings(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(settings, "live_sensor_registry_file", tmp_path / "live_sensor_registry.json")
     monkeypatch.setattr(settings, "observed_dtcs_file", tmp_path / "observed_dtcs.json")
+    monkeypatch.setattr(settings, "oil_log_file", tmp_path / "oil_log.json")
     monkeypatch.setattr(settings, "transport_selection_file", tmp_path / "transport_selection.json")
     monkeypatch.setattr(settings, "security_audit_file", tmp_path / "security_audit.jsonl")
     monkeypatch.setattr(settings, "telecoding_backup_dir", tmp_path / "telecoding")

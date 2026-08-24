@@ -6,6 +6,7 @@ import pytest
 from tools.run_openpilot_perception import (
     current_lead,
     find_video,
+    lead_speed_estimate,
     load_camera_frames,
     load_speed_by_frame,
     openpilot_lead_distance,
@@ -74,3 +75,14 @@ def test_current_lead_is_zero_second_horizon_not_highest_probability() -> None:
     ]
 
     assert current_lead(leads) is leads[0]
+
+
+def test_lead_speed_estimate_matches_openpilot_vision_only_radar_math() -> None:
+    # Model: lead=22 m/s and ego=18 m/s => relative speed=+4 m/s.
+    # Correct it with the actual CAN ego speed (20 m/s) => lead=24 m/s.
+    assert lead_speed_estimate({"v": [22.0]}, 20.0, 18.0) == pytest.approx((24.0, 4.0))
+
+
+def test_lead_speed_estimate_ignores_missing_or_invalid_model_values() -> None:
+    assert lead_speed_estimate({}, 20.0, 18.0) is None
+    assert lead_speed_estimate({"v": [float("nan")]}, 20.0, 18.0) is None

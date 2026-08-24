@@ -664,14 +664,24 @@ class LatestCamera:
         rotate_live_camera: bool,
         video_start_frame: int = 0,
         frame_sink: Any = None,
+        is_live_stream: bool = False,
     ) -> None:
         if cv is None:
             raise RuntimeError("OpenCV est requis")
-        self.is_video = isinstance(source, Path)
-        backend = cv.CAP_ANY if self.is_video or platform.system() != "Darwin" else cv.CAP_AVFOUNDATION
-        self.capture = cv.VideoCapture(str(source) if self.is_video else source, backend)
+        self.is_live_stream = is_live_stream
+        self.is_video = isinstance(source, Path) and not self.is_live_stream
+        if self.is_live_stream:
+            backend = cv.CAP_FFMPEG
+        else:
+            backend = cv.CAP_ANY if self.is_video or platform.system() != "Darwin" else cv.CAP_AVFOUNDATION
+        capture_source = str(source) if isinstance(source, Path) else source
+        self.capture = cv.VideoCapture(capture_source, backend)
         if not self.capture.isOpened():
             raise RuntimeError(f"Impossible d'ouvrir la source caméra {source}")
+        if self.is_live_stream:
+            # Some backends ignore this property, but those that implement it
+            # will discard decoder backlog instead of displaying stale frames.
+            self.capture.set(cv.CAP_PROP_BUFFERSIZE, 1)
         if self.is_video and video_start_frame:
             self.capture.set(cv.CAP_PROP_POS_FRAMES, video_start_frame)
         self.start_index = video_start_frame if self.is_video else 0
@@ -689,10 +699,74 @@ class LatestCamera:
         self._error: Exception | None = None
         self._ended = False
         self._published_times: deque[float] = deque(maxlen=60)
+        self._raw_lock = threading.Lock()
+        self._raw_frame: tuple[int, float, int, np.ndarray] | None = None
+        self._reader_thread: threading.Thread | None = None
+        if self.is_live_stream:
+            self._reader_thread = threading.Thread(
+                target=self._stream_reader_loop,
+                name="road-stream-decoder",
+                daemon=True,
+            )
         self._thread = threading.Thread(target=self._capture_loop, name="road-camera", daemon=True)
+        if self._reader_thread is not None:
+            self._reader_thread.start()
         self._thread.start()
 
+    def _stream_reader_loop(self) -> None:
+        frame_index = self.start_index
+        try:
+            while not self._stop.is_set():
+                ok, raw = self.capture.read()
+                if not ok or raw is None:
+                    if not self._stop.is_set():
+                        raise RuntimeError("Le flux vidéo ne fournit plus d'image")
+                    return
+                captured_at = time.monotonic()
+                wall_timestamp_us = round(time.time() * 1_000_000)
+                with self._raw_lock:
+                    # A single latest-frame slot is intentional.  Decoding
+                    # keeps consuming the 30 Hz stream while preprocessing may
+                    # run slower, so stale frames never accumulate upstream.
+                    self._raw_frame = (frame_index, captured_at, wall_timestamp_us, raw)
+                frame_index += 1
+        except Exception as exc:
+            with self._lock:
+                self._error = exc
+
+    def _stream_processing_loop(self) -> None:
+        last_frame_index = -1
+        while not self._stop.is_set():
+            with self._raw_lock:
+                raw_frame = self._raw_frame
+            if raw_frame is None or raw_frame[0] == last_frame_index:
+                self._stop.wait(0.001)
+                continue
+            frame_index, captured_at, wall_timestamp_us, raw = raw_frame
+            last_frame_index = frame_index
+            stored = cv.flip(raw, -1) if self.rotate_live_camera else raw
+            processed = self.preprocessor.prepare(stored)
+            frame = CapturedFrame(
+                index=frame_index,
+                monotonic_s=captured_at,
+                wall_timestamp_us=wall_timestamp_us,
+                stored=stored,
+                processed=processed,
+            )
+            if self.frame_sink is not None:
+                self.frame_sink(frame)
+            with self._lock:
+                self._frame = frame
+                self._published_times.append(time.monotonic())
+
     def _capture_loop(self) -> None:
+        if self.is_live_stream:
+            try:
+                self._stream_processing_loop()
+            except Exception as exc:
+                with self._lock:
+                    self._error = exc
+            return
         frame_index = self.start_index
         next_video_deadline = time.monotonic()
         try:
@@ -755,8 +829,140 @@ class LatestCamera:
 
     def close(self) -> None:
         self._stop.set()
+        if self._reader_thread is not None:
+            # A live read returns at the next frame (~33 ms).  Let the decoder
+            # observe the stop flag before releasing its VideoCapture; calling
+            # release concurrently with FFmpeg's read can crash OpenCV.
+            self._reader_thread.join(timeout=2.0)
         self.capture.release()
         self._thread.join(timeout=2.0)
+
+
+class OnnxModelState:
+    """Run the policy with ONNX Runtime while retaining openpilot's warp."""
+
+    FRAME_SKIP = 4
+
+    def __init__(self, native_model: Any, onnx_path: Path) -> None:
+        try:
+            import onnxruntime as ort
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "onnxruntime absent; installer avec: "
+                "uv pip install --python ../openpilot/.venv/bin/python onnxruntime"
+            ) from exc
+        from tinygrad.tensor import Tensor
+        from openpilot.selfdrive.modeld.get_model_metadata import make_metadata_dict
+
+        if not onnx_path.is_file():
+            raise FileNotFoundError(onnx_path)
+        options = ort.SessionOptions()
+        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self.session = ort.InferenceSession(
+            str(onnx_path),
+            sess_options=options,
+            providers=["CPUExecutionProvider"],
+        )
+        self.native = native_model
+        self.Tensor = Tensor
+        # The checked-in Darwin pickle may have been built from the optional
+        # 1.6 GB big model.  Always take slices from the ONNX file actually
+        # selected here; mixing the two layouts silently corrupts recurrent
+        # state (small: 2576 outputs, big: 2580 outputs).
+        metadata = make_metadata_dict(onnx_path)
+        self.output_slices = metadata["output_slices"]
+        self.parser = native_model.parser
+        img_shape = tuple(int(value) for value in metadata["input_shapes"]["img"])
+        if img_shape[0:2] != (1, 12):
+            raise RuntimeError(f"Forme image openpilot inattendue: {img_shape}")
+        self.image_shape = img_shape[2:]
+        self._reset_history()
+
+    def _reset_history(self) -> None:
+        self.img_history = np.zeros((5, 6, *self.image_shape), dtype=np.uint8)
+        self.big_img_history = np.zeros_like(self.img_history)
+        self.feature_history = np.zeros((96, 512), dtype=np.float16)
+        self.desire_history = np.zeros((100, 8), dtype=np.float16)
+        self.prev_desire = np.zeros(8, dtype=np.float32)
+        self.prev_feature = np.zeros(512, dtype=np.float16)
+
+    @staticmethod
+    def _shift(history: np.ndarray, value: np.ndarray) -> None:
+        history[:-1] = history[1:]
+        history[-1] = value
+
+    def run(
+        self,
+        bufs: dict[str, Any],
+        transforms: dict[str, np.ndarray],
+        inputs: dict[str, np.ndarray],
+    ) -> dict[str, np.ndarray]:
+        full_frames: dict[str, Any] = {}
+        for key, buf in bufs.items():
+            array = np.frombuffer(buf.data, dtype=np.uint8)
+            pointer = array.ctypes.data
+            yuv_size = self.native.frame_buf_params[key][3]
+            full_frames[key] = self.Tensor.from_blob(
+                pointer,
+                (yuv_size,),
+                dtype="uint8",
+                device=self.native.WARP_DEV,
+            )
+
+        self.native.npy["tfm"][:, :] = transforms["img"]
+        self.native.npy["big_tfm"][:, :] = transforms["big_img"]
+        warped = self.native.warp(
+            **{key: self.native.input_queues[key] for key in ("tfm", "big_tfm")},
+            frame=full_frames["img"],
+            big_frame=full_frames["big_img"],
+        ).numpy()
+        if warped.shape != (2, 6, *self.image_shape):
+            raise RuntimeError(f"Sortie warp openpilot inattendue: {warped.shape}")
+
+        self._shift(self.img_history, warped[0])
+        self._shift(self.big_img_history, warped[1])
+        self._shift(self.feature_history, self.prev_feature)
+
+        desire = np.asarray(inputs["desire_pulse"], dtype=np.float32)
+        desire_pulse = np.where(desire - self.prev_desire > 0.99, desire, 0.0)
+        self.prev_desire[:] = desire
+        self._shift(self.desire_history, desire_pulse.astype(np.float16))
+
+        feeds = {
+            "img": self.img_history[::self.FRAME_SKIP].reshape(1, 12, *self.image_shape),
+            "big_img": self.big_img_history[::self.FRAME_SKIP].reshape(1, 12, *self.image_shape),
+            "features_buffer": self.feature_history[::self.FRAME_SKIP][None, ...],
+            "desire_pulse": self.desire_history.reshape(25, self.FRAME_SKIP, 8).max(axis=1)[None, ...],
+            "traffic_convention": np.asarray(inputs["traffic_convention"], dtype=np.float16).reshape(1, 2),
+            "action_t": np.asarray(inputs["action_t"], dtype=np.float16).reshape(1, 2),
+        }
+        model_output = self.session.run(None, feeds)[0][0].astype(np.float32)
+        if not np.all(np.isfinite(model_output)):
+            raise RuntimeError("Le modèle ONNX a produit une sortie non finie")
+        sliced = {
+            key: model_output[np.newaxis, output_slice]
+            for key, output_slice in self.output_slices.items()
+        }
+        self.prev_feature[:] = model_output[self.output_slices["hidden_state"]]
+        return self.parser.parse_outputs(sliced)
+
+    def warmup(self) -> None:
+        from types import SimpleNamespace
+
+        yuv_size = self.native.frame_buf_params["img"][3]
+        dummy = SimpleNamespace(data=np.zeros(yuv_size, dtype=np.uint8))
+        zeros = {
+            "desire_pulse": np.zeros(8, dtype=np.float32),
+            "traffic_convention": np.zeros(2, dtype=np.float32),
+            "action_t": np.zeros(2, dtype=np.float32),
+        }
+        identity = np.eye(3, dtype=np.float32)
+        self.run(
+            {"img": dummy, "big_img": dummy},
+            {"img": identity, "big_img": identity},
+            zeros,
+        )
+        self._reset_history()
 
 
 class LiveModel:
@@ -1198,21 +1404,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calibration", type=Path)
     parser.add_argument("--dbc", type=Path, default=DEFAULT_DBC)
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--video", type=Path, help="Source vidéo de test à la place de la caméra")
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument("--video", type=Path, help="Source vidéo de test à la place de la caméra")
+    source_group.add_argument(
+        "--stream",
+        type=Path,
+        help="Flux vidéo live local (FIFO); aucune régulation de lecture ni file d'images",
+    )
     parser.add_argument("--video-start-frame", type=int, default=0)
     parser.add_argument(
         "--rotate-180",
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Retourne la caméra physique de 180 degrés "
-            "(activé par défaut pour la Lenovo montée à l'envers; sans effet avec --video)"
+            "Retourne la caméra physique ou le flux live de 180 degrés "
+            "(activé par défaut; sans effet avec --video)"
         ),
     )
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--model-hz", type=float, default=20.0)
+    parser.add_argument(
+        "--model-backend",
+        choices=("onnx-cpu", "native"),
+        default="onnx-cpu",
+        help="Moteur d'inférence: ONNX Runtime CPU accéléré ou tinygrad natif",
+    )
+    parser.add_argument("--onnx-model", type=Path, help="driving_supercombo.onnx alternatif")
     parser.add_argument("--port", help="Port ESP32; auto-détecté si absent")
     parser.add_argument("--baud", type=int, default=921600)
     parser.add_argument("--no-can", action="store_true")
@@ -1263,7 +1482,7 @@ def main() -> int:
     from openpilot.common.transformations.orientation import rot_from_euler
     from openpilot.selfdrive.locationd.calibrationd import Calibrator
     from openpilot.selfdrive.modeld.constants import ModelConstants
-    from openpilot.selfdrive.modeld.modeld import ModelState
+    from openpilot.selfdrive.modeld.modeld import ModelState as NativeModelState
     from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
     from render_openpilot_perception_frames import draw_prediction
     from run_openpilot_perception import CameraFrame, CameraPreprocessor, Nv12Buffer, output_record
@@ -1271,8 +1490,17 @@ def main() -> int:
     print("OPENPILOT LIVE — OBSERVATION PASSIVE", flush=True)
     print("Aucune émission série, aucune trame CAN TX, aucune commande véhicule.", flush=True)
     preprocessor = CameraPreprocessor(calibration_path)
-    print("[model] chargement driving_supercombo", flush=True)
-    model = ModelState(preprocessor.model_width, preprocessor.model_height, False)
+    print(f"[model] chargement driving_supercombo ({args.model_backend})", flush=True)
+    native_model = NativeModelState(preprocessor.model_width, preprocessor.model_height, False)
+    if args.model_backend == "onnx-cpu":
+        onnx_path = (
+            args.onnx_model.resolve()
+            if args.onnx_model is not None
+            else openpilot_root / "openpilot/selfdrive/modeld/models/driving_supercombo.onnx"
+        )
+        model = OnnxModelState(native_model, onnx_path)
+    else:
+        model = native_model
     model.warmup()
     print("[model] prêt", flush=True)
 
@@ -1285,7 +1513,17 @@ def main() -> int:
             {
                 "readonly": True,
                 "model": "openpilot driving_supercombo",
-                "camera": args.camera if args.video is None else str(args.video.resolve()),
+                "model_backend": args.model_backend,
+                "camera": (
+                    str(args.stream.resolve())
+                    if args.stream is not None
+                    else args.camera if args.video is None else str(args.video.resolve())
+                ),
+                "source_type": (
+                    "stream"
+                    if args.stream is not None
+                    else "video" if args.video is not None else "camera"
+                ),
                 "rotate_180": args.rotate_180 if args.video is None else False,
                 "requested_fps": args.fps,
                 "calibration": str(calibration_path),
@@ -1315,7 +1553,11 @@ def main() -> int:
             )
             time.sleep(0.35)
             can_client.check_started()
-        source: int | Path = args.video.resolve() if args.video else args.camera
+        source: int | Path = (
+            args.stream.resolve()
+            if args.stream is not None
+            else args.video.resolve() if args.video is not None else args.camera
+        )
         if args.video is None:
             print(
                 "[cam] rotation 180° " + ("activée" if args.rotate_180 else "désactivée"),
@@ -1330,6 +1572,7 @@ def main() -> int:
             rotate_live_camera=args.rotate_180,
             video_start_frame=args.video_start_frame,
             frame_sink=recorder.record_source_frame if recorder is not None else None,
+            is_live_stream=args.stream is not None,
         )
         live_model = LiveModel(
             camera,

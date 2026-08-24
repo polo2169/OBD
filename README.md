@@ -1,4 +1,4 @@
-# Diagbox++ / OpenDiag PSA + Fiat
+# Diagbox++ / OpenDiag PSA + Fiat + Renault
 
 Socle open source pour construire un outil de diagnostic PSA/Stellantis avancé sans
 réimplémenter les couches standard déjà disponibles.
@@ -74,7 +74,23 @@ Code : B1238- protocole USB/TCP v6 : contrôle JSON Lines et trames CAN compacte
 - page « VIN & véhicule » : lecture UDS `22 F1 90` sur Peugeot, lecture OBD-II
   Mode 09 PID 02 sur Fiat, validation WMI et journalisation JSONL locale ;
 - profil initial Fiat 500 en identification seule, avec les candidats Body Computer
-  `7B0→7C0` et combiné `7B0→7C3` clairement marqués expérimentaux.
+  `7B0→7C0` et combiné `7B0→7C3` clairement marqués expérimentaux ;
+- catalogue Fiat 500 enrichi en capteurs CAN passifs et PID EOBD, avec 9 533
+  DTC génériques, 100 libellés Fiat et provenance détaillée dans
+  [docs/FIAT_500_DIAGNOSTIC_SOURCES.md](docs/FIAT_500_DIAGNOSTIC_SOURCES.md) ;
+- profil Renault Trafic III (X82) en profil diagnostic complet : 8 familles ECU
+  sourcées depuis le catalogue communautaire ddt4all, scan UDS/DTC générique et
+  lecture VIN OBD-II ; pas encore de décodeur CAN passif constructeur (à
+  construire via le module Learn sur véhicule réel, voir
+  `docs/ECU_CATALOG_RENAULT_TRAFIC.md`) ;
+- profil Renault Trafic II (X83) séparé, limité aux lectures EOBD sûres sur le
+  CAN 11 bits à 250 kbit/s (broches 6/14), avec avertissement explicite pour les
+  variantes/calculatrices encore en K-Line ;
+- sélection automatique du débit CAN 250/500 kbit/s par le profil véhicule avec
+  confirmation du firmware avant toute lecture active ;
+- sélection du véhicule actif générique par l'utilisateur (Garage, écran
+  Véhicule & VIN) : chaque marque ajoutée au registre `database/<marque>/
+  vehicles/*.yaml` apparaît automatiquement, sans code spécifique par marque.
 
 
 ## Architecture
@@ -352,6 +368,19 @@ env -u DEBUG ../../openpilot/.venv/bin/python \
   --record
 ```
 
+Pour une capture routière Peugeot LKA de 15 minutes avec les contrôles de port,
+d'espace disque et de complétude, le lanceur dédié reprend automatiquement le
+port série mémorisé par l'application :
+
+```bash
+./scripts/record_peugeot_lka.sh
+```
+
+Utiliser `--list-cameras` pour vérifier l'index avant le départ,
+`--duration 600` pour dix minutes ou `--until-stop` pour un arrêt manuel. Le
+lanceur reste strictement passif et affiche après la fermeture le nombre
+d'images, de trames CAN, l'état de synchronisation et les pertes éventuelles.
+
 `--record` conserve `road.mp4`, `frames.jsonl`, le CAN brut, les prédictions et
 les métadonnées dans `data/runtime/openpilot_live/`. `--record-overlay` ajoute
 la vidéo de l'interface et sa propre chronologie, avec un coût CPU supérieur.
@@ -538,6 +567,36 @@ répondu et les champs d'identité disponibles. Toute l'opération est enregistr
 dans `data/sessions/*.jsonl`. Le profil Fiat est limité à l'identification tant
 que l'année, la motorisation et la génération exacte ne sont pas confirmées.
 Voir [docs/VEHICLE_IDENTITY.md](docs/VEHICLE_IDENTITY.md).
+
+### Carnet d’entretien mécanique
+
+La page **Entretien** conserve un historique séparé pour chaque VIN du Garage.
+Une intervention peut contenir la date, le kilométrage et sa provenance, le
+garage, le numéro et le montant de facture, la main-d’œuvre, un compte rendu et
+la liste détaillée des pièces montées. Chaque pièce accepte son fabricant, les
+références et numéros de série retirés puis montés, sa quantité, son prix et sa
+date de garantie.
+
+Le kilométrage peut être prérempli directement depuis le signal CAN validé
+quand la lecture OBD est active. Pour une intervention passée, le bouton
+**Auto selon la date** recherche les relevés CAN, factures, interventions et
+relevés d’huile qui encadrent la date. Une interpolation est toujours marquée
+comme estimation (`≈`), conserve ses points de référence et reste modifiable.
+
+Le bouton **Lire et préremplir la facture** extrait localement le texte d’un
+PDF ou lance un OCR sur une photo. Il propose la date, le kilométrage, le garage,
+le numéro et le total de facture ainsi que les références et numéros de série
+clairement libellés. Le résultat reste un brouillon : tous les champs sont
+éditables et rien n’est enregistré avant validation. La lecture PDF utilise
+Poppler (`pdftotext`/`pdftoppm`) et l’OCR Tesseract (`fra+eng`) lorsqu’ils sont
+disponibles ; aucun document n’est envoyé vers un service externe.
+
+Les factures et justificatifs PDF/JPEG/PNG/WebP sont limités à 20 Mo chacun,
+renommés avec un identifiant interne et accompagnés d’une empreinte SHA-256. Ils
+sont stockés avec le dossier du véhicule sous
+`data/diagnostics/<constructeur>/<VIN>/maintenance/`. Une modification crée une
+révision d’archive avant de remplacer la fiche courante. Les interventions
+apparaissent aussi dans la chronologie consolidée du Garage.
 
 ### Diagnostic PSA avancé
 

@@ -309,6 +309,9 @@ class BehavioralAnalysisReport(BaseModel):
 class ReplaySample(BaseModel):
     t_ms: int
     speed_kph: float | None = None
+    # Kilométrage absolu (BSI, 0x552 DAT4_BSI_AEE2010, P015_Com_lTotDst).
+    # Validé sur véhicule : voir _update_state dans replay.py.
+    odometer_km: float | None = None
     engine_rpm: float | None = None
     engine_load_pct: float | None = None
     absolute_engine_load_pct: float | None = None
@@ -333,16 +336,42 @@ class ReplaySample(BaseModel):
     engine_runtime_s: float | None = None
     fuel_level_pct: float | None = None
     fuel_rate_lph: float | None = None
+    fuel_system_status_raw: int | None = None
+    secondary_air_status_raw: int | None = None
+    oxygen_sensors_present_raw: int | None = None
+    obd_standard_raw: int | None = None
+    catalyst_temperature_b1s1_c: float | None = None
+    monitor_status_current_cycle_raw: int | None = None
     steering_angle_deg: float | None = None
     steering_rate_deg_s: float | None = None
     driver_torque: float | None = None
     accelerator_pct: float | None = None
     accelerator_secondary_pct: float | None = None
+    accelerator_tertiary_pct: float | None = None
     relative_accelerator_position_pct: float | None = None
     engine_torque_nm: float | None = None
+    driver_demand_torque_pct: float | None = None
+    actual_engine_torque_pct: float | None = None
+    engine_reference_torque_nm: float | None = None
+    maximum_maf_g_s: float | None = None
+    ethanol_fuel_pct: float | None = None
+    absolute_evap_vapor_pressure_kpa: float | None = None
+    evap_vapor_pressure_alt_pa: float | None = None
+    emission_requirements_raw: int | None = None
     idle_setpoint_rpm: float | None = None
     fuel_consumption_candidate_mm3: float | None = None
     virtual_fuel_consumption_candidate_mm3: float | None = None
+    # Pression réfrigérant climatisation (Dat_CMM.P056_ACCD_p, octet 7 de
+    # 0x488). Candidat DBC documenté (commentaire d'origine "Kältemitteldruck"),
+    # position confirmée indépendamment, mais constant à 6375 kPa (octet brut
+    # 0xFF, hors plage déclarée 100-3100) sur trois captures véhicule : probable
+    # sentinelle invalide plutôt qu'une pression réelle. Voir sensor_metadata.py.
+    climate_pressure_kpa: float | None = None
+    # Dérivés du compteur ci-dessus (delta entre échantillons, pas la valeur
+    # brute) : voir _compute_can_fuel_consumption dans replay.py.
+    can_fuel_rate_lph: float | None = None
+    can_instant_consumption_l_100km: float | None = None
+    can_trip_fuel_l: float | None = None
     current_gear: int | None = None
     target_gear: int | None = None
     gear_shift_active: bool | None = None
@@ -434,9 +463,28 @@ class ReplaySample(BaseModel):
     speed_389_candidate_raw: int | None = None
     fiat_clock_hour_candidate: int | None = None
     fiat_clock_minute_candidate: int | None = None
+    fiat_clock_day_candidate: int | None = None
+    fiat_clock_month_candidate: int | None = None
+    fiat_clock_year_candidate: int | None = None
     fiat_start_stop_state_raw: int | None = None
+    fiat_start_stop_active_candidate: bool | None = None
+    fiat_start_stop_available_candidate: bool | None = None
+    fiat_start_stop_door_or_seatbelt_ok_candidate: bool | None = None
     fiat_clutch_pedal_candidate: bool | None = None
+    fiat_accelerator_request_candidate: bool | None = None
+    fiat_clutch_accelerator_state_raw: int | None = None
     fiat_battery_voltage_candidate_v: float | None = None
+    fiat_contact_on_candidate: bool | None = None
+    fiat_ignition_active_candidate: bool | None = None
+    fiat_city_mode_candidate: bool | None = None
+    fiat_rear_window_heater_candidate: bool | None = None
+    fiat_engine_running_candidate: bool | None = None
+    fiat_speed_related_raw_candidate: int | None = None
+    fiat_speed_0a18a006_candidate_kph: float | None = None
+    fiat_speed_0a28a000_candidate_kph: float | None = None
+    fiat_speed_0a28a006_candidate_kph: float | None = None
+    fiat_wheel_activity_counter_raw: int | None = None
+    fiat_electrical_load_candidate_raw: int | None = None
     fiat_a1_fast_nibble_candidate: int | None = None
     fiat_mode_flag_candidate: bool | None = None
     fiat_mode_analog_candidate_raw: int | None = None
@@ -497,6 +545,9 @@ class ReplayData(BaseModel):
     distance_km: float
     estimated_fuel_consumption_l_100km: float | None = None
     fuel_consumption_note: str | None = None
+    can_average_fuel_consumption_l_100km: float | None = None
+    can_trip_fuel_total_l: float | None = None
+    can_fuel_consumption_note: str | None = None
     gps_available: bool = False
     gps_point_count: int = 0
     route_method: str

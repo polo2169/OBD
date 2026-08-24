@@ -12,7 +12,12 @@ from typing import Any, Iterator
 import cv2 as cv
 import numpy as np
 
-from run_openpilot_perception import CameraPreprocessor, current_lead, openpilot_lead_distance
+from run_openpilot_perception import (
+    CameraPreprocessor,
+    current_lead,
+    lead_speed_estimate,
+    openpilot_lead_distance,
+)
 
 
 GREEN = (80, 230, 110)
@@ -187,6 +192,23 @@ def draw_prediction(
                 AMBER,
                 0.62,
             )
+            pose = record.get("pose") or []
+            model_speed_ms = pose[0] if pose else record.get("speed_ms")
+            motion = lead_speed_estimate(
+                lead,
+                record.get("speed_ms", model_speed_ms),
+                model_speed_ms,
+            )
+            if motion is not None:
+                lead_speed_ms, relative_speed_ms = motion
+                draw_label(
+                    frame,
+                    f"VITESSE ~{max(0.0, lead_speed_ms) * 3.6:.0f} km/h   "
+                    f"dV {relative_speed_ms * 3.6:+.0f} km/h",
+                    (max(15, x - 210), max(59, y - size + 14)),
+                    AMBER,
+                    0.56,
+                )
 
     lane_probs = [float(lane["prob"]) for lane in record["lane_lines"]]
     alpha_rectangle(frame, (20, 18), (720, 112), (12, 18, 22), 0.72)

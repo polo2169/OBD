@@ -51,7 +51,20 @@ def _fuel_injection_timing(data: bytes) -> float:
     return round(_word(data) / 128 - 210, 2)
 
 
+def _wideband_lambda(data: bytes) -> float:
+    return round(_word(data) * 2 / 65536, 4)
+
+
+def _catalyst_temperature(data: bytes) -> float:
+    return round(_word(data) / 10 - 40, 1)
+
+
+def _torque_percent(data: bytes) -> int:
+    return data[0] - 125
+
+
 PID_DEFINITIONS = (
+    PidDefinition("fuel_system_status", 0x03, "État des boucles carburant", "code", 2, _word, "Carburant", "États normalisés des circuits carburant 1 et 2; utile pour distinguer boucle ouverte et boucle fermée."),
     PidDefinition("engine_load", 0x04, "Charge moteur calculée", "%", 1, _percent, "Combustion", "Charge moteur normalisée calculée par l'ECU."),
     PidDefinition("coolant_temperature", 0x05, "Température liquide de refroidissement", "°C", 1, _temperature, "Températures", "Température moteur utilisée par la stratégie d'injection."),
     PidDefinition("short_fuel_trim_bank_1", 0x06, "Correction carburant court terme B1", "%", 1, _signed_percent, "Carburant", "Correction de richesse OBD court terme; souvent non prise en charge sur diesel."),
@@ -66,18 +79,38 @@ PID_DEFINITIONS = (
     PidDefinition("intake_air_temperature", 0x0F, "Température d'air d'admission", "°C", 1, _temperature, "Air", "Température d'air prise en compte pour la masse injectée."),
     PidDefinition("maf", 0x10, "Débit d'air massique", "g/s", 2, lambda data: round(_word(data) / 100, 2), "Air", "Masse d'air mesurée par le débitmètre."),
     PidDefinition("throttle_position", 0x11, "Position papillon", "%", 1, _percent, "Air", "Position absolue du papillon ou doseur d'air."),
+    PidDefinition("secondary_air_status", 0x12, "État injection d'air secondaire", "code", 1, lambda data: data[0], "Dépollution", "État normalisé du système d'injection d'air secondaire lorsqu'il est présent."),
+    PidDefinition("oxygen_sensors_present", 0x13, "Sondes lambda présentes", "bitmap", 1, lambda data: data[0], "Dépollution", "Bitmap indiquant les emplacements de sondes à oxygène annoncés par l'ECU."),
     PidDefinition("oxygen_sensor_b1s1_voltage", 0x14, "Sonde lambda amont B1S1", "V", 2, _oxygen_voltage, "Dépollution", "Tension normalisée de la sonde à oxygène amont; le second octet de correction n'est pas affiché ici."),
     PidDefinition("oxygen_sensor_b1s2_voltage", 0x15, "Sonde lambda aval B1S2", "V", 2, _oxygen_voltage, "Dépollution", "Tension normalisée de la sonde à oxygène aval; le second octet de correction n'est pas affiché ici."),
+    PidDefinition("obd_standard", 0x1C, "Norme OBD déclarée", "code", 1, lambda data: data[0], "Contexte", "Code de conformité OBD déclaré par le calculateur."),
+    PidDefinition("oxygen_sensors_present_4_bank", 0x1D, "Sondes lambda présentes · 4 banques", "bitmap", 1, lambda data: data[0], "Dépollution", "Bitmap étendu des sondes à oxygène présentes."),
+    PidDefinition("auxiliary_input_status", 0x1E, "État entrée auxiliaire / PTO", "bitmap", 1, lambda data: data[0], "Contexte", "État normalisé de l'entrée auxiliaire ou prise de force lorsqu'elle existe."),
     PidDefinition("engine_runtime", 0x1F, "Temps depuis démarrage moteur", "s", 2, _word, "Contexte", "Durée de fonctionnement depuis le dernier démarrage."),
     PidDefinition("distance_with_mil", 0x21, "Distance avec voyant moteur allumé", "km", 2, _word, "Contexte", "Distance parcourue depuis l'allumage du voyant moteur."),
+    PidDefinition("fuel_rail_relative_pressure", 0x22, "Pression relative de rampe", "kPa", 2, lambda data: round(_word(data) * 0.079, 3), "Carburant", "Pression relative de rampe normalisée pour certains systèmes d'injection."),
     PidDefinition("fuel_rail_gauge_pressure", 0x23, "Pression de rampe carburant", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression de rampe relative normalisée, typique de l'injection directe/diesel."),
+    PidDefinition("wideband_o2_b1s1_lambda", 0x24, "Lambda large bande B1S1", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande; la tension associée reste dans les octets bruts."),
+    PidDefinition("wideband_o2_b1s2_lambda", 0x25, "Lambda large bande B1S2", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B1S2."),
+    PidDefinition("wideband_o2_b1s3_lambda", 0x26, "Lambda large bande B1S3", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B1S3."),
+    PidDefinition("wideband_o2_b1s4_lambda", 0x27, "Lambda large bande B1S4", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B1S4."),
+    PidDefinition("wideband_o2_b2s1_lambda", 0x28, "Lambda large bande B2S1", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B2S1."),
+    PidDefinition("wideband_o2_b2s2_lambda", 0x29, "Lambda large bande B2S2", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B2S2."),
+    PidDefinition("wideband_o2_b2s3_lambda", 0x2A, "Lambda large bande B2S3", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B2S3."),
+    PidDefinition("wideband_o2_b2s4_lambda", 0x2B, "Lambda large bande B2S4", "λ", 4, _wideband_lambda, "Dépollution", "Rapport lambda de la sonde large bande B2S4."),
     PidDefinition("commanded_egr", 0x2C, "Commande EGR", "%", 1, _percent, "Dépollution", "Consigne d'ouverture EGR demandée par le calculateur."),
     PidDefinition("egr_error", 0x2D, "Écart EGR", "%", 1, _signed_percent, "Dépollution", "Écart entre la consigne et le retour EGR."),
     PidDefinition("commanded_evap_purge", 0x2E, "Commande purge canister", "%", 1, _percent, "Dépollution", "Commande normalisée de purge des vapeurs de carburant."),
     PidDefinition("fuel_level", 0x2F, "Niveau carburant", "%", 1, _percent, "Carburant", "Niveau de carburant déclaré au diagnostic OBD."),
     PidDefinition("warmups_since_clear", 0x30, "Cycles de chauffe depuis effacement DTC", "cycles", 1, lambda data: data[0], "Contexte", "Nombre de cycles de chauffe moteur depuis le dernier effacement des défauts."),
     PidDefinition("distance_since_clear", 0x31, "Distance depuis effacement DTC", "km", 2, _word, "Contexte", "Distance parcourue depuis le dernier effacement des défauts."),
+    PidDefinition("evap_vapor_pressure", 0x32, "Pression vapeurs canister", "Pa", 2, lambda data: round(_word(data) / 4 - 8192, 2), "Dépollution", "Pression différentielle des vapeurs du système EVAP."),
     PidDefinition("barometric_pressure", 0x33, "Pression barométrique", "kPa abs", 1, lambda data: data[0], "Air", "Pression atmosphérique de référence utilisée par le calculateur."),
+    PidDefinition("catalyst_temperature_b1s1", 0x3C, "Température catalyseur B1S1", "°C", 2, _catalyst_temperature, "Dépollution", "Température normalisée du catalyseur banque 1 capteur 1."),
+    PidDefinition("catalyst_temperature_b2s1", 0x3D, "Température catalyseur B2S1", "°C", 2, _catalyst_temperature, "Dépollution", "Température normalisée du catalyseur banque 2 capteur 1."),
+    PidDefinition("catalyst_temperature_b1s2", 0x3E, "Température catalyseur B1S2", "°C", 2, _catalyst_temperature, "Dépollution", "Température normalisée du catalyseur banque 1 capteur 2."),
+    PidDefinition("catalyst_temperature_b2s2", 0x3F, "Température catalyseur B2S2", "°C", 2, _catalyst_temperature, "Dépollution", "Température normalisée du catalyseur banque 2 capteur 2."),
+    PidDefinition("monitor_status_current_cycle", 0x41, "Moniteurs OBD du cycle courant", "bitmap", 4, lambda data: int.from_bytes(data, "big"), "Dépollution", "Disponibilité et résultat des moniteurs OBD pendant le cycle de conduite courant."),
     PidDefinition("control_module_voltage", 0x42, "Tension calculateur", "V", 2, lambda data: round(_word(data) / 1000, 3), "Électrique", "Tension d'alimentation du calculateur d'injection."),
     PidDefinition("absolute_engine_load", 0x43, "Charge moteur absolue", "%", 2, _absolute_load, "Combustion", "Charge absolue normalisée, complémentaire à la charge calculée PID 04."),
     PidDefinition("commanded_equivalence_ratio", 0x44, "Richesse commandée (lambda)", "λ", 2, lambda data: round(_word(data) * 2 / 65536, 4), "Combustion", "Rapport d'équivalence commandé; 1 correspond au mélange stœchiométrique."),
@@ -87,15 +120,25 @@ PID_DEFINITIONS = (
     PidDefinition("absolute_throttle_position_c", 0x48, "Position papillon voie C", "%", 1, _percent, "Air", "Troisième voie normalisée de position du papillon lorsqu'elle existe."),
     PidDefinition("accelerator_pedal_d", 0x49, "Position pédale accélérateur D", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie D de la pédale d'accélérateur."),
     PidDefinition("accelerator_pedal_e", 0x4A, "Position pédale accélérateur E", "%", 1, _percent, "Commande conducteur", "Position normalisée de la voie E de la pédale d'accélérateur."),
+    PidDefinition("accelerator_pedal_f", 0x4B, "Position pédale accélérateur F", "%", 1, _percent, "Commande conducteur", "Troisième voie normalisée de la pédale d'accélérateur lorsqu'elle existe."),
     PidDefinition("commanded_throttle_actuator", 0x4C, "Commande actionneur papillon", "%", 1, _percent, "Air", "Commande normalisée envoyée à l'actionneur du papillon."),
     PidDefinition("time_with_mil", 0x4D, "Temps avec voyant moteur allumé", "min", 2, _word, "Contexte", "Durée cumulée de fonctionnement avec le voyant moteur allumé."),
     PidDefinition("time_since_clear", 0x4E, "Temps depuis effacement DTC", "min", 2, _word, "Contexte", "Temps écoulé depuis le dernier effacement des défauts."),
+    PidDefinition("maximum_maf", 0x50, "Débit d'air massique maximal", "g/s", 4, lambda data: data[0] * 10, "Air", "Valeur maximale déclarée du débitmètre; les autres octets codent des maxima secondaires."),
     PidDefinition("fuel_type", 0x51, "Type de carburant OBD", "code", 1, lambda data: data[0], "Carburant", "Code normalisé du type de carburant déclaré par le calculateur."),
+    PidDefinition("ethanol_fuel_percent", 0x52, "Teneur en éthanol", "%", 1, _percent, "Carburant", "Pourcentage d'éthanol déclaré par le système carburant."),
+    PidDefinition("absolute_evap_vapor_pressure", 0x53, "Pression absolue vapeurs canister", "kPa", 2, lambda data: round(_word(data) / 200, 3), "Dépollution", "Pression absolue normalisée du circuit EVAP."),
+    PidDefinition("evap_vapor_pressure_alt", 0x54, "Pression vapeurs canister alternative", "Pa", 2, lambda data: _word(data) - 32767, "Dépollution", "Seconde représentation normalisée de la pression différentielle EVAP."),
     PidDefinition("absolute_fuel_rail_pressure", 0x59, "Pression absolue de rampe", "kPa", 2, lambda data: _word(data) * 10, "Carburant", "Pression absolue de rampe carburant lorsqu'elle est exposée par l'ECU."),
     PidDefinition("relative_accelerator_position", 0x5A, "Position relative accélérateur", "%", 1, _percent, "Commande conducteur", "Demande relative normalisée de la pédale d'accélérateur."),
     PidDefinition("engine_oil_temperature", 0x5C, "Température huile moteur", "°C", 1, _temperature, "Températures", "Température d'huile utilisée pour la protection moteur."),
     PidDefinition("fuel_injection_timing", 0x5D, "Avance d'injection", "°", 2, _fuel_injection_timing, "Combustion", "Calage normalisé de l'injection par rapport au point mort haut."),
     PidDefinition("fuel_rate", 0x5E, "Débit carburant", "L/h", 2, lambda data: round(_word(data) / 20, 2), "Carburant", "Débit total de carburant consommé par le moteur."),
+    PidDefinition("emission_requirements", 0x5F, "Exigences d'émissions", "code", 1, lambda data: data[0], "Dépollution", "Code de réglementation d'émissions auquel le véhicule déclare répondre."),
+    PidDefinition("driver_demand_torque", 0x61, "Demande de couple conducteur", "%", 1, _torque_percent, "Combustion", "Demande de couple moteur normalisée du conducteur."),
+    PidDefinition("actual_engine_torque", 0x62, "Couple moteur réel", "%", 1, _torque_percent, "Combustion", "Couple réel exprimé en pourcentage du couple de référence."),
+    PidDefinition("engine_reference_torque", 0x63, "Couple moteur de référence", "N·m", 2, _word, "Combustion", "Couple de référence utilisé pour convertir les pourcentages de couple."),
+    PidDefinition("egr_temperature_sensor_1", 0x6B, "Température EGR capteur 1", "°C", 3, lambda data: data[1] - 40, "Dépollution", "Première température EGR lorsque ce groupe de capteurs est pris en charge."),
 )
 
 PID_BY_ID = {definition.pid: definition for definition in PID_DEFINITIONS}

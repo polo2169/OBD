@@ -101,6 +101,9 @@ class DtcReadResult(BaseModel):
     status_hex: str
     status_labels: list[str] = Field(default_factory=list)
     title: str | None = None
+    description: str | None = None
+    common_causes: list[str] = Field(default_factory=list)
+    repair_difficulty: str | None = None
     catalogs: list[str] = Field(default_factory=list)
     source: str | None = None
     confidence: str = "raw_only"
@@ -179,9 +182,39 @@ class ObservedDtcResult(ObservedDtcInput):
     code: str
     ecu_name: str
     title: str | None = None
+    description: str | None = None
+    common_causes: list[str] = Field(default_factory=list)
+    repair_difficulty: str | None = None
     catalogs: list[str] = Field(default_factory=list)
     catalog_source: str | None = None
     confidence: str = "user_reported"
+    recorded_at: str
+
+
+class OilLogEntryInput(BaseModel):
+    # Kilométrage requis à chaque relevé : c'est le signal validé sur ce
+    # véhicule (voir odometer_km, DAT4_BSI_AEE2010/0x552) — auto-rempli côté
+    # frontend depuis le direct CAN quand une capture tourne, sinon saisi à la
+    # main. L'axe du carnet d'entretien repose dessus, pas sur la date seule.
+    mileage_km: float = Field(ge=0, le=2_000_000)
+    mileage_source: str = Field(default="manual", max_length=40)
+    # Le niveau d'huile n'est pas décodé de façon fiable sur ce véhicule
+    # (candidat P275_EngOilLvl non validé, cf. notes du profil PSA) : saisie
+    # libre tant qu'aucune source CAN/DID validée n'existe.
+    oil_level_note: str | None = Field(default=None, max_length=200)
+    oil_added_l: float | None = Field(default=None, ge=0, le=10)
+    note: str | None = Field(default=None, max_length=500)
+    vin: str | None = Field(
+        default=None,
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Z0-9]{17}$",
+    )
+    vehicle_profile: str | None = Field(default=None, max_length=100)
+
+
+class OilLogEntryResult(OilLogEntryInput):
+    id: str
     recorded_at: str
 
 
@@ -321,6 +354,15 @@ class VehicleSelectionRequest(BaseModel):
     )
 
 
+class ManualVehicleCreateRequest(BaseModel):
+    vehicle_profile: str = Field(min_length=1, max_length=100)
+    vin: str = Field(
+        min_length=17,
+        max_length=17,
+        pattern=r"^[A-HJ-NPR-Za-hj-npr-z0-9]{17}$",
+    )
+
+
 class ClearDtcRequest(BaseModel):
     confirmation: str
     vehicle_stationary: bool = False
@@ -355,6 +397,7 @@ class TransportConnectRequest(BaseModel):
     transport: Literal["esp32_serial", "esp32_wifi"]
     endpoint: str = Field(min_length=3, max_length=255)
     baud: int | None = Field(default=None, ge=9_600, le=4_000_000)
+    vehicle_profile: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class OperatingModeRequest(BaseModel):

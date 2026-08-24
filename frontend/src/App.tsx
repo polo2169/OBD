@@ -80,7 +80,13 @@ import type {
   EcuResetResult,
   LiveSensorDefinition,
   MaintenanceCatalog,
+  MaintenanceInvoiceAnalysis,
+  MaintenanceMileageEstimate,
+  MaintenanceRecord,
+  MaintenanceRecordInput,
   ObservedDtc,
+  OilLogEntry,
+  OilLogEntryInput,
   OpendbcCatalog,
   OperatingModeState,
   PassiveCanSignal,
@@ -295,13 +301,17 @@ export default function App() {
   const [didSweepBusy, setDidSweepBusy] = useState(false);
   const [didSweepResult, setDidSweepResult] = useState<DidSweepResult | null>(null);
   const [observedDtcs, setObservedDtcs] = useState<ObservedDtc[]>([]);
+  const [oilLog, setOilLog] = useState<OilLogEntry[]>([]);
+  const [oilLogBusy, setOilLogBusy] = useState(false);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
+  const [maintenanceRecordBusy, setMaintenanceRecordBusy] = useState(false);
   const [diagnosticVehicles, setDiagnosticVehicles] = useState<DiagnosticVehicle[]>([]);
   const [selectedDiagnosticVin, setSelectedDiagnosticVin] = useState(
     () => window.localStorage.getItem("opendiag.diagnostic-vin") ?? "",
   );
   const [vehicleSelectionBusy, setVehicleSelectionBusy] = useState(false);
   const [sessionAssignmentBusy, setSessionAssignmentBusy] = useState("");
-  const [garageEventFilter, setGarageEventFilter] = useState<"all" | "diagnostic" | "capture" | "identity">("all");
+  const [garageEventFilter, setGarageEventFilter] = useState<"all" | "diagnostic" | "capture" | "maintenance" | "identity">("all");
   const [diagnosticReportHistory, setDiagnosticReportHistory] = useState<DiagnosticReportSummary[]>([]);
   const [dtcFilter, setDtcFilter] = useState<DtcValue["state"] | "all">("active");
   const [diagnosticSensorCatalog, setDiagnosticSensorCatalog] = useState<DiagnosticSensorCatalogEntry[]>([]);
@@ -315,6 +325,7 @@ export default function App() {
   );
   const [vehicleIdentity, setVehicleIdentity] = useState<VehicleIdentityResult | null>(null);
   const [identityBusy, setIdentityBusy] = useState(false);
+  const [manualVehicleBusy, setManualVehicleBusy] = useState(false);
   const [obdDtcResult, setObdDtcResult] = useState<Ecu | null>(null);
   const [obdDtcBusy, setObdDtcBusy] = useState(false);
   const [udsProbeEcuKey, setUdsProbeEcuKey] = useState("body_computer");
@@ -719,10 +730,34 @@ export default function App() {
         severity: "good",
       });
     }
+    for (const entry of oilLog) {
+      if (entry.vin !== selectedDiagnosticVin) continue;
+      entries.push({
+        id: entry.id,
+        kind: "maintenance",
+        timestampMs: new Date(entry.recorded_at).getTime(),
+        title: "Relevé carnet d'entretien",
+        description: `${entry.mileage_km.toLocaleString("fr-FR")} km${entry.oil_level_note ? ` · ${entry.oil_level_note}` : ""}${typeof entry.oil_added_l === "number" ? ` · +${entry.oil_added_l} L` : ""}`,
+        badge: entry.mileage_source === "can_signal" ? "Kilométrage CAN" : "Kilométrage saisi",
+        severity: "neutral",
+      });
+    }
+    for (const entry of maintenanceRecords) {
+      if (entry.vin !== selectedDiagnosticVin) continue;
+      entries.push({
+        id: entry.id,
+        kind: "maintenance",
+        timestampMs: new Date(`${entry.performed_at}T12:00:00`).getTime(),
+        title: entry.title,
+        description: `${entry.mileage_km.toLocaleString("fr-FR")} km · ${entry.parts.length} pièce(s)${entry.workshop ? ` · ${entry.workshop}` : ""}`,
+        badge: entry.documents.length ? `${entry.documents.length} justificatif(s)` : entry.category,
+        severity: "good",
+      });
+    }
     return entries
       .filter((entry) => Number.isFinite(entry.timestampMs) && (garageEventFilter === "all" || entry.kind === garageEventFilter))
       .sort((left, right) => right.timestampMs - left.timestampMs);
-  }, [diagnosticReportHistory, garageEventFilter, selectedDiagnosticVehicle, selectedDiagnosticVin, vehicleLinkedSessions]);
+  }, [diagnosticReportHistory, garageEventFilter, maintenanceRecords, oilLog, selectedDiagnosticVehicle, selectedDiagnosticVin, vehicleLinkedSessions]);
   const activeVehicleLabel = selectedDiagnosticVehicle
     ? `${selectedDiagnosticVehicle.manufacturer} ${selectedDiagnosticVehicle.model}`
     : activeCommunicationProfile
@@ -753,6 +788,7 @@ export default function App() {
   );
   const diagnosticGatewayVerified = status?.transport === "virtual" || Boolean(status?.gateway_verified) || dualCanOperational;
   const liveObdReadOnly = status?.transport === "virtual" || status?.gateway_hello?.live_obd_read_only === true;
+  const identityRequiresLiveObd = Boolean(selectedIdentityProfile?.identity_buses.includes("live"));
   const diagnosticReady = Boolean(
     status?.can_tx_enabled
     && diagnosticGatewayVerified
@@ -763,8 +799,10 @@ export default function App() {
     && liveObdReadOnly,
   );
   const identityReadReady = Boolean(
-    diagnosticReady
-    && (selectedIdentityProfile?.identity_scope !== "identity_only" || obdReadReady),
+    status?.can_tx_enabled
+    && selectedIdentityProfile
+    && selectedIdentityProfile.vin_methods.length > 0
+    && !capture?.active,
   );
   const selectedPsaEcu = psaCatalog?.ecus.find((ecu) => ecu.key === psaEcuKey) ?? null;
   const selectedPsaAction = psaCatalog?.actions.find((action) => action.key === psaSelectedActionKey) ?? null;
@@ -1741,18 +1779,125 @@ export default function App() {
       if (selected) query.set("vin", selected);
       else if (profile) query.set("vehicle_profile", profile);
       const suffix = query.toString() ? `?${query.toString()}` : "";
-      const [latest, history, observations] = await Promise.all([
+      const [latest, history, observations, oilLogEntries, maintenanceEntries] = await Promise.all([
         api<Report>(`/api/diagnostic/reports/latest${suffix}`).catch(() => null),
         api<DiagnosticReportSummary[]>(`/api/diagnostic/reports${suffix}`).catch(() => []),
         api<ObservedDtc[]>(`/api/diagnostic/dtcs/observed${suffix}`).catch(() => []),
+        api<OilLogEntry[]>(`/api/diagnostic/oil-log${suffix}`).catch(() => []),
+        selected
+          ? api<MaintenanceRecord[]>(`/api/maintenance/records?vin=${encodeURIComponent(selected)}`).catch(() => [])
+          : Promise.resolve([]),
       ]);
       setReport(latest);
       setDiagnosticReportHistory(history);
       setObservedDtcs(observations);
+      setOilLog(oilLogEntries);
+      setMaintenanceRecords(maintenanceEntries);
     } catch {
       setDiagnosticVehicles([]);
       setDiagnosticReportHistory([]);
       setObservedDtcs([]);
+      setOilLog([]);
+      setMaintenanceRecords([]);
+    }
+  }
+
+  async function recordOilLogEntry(entry: OilLogEntryInput) {
+    setOilLogBusy(true);
+    try {
+      // Le VIN est résolu côté backend depuis le véhicule actif de ce profil
+      // (comme les DTC observés) ; on ne fait que préciser le profil courant.
+      const saved = await api<OilLogEntry>("/api/diagnostic/oil-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...entry, vehicle_profile: activeCommunicationProfileKey }),
+      });
+      setOilLog((current) => [...current, saved]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOilLogBusy(false);
+    }
+  }
+
+  async function uploadMaintenanceDocuments(record: MaintenanceRecord, documents: File[]) {
+    for (const document of documents) {
+      const form = new FormData();
+      form.append("vin", record.vin);
+      form.append("kind", "invoice");
+      form.append("document", document);
+      const uploaded = await api<MaintenanceRecord>(
+        `/api/maintenance/records/${encodeURIComponent(record.id)}/documents`,
+        { method: "POST", body: form },
+      );
+      setMaintenanceRecords((records) => records.map((item) => item.id === uploaded.id ? uploaded : item));
+    }
+  }
+
+  async function createMaintenanceRecord(entry: MaintenanceRecordInput, documents: File[]): Promise<boolean> {
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      const saved = await api<MaintenanceRecord>("/api/maintenance/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      setMaintenanceRecords((current) => [saved, ...current]);
+      if (documents.length) {
+        try {
+          await uploadMaintenanceDocuments(saved, documents);
+        } catch (err) {
+          setError(`L’intervention est enregistrée, mais un justificatif n’a pas été ajouté : ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function addMaintenanceDocuments(recordId: string, documents: File[]) {
+    const record = maintenanceRecords.find((item) => item.id === recordId);
+    if (!record || !documents.length) return;
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      await uploadMaintenanceDocuments(record, documents);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function estimateMaintenanceMileage(vin: string, performedAt: string): Promise<MaintenanceMileageEstimate | null> {
+    setError("");
+    try {
+      const query = new URLSearchParams({ vin, performed_at: performedAt });
+      return await api<MaintenanceMileageEstimate>(`/api/maintenance/mileage-estimate?${query.toString()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
+  async function analyzeMaintenanceInvoice(vin: string, document: File): Promise<MaintenanceInvoiceAnalysis | null> {
+    setError("");
+    try {
+      const form = new FormData();
+      form.append("vin", vin);
+      form.append("document", document);
+      return await api<MaintenanceInvoiceAnalysis>("/api/maintenance/invoice-draft", {
+        method: "POST",
+        body: form,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
     }
   }
 
@@ -2056,22 +2201,80 @@ export default function App() {
   }
 
   async function readVehicleIdentity() {
-    if (capture?.active && !dualCanOperational) {
+    if (capture?.active) {
       setError("Arrête et sauvegarde la capture CAN avant de lire l’identité du véhicule.");
       return;
     }
-    if (!identityReadReady) {
-      setError(status?.can_tx_enabled
-        ? selectedIdentityProfile?.identity_scope === "identity_only" && !liveObdReadOnly
-          ? "Le firmware principal doit autoriser les lectures OBD 01/09 filtrées sur 6/14 pour identifier ce véhicule."
-          : "Connecte et valide d’abord l’ESP32 avec le firmware diagnostic en lecture seule."
-        : "La lecture VIN nécessite des requêtes OBD/UDS de lecture (CAN_TX_ENABLED=true)."
-      );
+    if (!selectedIdentityProfile) {
+      setError("Sélectionne d’abord un profil véhicule à identifier.");
+      return;
+    }
+    if (!status?.can_tx_enabled) {
+      setError("La lecture VIN nécessite des requêtes OBD/UDS de lecture (CAN_TX_ENABLED=true).");
       return;
     }
     setIdentityBusy(true);
     setError("");
     try {
+      let readyStatus = status;
+      if (status.transport !== "virtual") {
+        const announcedBitrateValue = status.gateway_hello?.live_bitrate ?? status.gateway_hello?.bitrate;
+        const announcedBitrate = typeof announcedBitrateValue === "number"
+          ? announcedBitrateValue
+          : Number(announcedBitrateValue);
+        const bitrateMismatch = Boolean(
+          selectedIdentityProfile.can_bitrate
+          && (!Number.isFinite(announcedBitrate) || announcedBitrate !== selectedIdentityProfile.can_bitrate),
+        );
+        const capabilityMissing = identityRequiresLiveObd && !liveObdReadOnly;
+        const mustConnect = !status.gateway_verified || bitrateMismatch || capabilityMissing;
+        if (mustConnect) {
+          const option = transportCatalog?.options.find((candidate) => candidate.id === selectedTransportId)
+            ?? transportCatalog?.options.find((candidate) => candidate.id === transportCatalog.current_id)
+            ?? transportCatalog?.options.find((candidate) => candidate.detected)
+            ?? (status.gateway_endpoint && (status.transport === "esp32_serial" || status.transport === "esp32_wifi")
+              ? {
+                  id: `${status.transport}:${status.gateway_endpoint}`,
+                  transport: status.transport,
+                  endpoint: status.gateway_endpoint,
+                  baud: null,
+                  label: status.gateway_endpoint,
+                }
+              : null);
+          if (!option) {
+            throw new Error("Aucune passerelle ESP32 détectée. Branche-la en USB puis relance la lecture.");
+          }
+          setTransportConnectBusy(true);
+          setTransportMessage("Connexion et réglage du CAN…");
+          const connection = await api<TransportConnection>("/api/system/transport/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              transport: option.transport,
+              endpoint: option.endpoint,
+              baud: option.baud ?? null,
+              vehicle_profile: selectedIdentityProfile.key,
+            }),
+          });
+          readyStatus = await api<Status>("/api/system/status");
+          setStatus(readyStatus);
+          setStatusError("");
+          setTransportMessage(connection.verified ? "ESP32 validé pour ce véhicule" : "Connexion non validée");
+          await refreshTransportCatalog();
+          if (!connection.verified) {
+            throw new Error(connection.error || "La passerelle ESP32 n’a pas pu être validée.");
+          }
+        }
+      }
+      if (
+        readyStatus.transport !== "virtual"
+        && identityRequiresLiveObd
+        && readyStatus.gateway_hello?.live_obd_read_only !== true
+      ) {
+        throw new Error(
+          "Le firmware principal doit autoriser les lectures OBD filtrées sur les broches 6/14.",
+        );
+      }
       const result = await api<VehicleIdentityResult>("/api/diagnostic/identity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2086,8 +2289,54 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      setTransportConnectBusy(false);
       setIdentityBusy(false);
     }
+  }
+
+  async function createManualVehicle(vin: string) {
+    if (capture?.active) {
+      setError("Arrête et sauvegarde la capture CAN avant d’ajouter un véhicule.");
+      return;
+    }
+    if (!selectedIdentityProfile) {
+      setError("Sélectionne d’abord le profil du véhicule.");
+      return;
+    }
+    setManualVehicleBusy(true);
+    setError("");
+    try {
+      const result = await api<VehicleIdentityResult>("/api/diagnostic/vehicles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicle_profile: selectedIdentityProfile.key,
+          vin: vin.trim().toUpperCase(),
+        }),
+      });
+      setVehicleIdentity(result);
+      setSelectedDiagnosticVin(result.vin ?? "");
+      await refreshDiagnosticHistory(result.vin ?? undefined, result.vehicle_profile);
+      setView("identity");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setManualVehicleBusy(false);
+    }
+  }
+
+  function beginVehicleIdentityCreation() {
+    if (capture?.active) {
+      setError("Arrête et sauvegarde la capture CAN avant d’ajouter un véhicule.");
+      return;
+    }
+    setSelectedDiagnosticVin("");
+    setVehicleIdentity(null);
+    setInjectionSnapshot(null);
+    setReport(null);
+    setObdDtcResult(null);
+    setError("");
+    setView("identity");
   }
 
   async function readEngineObdDtcs() {
@@ -2431,6 +2680,7 @@ export default function App() {
         onSelectReport={selectDiagnosticReport}
         onLoadReplay={loadReplay}
         onSelectIdentityProfile={setIdentityProfileKey}
+        onAddVehicle={beginVehicleIdentityCreation}
         onNavigate={setView}
         onSelectVehicle={selectDiagnosticVehicle}
         onFilterChange={setGarageEventFilter}
@@ -2548,9 +2798,9 @@ export default function App() {
         profilesForSelectedManufacturer={profilesForSelectedManufacturer}
         readVehicleIdentity={readVehicleIdentity}
         identityBusy={identityBusy}
-        dualCanOperational={dualCanOperational}
+        createManualVehicle={createManualVehicle}
+        manualVehicleBusy={manualVehicleBusy}
         status={status}
-        liveObdReadOnly={liveObdReadOnly}
         readEngineObdDtcs={readEngineObdDtcs}
         obdDtcBusy={obdDtcBusy}
         obdDtcResult={obdDtcResult}
@@ -2656,6 +2906,17 @@ export default function App() {
         services={visibleMaintenanceServices}
         onCategoryChange={setMaintenanceCategory}
         onUnavailableProcedure={() => setError("L’exécuteur de cette procédure n’est pas encore installé.")}
+        oilLog={oilLog}
+        liveOdometerKm={passiveSensors?.active ? studioLiveSample?.point.odometer_km ?? null : null}
+        onRecordOilLogEntry={recordOilLogEntry}
+        oilLogBusy={oilLogBusy}
+        vehicle={selectedDiagnosticVehicle}
+        maintenanceRecords={maintenanceRecords}
+        maintenanceRecordBusy={maintenanceRecordBusy}
+        onCreateMaintenanceRecord={createMaintenanceRecord}
+        onAddMaintenanceDocuments={addMaintenanceDocuments}
+        onEstimateMaintenanceMileage={estimateMaintenanceMileage}
+        onAnalyzeMaintenanceInvoice={analyzeMaintenanceInvoice}
       />
     );
   }

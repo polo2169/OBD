@@ -11,7 +11,7 @@ from app.learn.isotp import parse_isotp_frame, uds_service
 from app.learn.models import CaptureGpsPosition, CaptureStatus, CorrelationOptions, PassiveSensorOverride, ReplayGpsPoint, ReplaySample, SessionVehicleAssignment
 from app.learn.opendbc import get_opendbc_decoder
 from app.learn.passive_sensors import passive_sensor_snapshot
-from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _detect_cruise_controls, _filter_fuel_level, _update_state, prepare_replay, replay_geojson
+from app.learn.replay import _apply_confirmed_road_route, _apply_gps_route, _detect_cruise_controls, _filter_fuel_level, _update_fiat_500_state, _update_state, prepare_replay, replay_geojson
 from app.learn.sensor_metadata import save_override
 from app.learn.session_vehicle import assign_session_vehicle
 from app.learn.validation import validate_replay
@@ -89,6 +89,64 @@ def test_opendbc_psa_catalog_is_loaded_and_decodes_engine_speed():
     assert values is not None
     assert values["P000_Com_nEng"]["value"] == 1000.0
     assert values["P000_Com_nEng"]["unit"] == "1/min"
+
+
+def test_odometer_decodes_absolute_mileage_from_real_vehicle_frame():
+    # Trame réelle capturée sur le véhicule (0x552 DAT4_BSI_AEE2010) : octets
+    # 5-7 (indexation 1) = 01 9A 0F -> 104 975 km. Confirmé par la
+    # documentation constructeur PSA du champ 552 en plus du recoupement
+    # multi-capture (voir database/psa/vehicles/peugeot_308_t9_2018.yaml).
+    decoder = get_opendbc_decoder()
+    message, values, error = decoder.decode_frame(
+        0x552,
+        False,
+        bytes.fromhex("0A7EA337019A0FFE"),
+    )
+    assert error is None
+    assert message is not None
+    assert message.name == "DAT4_BSI_AEE2010"
+    assert values is not None
+    assert values["P015_Com_lTotDst"]["value"] == 104975
+    assert values["P015_Com_lTotDst"]["unit"] == "km"
+
+
+def test_replay_decodes_and_flags_validated_odometer(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    monkeypatch.setattr(settings, "manual_signal_validations_file", tmp_path / "manual_signal_validations.json")
+    session_id = "learn-20260813T120000Z-odometer"
+    frames = [
+        {
+            "type": "meta",
+            "timestamp_us": 1_000_000,
+            "session_id": session_id,
+            "name": "Kilométrage",
+            "source": "fixture",
+        },
+        {
+            "type": "can_frame",
+            "timestamp_us": 1_000_000,
+            "arbitration_id": 0x552,
+            "extended": False,
+            "data_hex": "0A7EA337019A0FFE",
+            "direction": "rx",
+        },
+        {
+            "type": "can_frame",
+            "timestamp_us": 1_100_000,
+            "arbitration_id": 0x552,
+            "extended": False,
+            "data_hex": "0A7EA337019A0FFE",
+            "direction": "rx",
+        },
+    ]
+    path = tmp_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(json.dumps(frame) for frame in frames) + "\n", encoding="utf-8")
+
+    replay = prepare_replay(session_id)
+
+    assert "odometer_km" in replay.available_fields
+    assert replay.points[-1].odometer_km == 104975
+    assert replay.field_quality["odometer_km"] == "validated_on_vehicle"
 
 
 def test_t9_eat6_keeps_legacy_low_nibble_fallback_for_current_gear():
@@ -310,6 +368,115 @@ def test_driver_seatbelt_572_replays_dedicated_vehicle_toggle_sequence():
 
     assert driver_states == [2, 1, 2, 1, 2]
     assert passenger_states == [1, 1, 1, 1, 1]
+
+
+def test_can_derived_fuel_consumption_handles_wraparound_and_smoothing(tmp_path, monkeypatch):
+    # Consommation dérivée du compteur 0x488 (P021_Com_volFlCons) : voir
+    # database/psa/dbc/peugeot_308_t9_2018_checksums.yaml et
+    # database/psa/proposals/readme.md pour le raisonnement complet. Ce test
+    # rejoue les exemples chiffrés de ce document (20 ticks/s -> 5,76 L/h ->
+    # 7,2 L/100km à 80 km/h) au travers d'un rebouclage réel du compteur
+    # (254 -> 1).
+    monkeypatch.setattr(settings, "session_dir", tmp_path)
+    monkeypatch.setattr(settings, "manual_signal_validations_file", tmp_path / "manual_signal_validations.json")
+    session_id = "learn-20260813T090000Z-fuel"
+    decoder = get_opendbc_decoder()
+
+    def payload(arbitration_id: int, **updates: float) -> str:
+        message = decoder.message_for_frame(arbitration_id, False)
+        assert message is not None
+        values = {
+            signal.name: signal.minimum if signal.minimum is not None and signal.minimum > 0 else 0
+            for signal in message.signals
+        }
+        values.update(updates)
+        return message.encode(values, strict=False).hex().upper()
+
+    frames: list[dict] = [{
+        "type": "meta",
+        "timestamp_us": 1_000_000,
+        "session_id": session_id,
+        "name": "Consommation CAN",
+        "source": "fixture",
+    }]
+    # Compteur brut (0..254, rebouclage modulo 255) : chaque intervalle de
+    # 100 ms avance de 2 ticks (160 mm³ = 0,00016 L, soit 20 ticks/s comme
+    # dans l'exemple du document), avec un rebouclage 254 -> 1 au milieu de
+    # la séquence. 21 échantillons (2 s) pour dépasser la fenêtre de lissage
+    # de 1500 ms et observer un débit stabilisé, plus une trame de fin
+    # dupliquant le dernier échantillon pour purger le dernier état interne
+    # dans un point (artefact connu du pipeline de replay : un point ne
+    # reflète l'état qu'à l'arrivée de la trame suivante).
+    raw_ticks = [(240 + 2 * index) % 255 for index in range(21)]
+    for index, raw_tick in enumerate(raw_ticks):
+        timestamp_us = 1_000_000 + index * 100_000
+        messages = [
+            (0x38D, payload(0x38D, VITESSE_VEHICULE_ROUES=80, ACCEL_LONGI_ROUES=0, REQ_LAMPE_WARNING=0)),
+            (0x488, payload(
+                0x488,
+                P021_Com_volFlCons=raw_tick * 80,
+                P005_CEngDst_tSens=88,
+                P011_Oil_tSwmp=90,
+                P158_Air_tAFS=32,
+            )),
+        ]
+        for arbitration_id, data_hex in messages:
+            frames.append({
+                "type": "can_frame",
+                "timestamp_us": timestamp_us,
+                "arbitration_id": arbitration_id,
+                "extended": False,
+                "data_hex": data_hex,
+                "direction": "rx",
+            })
+    flush_timestamp_us = 1_000_000 + len(raw_ticks) * 100_000
+    for arbitration_id, data_hex in (
+        (0x38D, payload(0x38D, VITESSE_VEHICULE_ROUES=80, ACCEL_LONGI_ROUES=0, REQ_LAMPE_WARNING=0)),
+        (0x488, payload(
+            0x488,
+            P021_Com_volFlCons=raw_ticks[-1] * 80,
+            P005_CEngDst_tSens=88,
+            P011_Oil_tSwmp=90,
+            P158_Air_tAFS=32,
+        )),
+    ):
+        frames.append({
+            "type": "can_frame",
+            "timestamp_us": flush_timestamp_us,
+            "arbitration_id": arbitration_id,
+            "extended": False,
+            "data_hex": data_hex,
+            "direction": "rx",
+        })
+    path = tmp_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(json.dumps(frame) for frame in frames) + "\n", encoding="utf-8")
+
+    replay = prepare_replay(session_id)
+
+    assert "can_fuel_rate_lph" in replay.available_fields
+    assert "can_instant_consumption_l_100km" in replay.available_fields
+    assert "can_trip_fuel_l" in replay.available_fields
+
+    # 20 intervalles de 2 ticks (160 mm³ = 0,00016 L chacun), rebouclage
+    # inclus : le rebouclage ne doit pas produire un delta aberrant (quasiment
+    # un tour complet du compteur) mais bien le même delta que les autres
+    # intervalles.
+    expected_trip_l = round((len(raw_ticks) - 1) * 0.00016, 4)
+    assert replay.points[-1].can_trip_fuel_l == expected_trip_l
+    assert replay.can_trip_fuel_total_l == expected_trip_l
+
+    # Débit stabilisé une fois la fenêtre de lissage purgée de l'échantillon
+    # de démarrage : 20 ticks/s = 0,0016 L/s = 5,76 L/h.
+    assert replay.points[-1].can_fuel_rate_lph == 5.76
+    # 5,76 L/h à 80 km/h (>= seuil 5 km/h) -> 7,2 L/100km.
+    assert replay.points[-1].can_instant_consumption_l_100km == 7.2
+
+    # La distance reconstruite par estime sur ce fixture synthétique est trop
+    # courte pour une moyenne trajet fiable (seuil 0,3 km, cf.
+    # _summarize_can_fuel_consumption) ; seule la note explicative est donc
+    # garantie ici, la moyenne elle-même n'est pas le sujet de ce test.
+    assert replay.can_fuel_consumption_note is not None
+    assert replay.field_quality["can_fuel_rate_lph"] == "derived_from_0x488_0x38d_vehicle_validated_counter"
 
 
 def test_replay_streams_session_and_reconstructs_local_route(tmp_path, monkeypatch):
@@ -847,15 +1014,52 @@ def test_passive_sensor_snapshot_uses_fiat_profile_without_psa_decoding(tmp_path
     snapshot = passive_sensor_snapshot()
     by_key = {signal.key: signal for signal in snapshot.signals}
 
-    assert snapshot.observed_message_count == 1
-    assert snapshot.decoded_signal_count == 3
-    assert snapshot.unknown_can_ids == [0x0210A006]
+    assert snapshot.observed_message_count == 2
+    assert snapshot.decoded_signal_count == 4
+    assert snapshot.unknown_can_ids == []
     assert by_key["FIAT_ENGINE.ENGINE_RPM"].value == 695
     assert by_key["FIAT_ENGINE.ENGINE_RPM"].confidence == "validated"
     assert by_key["FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE"].value == 0
     assert by_key["FIAT_ENGINE.THROTTLE_POSITION_CANDIDATE"].confidence == "vehicle_observed_candidate"
     assert by_key["FIAT_ENGINE.AIR_LOAD_CANDIDATE_RAW"].value == 0x1F
+    assert by_key["FIAT_DYNAMICS.SPEED_RELATED_RAW"].value == 0
     assert any("aucun décodeur Peugeot" in warning for warning in snapshot.warnings)
+
+
+def test_passive_sensor_snapshot_does_not_apply_fiat_decoder_to_renault_profile(tmp_path, monkeypatch):
+    # Same frame shape as the Fiat regression test above (0x0618A001, RPM-like
+    # payload), but under the Renault profile: this must NOT be decoded as
+    # FIAT_ENGINE.* signals. Guards the brand-resolution split in
+    # passive_sensors.py (_brand_for_profile) so a non-Fiat, non-PSA profile
+    # never inherits Fiat's byte-level decoding by accident.
+    monkeypatch.setattr(settings, "sensor_overrides_file", tmp_path / "sensor_overrides.json")
+    monkeypatch.setattr(capture_manager, "status", lambda: CaptureStatus(
+        session_id="learn-renault",
+        active=True,
+        source="fixture",
+        frame_count=1,
+        marker_count=0,
+        path="fixture.jsonl",
+        strict_passive=True,
+        vehicle_profile="renault_trafic_x82",
+        vehicle_label="Renault Trafic III",
+    ))
+    monkeypatch.setattr(capture_manager, "latest_frames", lambda: [
+        {
+            "timestamp_us": 2_000_000,
+            "arbitration_id": 0x0618A001,
+            "extended": True,
+            "data": bytes.fromhex("002002B71F1E8400"),
+            "raw_hex": "002002B71F1E8400",
+        },
+    ])
+
+    snapshot = passive_sensor_snapshot()
+
+    assert snapshot.decoded_signal_count == 0
+    assert snapshot.unknown_can_ids == [0x0618A001]
+    assert not any(signal.key.startswith("FIAT_") for signal in snapshot.signals)
+    assert any("renault_trafic_x82" in warning for warning in snapshot.warnings)
 
 
 def test_fiat_passive_snapshot_distinguishes_validated_and_candidate_fields(monkeypatch):
@@ -935,6 +1139,51 @@ def test_fiat_passive_snapshot_distinguishes_validated_and_candidate_fields(monk
     assert by_key["FIAT_ABS.BRAKE_PEDAL_STATE_RAW"].confidence == "vehicle_observed_candidate"
     assert by_key["FIAT_BODY.PARKING_BRAKE"].confidence == "vehicle_observed_candidate"
     assert snapshot.source_url and "talking-with-cars" in snapshot.source_url
+
+
+def test_fiat_replay_uses_correct_start_stop_byte_and_clutch_bits():
+    state: dict[str, object] = {}
+
+    updated = _update_fiat_500_state(
+        0x0C1CA000,
+        bytes.fromhex("0000E40000000000"),
+        state,
+    )
+    assert "fiat_start_stop_state_raw" in updated
+    assert state["fiat_start_stop_state_raw"] == 0xE4
+    assert state["fiat_start_stop_active_candidate"] is True
+    assert state["fiat_start_stop_available_candidate"] is True
+    assert state["fiat_start_stop_door_or_seatbelt_ok_candidate"] is True
+
+    _update_fiat_500_state(
+        0x0628A001,
+        bytes.fromhex("0000000000100000"),
+        state,
+    )
+    assert state["fiat_clutch_pedal_candidate"] is False
+    assert state["fiat_accelerator_request_candidate"] is True
+
+    _update_fiat_500_state(
+        0x0628A001,
+        bytes.fromhex("0000000000200000"),
+        state,
+    )
+    assert state["fiat_clutch_pedal_candidate"] is True
+    assert state["fiat_accelerator_request_candidate"] is False
+
+
+def test_fiat_replay_decodes_redundant_speed_and_electrical_candidates():
+    state: dict[str, object] = {}
+
+    _update_fiat_500_state(0x0A18A006, bytes.fromhex("0100016700000000"), state)
+    _update_fiat_500_state(0x0A28A000, bytes.fromhex("016700DF00000000"), state)
+    _update_fiat_500_state(0x0A18A001, bytes.fromhex("0000808300F81600"), state)
+
+    assert state["fiat_engine_running_candidate"] is True
+    assert state["fiat_speed_0a18a006_candidate_kph"] == 22.44
+    assert state["fiat_speed_0a28a000_candidate_kph"] == 22.44
+    assert state["fiat_wheel_activity_counter_raw"] == 0xDF
+    assert state["fiat_electrical_load_candidate_raw"] == 0x00F8
 
 
 def test_hybrid_obd_values_complete_fiat_passive_sensors(monkeypatch):

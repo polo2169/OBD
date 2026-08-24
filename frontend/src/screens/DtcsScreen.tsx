@@ -109,6 +109,8 @@ export function DtcsScreen({
                   <div className="dtc-description">
                     <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
                     <p>{dtc.note ?? "Code relevé manuellement; état UDS non fourni."}</p>
+                    {dtc.description && <p>{dtc.description}</p>}
+                    {(dtc.common_causes ?? []).length > 0 && <small>Causes possibles (non confirmées) : {(dtc.common_causes ?? []).slice(0, 3).join(" · ")}</small>}
                     <div className="tag-row">
                       <span className="warn-tag">À confirmer par lecture UDS</span>
                       <span>Statut UDS inconnu</span>
@@ -181,6 +183,8 @@ export function DtcsScreen({
                     <div className="dtc-description">
                       <strong>{dtc.title ?? "Description spécifique inconnue"}</strong>
                       <p>{dtc.state_detail}</p>
+                      {dtc.description && <p>{dtc.description}</p>}
+                      {(dtc.common_causes ?? []).length > 0 && <small>Causes possibles (non confirmées) : {(dtc.common_causes ?? []).slice(0, 3).join(" · ")}</small>}
                       <div className="tag-row"><span className={`dtc-state-tag ${dtc.state}`}>{dtc.state_label}</span>{dtc.status_labels.map((label) => <span key={label}>{label}</span>)}</div>
                       {LAB_MODE && <>
                         {dtc.failure_type_label && <small>Type de défaut : {dtc.failure_type_label} (0x{dtc.failure_type.toString(16).toUpperCase().padStart(2, "0")})</small>}

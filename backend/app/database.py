@@ -36,6 +36,17 @@ class KnowledgeBase:
             vehicle = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             diagnostic = vehicle.get("diagnostic", {})
             strategies = diagnostic.get("vin_strategies", [])
+            enabled_strategies = [
+                strategy for strategy in strategies if strategy.get("enabled", True)
+            ]
+            identity_buses = sorted({
+                str(strategy.get("bus") or (
+                    "live" if str(strategy.get("protocol", "")).lower() == "obd"
+                    else "diagnostic"
+                ))
+                for strategy in enabled_strategies
+            })
+            network = vehicle.get("networks", {}).get("diagnostic_can", {})
             profiles.append({
                 "key": key,
                 "manufacturer": vehicle.get("manufacturer", "Inconnu"),
@@ -47,8 +58,15 @@ class KnowledgeBase:
                 "identity_scope": diagnostic.get("identity_scope", "full_profile"),
                 "vin_methods": [
                     strategy.get("label", strategy.get("key", "Méthode inconnue"))
-                    for strategy in strategies
+                    for strategy in enabled_strategies
                 ],
+                "identity_protocols": sorted({
+                    str(strategy.get("protocol", "")).lower()
+                    for strategy in enabled_strategies
+                    if strategy.get("protocol")
+                }),
+                "identity_buses": identity_buses,
+                "can_bitrate": network.get("bitrate"),
                 "notes": vehicle.get("notes", []),
             })
         return profiles
@@ -70,6 +88,20 @@ class KnowledgeBase:
         path = self.root / "psa" / "dtcs" / "psa_community.json"
         if not path.exists():
             return {"_meta": {}, "catalogs": {}}
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @cached_property
+    def _obdex_dtc_data(self) -> dict:
+        path = self.root / "generic" / "dtcs" / "obdex.json"
+        if not path.exists():
+            return {"_meta": {}, "codes": {}}
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @cached_property
+    def _fiat_community_dtc_data(self) -> dict:
+        path = self.root / "fiat" / "dtcs" / "community.json"
+        if not path.exists():
+            return {"_meta": {}, "codes": {}}
         return json.loads(path.read_text(encoding="utf-8"))
 
     @cached_property
@@ -129,39 +161,56 @@ class KnowledgeBase:
         return index
 
     def dtc_metadata(self) -> dict:
-        return self._community_dtc_data.get("_meta", {})
+        return {
+            "psa": self._community_dtc_data.get("_meta", {}),
+            "generic": self._obdex_dtc_data.get("_meta", {}),
+            "fiat": self._fiat_community_dtc_data.get("_meta", {}),
+        }
 
     def lookup_dtc(self, code: str, preferred_catalogs: list[str] | None = None) -> dict:
         normalized = code.upper()
-        validated_path = self.root / "psa" / "dtcs" / "vehicle_validated.yaml"
-        validated = yaml.safe_load(validated_path.read_text(encoding="utf-8")) if validated_path.exists() else {}
-        if normalized in (validated or {}):
-            definition = validated[normalized]
-            return {
-                "title": definition.get("title"),
-                "catalogs": [definition.get("system", "vehicle_validated")],
-                "source": definition.get("source"),
-                "confidence": definition.get("confidence", "vehicle_catalog_confirmed"),
-            }
-        matches = self._dtc_index.get(normalized, [])
         preferred = preferred_catalogs or []
+
+        fiat_definition = self._fiat_community_dtc_data.get("codes", {}).get(normalized)
+        if "fiat_community" in preferred and fiat_definition:
+            fiat_meta = self._fiat_community_dtc_data.get("_meta", {})
+            return {
+                "title": fiat_definition.get("title"),
+                "catalogs": ["fiat_community"],
+                "source": fiat_meta.get("source"),
+                "confidence": "community_manufacturer_match_unverified_for_vehicle",
+            }
+
+        psa_catalogs = {
+            *self._community_dtc_data.get("catalogs", {}).keys(),
+            *self._pypsadiag_dtc_data.keys(),
+        }
+        psa_context = any(catalog in psa_catalogs for catalog in preferred)
+        if psa_context:
+            validated_path = self.root / "psa" / "dtcs" / "vehicle_validated.yaml"
+            validated = yaml.safe_load(validated_path.read_text(encoding="utf-8")) if validated_path.exists() else {}
+            if normalized in (validated or {}):
+                definition = validated[normalized]
+                return {
+                    "title": definition.get("title"),
+                    "catalogs": [definition.get("system", "vehicle_validated")],
+                    "source": definition.get("source"),
+                    "confidence": definition.get("confidence", "vehicle_catalog_confirmed"),
+                }
+
+        matches = self._dtc_index.get(normalized, [])
         preferred_matches = [item for name in preferred for item in matches if item[0] == name]
-        candidates = preferred_matches or matches
-        if candidates:
-            title_counts = Counter(title for _, title, _ in candidates)
+        if preferred_matches:
+            title_counts = Counter(title for _, title, _ in preferred_matches)
             title = title_counts.most_common(1)[0][0]
-            winning = [item for item in candidates if item[1] == title]
+            winning = [item for item in preferred_matches if item[1] == title]
             catalogs = sorted({catalog for catalog, candidate_title, _ in winning})
             source = next((entry_source for _, _, entry_source in winning if entry_source), None)
             return {
                 "title": title,
                 "catalogs": catalogs,
                 "source": source,
-                "confidence": (
-                    "community_preferred_catalog"
-                    if preferred_matches
-                    else "community_global_match"
-                ),
+                "confidence": "community_preferred_catalog",
             }
 
         generic_path = self.root / "psa" / "dtcs" / "generic_examples.yaml"
@@ -173,6 +222,19 @@ class KnowledgeBase:
                 "catalogs": ["generic_examples"],
                 "source": definition.get("source"),
                 "confidence": definition.get("confidence", "generic"),
+            }
+
+        obdex_definition = self._obdex_dtc_data.get("codes", {}).get(normalized)
+        if obdex_definition:
+            obdex_meta = self._obdex_dtc_data.get("_meta", {})
+            return {
+                "title": obdex_definition.get("title"),
+                "description": obdex_definition.get("description"),
+                "common_causes": obdex_definition.get("common_causes", []),
+                "repair_difficulty": obdex_definition.get("repair_difficulty"),
+                "catalogs": ["obdex_generic"],
+                "source": obdex_meta.get("source"),
+                "confidence": "generic_open_catalog",
             }
         return {}
 

@@ -18,6 +18,7 @@ from app.live_data.registry import list_definitions
 
 
 VALIDATED_SIGNALS = {
+    ("DAT4_BSI_AEE2010", "P015_Com_lTotDst"),
     ("STEERING_ALT", "ANGLE"),
     ("STEERING_ALT", "RATE"),
     ("STEERING", "DRIVER_TORQUE"),
@@ -42,13 +43,34 @@ FIAT_ENGINE_CAN_NOTES_URL = "https://fiatpunto.com.pl/topic59422-50.html"
 FRONT_SENSOR_CANDIDATE_ID = 0x489  # non documenté ; candidat radar de stationnement avant
 
 FIAT_500_CANDIDATE_IDS = {
+    0x0210A006,  # grandeur brute liée à la vitesse
     0x0218A006,  # quatre vitesses de roue
     0x0628A001,  # états combinés accélérateur / embrayage
     0x0810A000,  # pédale de frein
     0x0A18A000,  # frein à main, porte conducteur, City, dégivrage
+    0x0A18A001,  # charge électrique brute candidate
+    0x0A18A006,  # moteur en marche, vitesse et compteurs
+    0x0A28A000,  # vitesse redondante et compteur de roues
+    0x0A28A006,  # vitesse redondante
     0x0C1CA000,  # Start&Stop
     0x0C28A000,  # horloge véhicule
 }
+
+
+def _brand_for_profile(profile_key: str) -> str:
+    """Resolve which passive CAN decoder a vehicle profile should use.
+
+    Each brand's decoding block below is only entered for its own resolved
+    brand, instead of being reached via ``not psa`` — so a future profile
+    that isn't PSA or Fiat falls into the generic (no manufacturer decoder
+    yet) branch by construction, rather than by accident sharing whichever
+    block happens to sit in the ``else``.
+    """
+    if profile_key.startswith(("peugeot_", "psa_")):
+        return "psa"
+    if profile_key == "fiat_500_generic":
+        return "fiat"
+    return "generic"
 
 
 def _category(message: str) -> str:
@@ -229,7 +251,18 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
             confidence=confidence,
         ))
 
-    if arbitration_id == 0x0218A006 and len(data) >= 8:
+    if arbitration_id == 0x0210A006 and len(data) >= 6:
+        add(
+            "FIAT_DYNAMICS.SPEED_RELATED_RAW",
+            "FIAT_DYNAMICS",
+            "SPEED_RELATED_RAW",
+            "Grandeur brute liée à la vitesse",
+            "Mot 16 bits des octets 4-5 qui augmente avec la vitesse; unité inconnue.",
+            "Dynamique véhicule",
+            int.from_bytes(data[4:6], "big"),
+            "brut",
+        )
+    elif arbitration_id == 0x0218A006 and len(data) >= 8:
         names = (
             ("FRONT_LEFT", "Roue avant gauche"),
             ("FRONT_RIGHT", "Roue avant droite"),
@@ -250,6 +283,7 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
                 True,
             )
     elif arbitration_id == 0x0628A001 and len(data) >= 6:
+        pedal_state = data[5] & 0x30
         add(
             "FIAT_DRIVER.CLUTCH_PEDAL_PRESSED",
             "FIAT_DRIVER",
@@ -258,6 +292,25 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
             "Bit candidat de l'état combiné embrayage/accélération (octet 5, bit 5).",
             "Commandes conducteur",
             bool(data[5] & 0x20),
+        )
+        add(
+            "FIAT_DRIVER.ACCELERATOR_REQUEST_ACTIVE",
+            "FIAT_DRIVER",
+            "ACCELERATOR_REQUEST_ACTIVE",
+            "Demande accélérateur active",
+            "Bit 4 de l'état combiné accélérateur/embrayage.",
+            "Commandes conducteur",
+            bool(data[5] & 0x10),
+        )
+        add(
+            "FIAT_DRIVER.CLUTCH_ACCELERATOR_STATE_RAW",
+            "FIAT_DRIVER",
+            "CLUTCH_ACCELERATOR_STATE_RAW",
+            "État combiné embrayage / accélérateur",
+            "0x00 relâché, 0x10 accélération embrayée, 0x20 embrayage enfoncé, 0x30 accélération avec embrayage trop enfoncé.",
+            "Commandes conducteur",
+            pedal_state,
+            "code",
         )
     elif arbitration_id == 0x0810A000 and len(data) >= 3:
         brake_state = data[2] & 0xF0
@@ -301,7 +354,93 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
                 value,
                 confidence=confidence,
             )
+        if len(data) >= 8:
+            add(
+                "FIAT_DYNAMICS.WHEEL_ACTIVITY_COUNTER_RAW",
+                "FIAT_DYNAMICS",
+                "WHEEL_ACTIVITY_COUNTER_RAW",
+                "Compteur d'activité des roues",
+                "Compteur 8 bits qui s'incrémente lorsque les roues tournent; ce n'est pas un kilométrage.",
+                "Dynamique véhicule",
+                data[7],
+                "compteur brut",
+            )
+    elif arbitration_id == 0x0A18A001 and len(data) >= 6:
+        add(
+            "FIAT_ELECTRICAL.ELECTRICAL_LOAD_RAW",
+            "FIAT_ELECTRICAL",
+            "ELECTRICAL_LOAD_RAW",
+            "Charge électrique réseau candidate",
+            "Mot 16 bits des octets 4-5 qui augmente lorsque des consommateurs électriques sont activés; échelle physique inconnue.",
+            "Électricité",
+            int.from_bytes(data[4:6], "big"),
+            "brut",
+        )
+    elif arbitration_id == 0x0A18A006 and len(data) >= 4:
+        add(
+            "FIAT_ENGINE.ENGINE_RUNNING_CANDIDATE",
+            "FIAT_ENGINE",
+            "ENGINE_RUNNING_CANDIDATE",
+            "Moteur en fonctionnement",
+            "Octet 0 observé à 0 moteur arrêté et 1 moteur en marche dans la source communautaire.",
+            "Moteur",
+            data[0] == 1,
+        )
+        add(
+            "FIAT_DYNAMICS.VEHICLE_SPEED_0A18A006",
+            "FIAT_DYNAMICS",
+            "VEHICLE_SPEED_0A18A006",
+            "Vitesse véhicule redondante",
+            "Mot 16 bits des octets 2-3 à résolution communautaire de 1/16 km/h.",
+            "Dynamique véhicule",
+            round(int.from_bytes(data[2:4], "big") / 16.0, 2),
+            "km/h",
+        )
+    elif arbitration_id == 0x0A28A000 and len(data) >= 2:
+        add(
+            "FIAT_DYNAMICS.VEHICLE_SPEED_0A28A000",
+            "FIAT_DYNAMICS",
+            "VEHICLE_SPEED_0A28A000",
+            "Vitesse véhicule redondante",
+            "Mot 16 bits des octets 0-1 à résolution communautaire de 1/16 km/h.",
+            "Dynamique véhicule",
+            round(int.from_bytes(data[0:2], "big") / 16.0, 2),
+            "km/h",
+        )
+        if len(data) >= 4:
+            add(
+                "FIAT_DYNAMICS.WHEEL_ACTIVITY_COUNTER_0A28_RAW",
+                "FIAT_DYNAMICS",
+                "WHEEL_ACTIVITY_COUNTER_0A28_RAW",
+                "Compteur d'activité des roues redondant",
+                "Octet 3 rapproché du compteur de 0x0A18A000; signification physique non étalonnée.",
+                "Dynamique véhicule",
+                data[3],
+                "compteur brut",
+            )
+    elif arbitration_id == 0x0A28A006 and len(data) >= 4:
+        add(
+            "FIAT_DYNAMICS.VEHICLE_SPEED_0A28A006",
+            "FIAT_DYNAMICS",
+            "VEHICLE_SPEED_0A28A006",
+            "Vitesse véhicule redondante",
+            "Mot 16 bits des octets 2-3 à résolution communautaire de 1/16 km/h.",
+            "Dynamique véhicule",
+            round(int.from_bytes(data[2:4], "big") / 16.0, 2),
+            "km/h",
+        )
     elif arbitration_id == 0x0C1CA000 and len(data) >= 3:
+        start_stop_state = data[2]
+        add(
+            "FIAT_BODY.START_STOP_STATE_RAW",
+            "FIAT_BODY",
+            "START_STOP_STATE_RAW",
+            "État brut Start&Stop",
+            "Octet 2 complet conservé pour distinguer indisponible, disponible désactivé et activé.",
+            "Habitacle / Body Computer",
+            start_stop_state,
+            "code",
+        )
         add(
             "FIAT_BODY.START_STOP_ACTIVE",
             "FIAT_BODY",
@@ -309,7 +448,7 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
             "Start&Stop activé",
             "Bit candidat d'activation du Start&Stop.",
             "Habitacle / Body Computer",
-            bool(data[2] & 0x20),
+            bool(start_stop_state & 0x20),
         )
         add(
             "FIAT_BODY.START_STOP_AVAILABLE",
@@ -318,7 +457,16 @@ def _fiat_500_candidate_signals(frame: dict[str, Any]) -> list[PassiveCanSignal]
             "Start&Stop disponible",
             "Paire de bits candidate indiquant la disponibilité du Start&Stop.",
             "Habitacle / Body Computer",
-            (data[2] & 0xC0) == 0xC0,
+            (start_stop_state & 0xC0) == 0xC0,
+        )
+        add(
+            "FIAT_BODY.START_STOP_DOOR_OR_SEATBELT_OK",
+            "FIAT_BODY",
+            "START_STOP_DOOR_OR_SEATBELT_OK",
+            "Condition portes avant / ceinture Start&Stop",
+            "Bit 2 : toutes les portes avant fermées ou ceinture conducteur engagée selon la source; ne prouve pas à lui seul l'autorisation de coupure.",
+            "Habitacle / Body Computer",
+            bool(start_stop_state & 0x04),
         )
     elif arbitration_id == 0x0C28A000 and len(data) >= 6:
         parts = [_bcd_byte(value) for value in data[:6]]
@@ -447,9 +595,14 @@ def passive_sensor_snapshot(
     status = capture_manager.status()
     frames = capture_manager.latest_frames()
     profile_key = status.vehicle_profile or settings.vehicle_profile
-    is_psa_profile = profile_key.startswith(("peugeot_", "psa_"))
+    brand = _brand_for_profile(profile_key)
 
-    if not is_psa_profile:
+    if brand != "psa":
+        # Shared by "fiat" (hand-written decoder below) and "generic" (any
+        # other brand, including Renault today): both fall back to raw/
+        # unknown CAN IDs plus the brand-agnostic hybrid OBD tail further
+        # down. The Fiat-only decoding inside this loop is explicitly gated
+        # on ``brand == "fiat"``, so a generic-brand profile never reaches it.
         signals: list[PassiveCanSignal] = []
         unknown_can_ids: list[int] = []
         selected_timestamps: list[int] = []
@@ -461,13 +614,13 @@ def passive_sensor_snapshot(
             if is_selected:
                 selected_timestamps.append(frame_timestamp)
             is_validated_fiat_rpm = (
-                profile_key == "fiat_500_generic"
+                brand == "fiat"
                 and bool(frame["extended"])
                 and arbitration_id == 0x0618A001
                 and len(frame["data"]) >= 4
             )
             is_fiat_candidate = (
-                profile_key == "fiat_500_generic"
+                brand == "fiat"
                 and bool(frame["extended"])
                 and arbitration_id in FIAT_500_CANDIDATE_IDS
             )
@@ -568,7 +721,7 @@ def passive_sensor_snapshot(
         warnings = []
         if not status.active:
             warnings.append("Démarre une capture passive pour actualiser les capteurs.")
-        if profile_key == "fiat_500_generic":
+        if brand == "fiat":
             warnings.append(
                 "Profil Fiat actif : le régime CAN 0x0618A001 est validé, les PIDs "
                 "OBD normalisés complètent le direct; le papillon et la charge d'air de "
@@ -596,7 +749,7 @@ def passive_sensor_snapshot(
             steering=PassiveSteeringSnapshot(),
             signals=signals,
             warnings=warnings,
-            source_url=FIAT_500_CAN_NOTES_URL if profile_key == "fiat_500_generic" else None,
+            source_url=FIAT_500_CAN_NOTES_URL if brand == "fiat" else None,
             hybrid_obd_enabled=status.hybrid_obd_enabled,
             hybrid_obd_ready=status.hybrid_obd_ready,
             obd_sample_count=status.obd_sample_count,

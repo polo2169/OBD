@@ -217,13 +217,27 @@ export function ReplayScreen({
           {typeof replay.estimated_fuel_consumption_l_100km === "number" ? (
             <div className="fuel-consumption-value">
               <strong>{replay.estimated_fuel_consumption_l_100km.toFixed(1)}</strong>
-              <span>L/100km · estimation</span>
+              <span>L/100km · estimation flotteur</span>
             </div>
           ) : (
             <p className="inline-alert">{replay.fuel_consumption_note ?? "Estimation non calculable sur cette capture."}</p>
           )}
           {typeof replay.estimated_fuel_consumption_l_100km === "number" && replay.fuel_consumption_note && (
             <p className="fuel-consumption-note">{replay.fuel_consumption_note}</p>
+          )}
+          {typeof replay.can_average_fuel_consumption_l_100km === "number" ? (
+            <div className="fuel-consumption-value">
+              <strong>{replay.can_average_fuel_consumption_l_100km.toFixed(1)}</strong>
+              <span>
+                L/100km · compteur CAN 0x488
+                {typeof replay.can_trip_fuel_total_l === "number" ? ` (${replay.can_trip_fuel_total_l.toFixed(2)} L)` : ""}
+              </span>
+            </div>
+          ) : replay.can_fuel_consumption_note ? (
+            <p className="inline-alert">{replay.can_fuel_consumption_note}</p>
+          ) : null}
+          {typeof replay.can_average_fuel_consumption_l_100km === "number" && replay.can_fuel_consumption_note && (
+            <p className="fuel-consumption-note">{replay.can_fuel_consumption_note}</p>
           )}
         </section>
 

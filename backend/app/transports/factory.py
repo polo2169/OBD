@@ -12,6 +12,21 @@ from app.transports.shared_gateway import shared_gateway_client
 from app.safety import TxSafetyProfile
 
 
+def _profile_can_bitrate(vehicle_profile: str | None) -> int | None:
+    """Return the CAN bitrate associated with the selected vehicle profile."""
+    vehicle = KnowledgeBase().vehicle(vehicle_profile)
+    diagnostic_network = vehicle.get("networks", {}).get("diagnostic_can", {})
+    raw_bitrate = diagnostic_network.get("bitrate")
+    if raw_bitrate is None:
+        return None
+    bitrate = int(str(raw_bitrate), 0)
+    if bitrate not in {250_000, 500_000}:
+        raise ValueError(
+            f"Débit CAN non pris en charge par la passerelle ESP32 : {bitrate} bit/s."
+        )
+    return bitrate
+
+
 def build_transport(
     debug_sink: Callable[[dict], None] | None = None,
     safety_profile: TxSafetyProfile = "diagnostic_read_only",
@@ -19,8 +34,10 @@ def build_transport(
     require_diagnostic_can: bool = True,
     vehicle_profile: str | None = None,
 ) -> Transport:
+    profile_can_bitrate = _profile_can_bitrate(vehicle_profile)
     if settings.transport == "virtual":
         knowledge = KnowledgeBase()
+        vehicle = knowledge.vehicle(vehicle_profile)
         response_ids = {
             ecu.request_id: ecu.response_id
             for ecu in knowledge.ecus(vehicle_profile)
@@ -41,6 +58,11 @@ def build_transport(
             response_ids=response_ids,
             flow_control_ids=flow_control_ids,
             safety_profile=safety_profile,
+            simulated_vin={
+                "Peugeot": "VF3LJHNYWJS123456",
+                "Fiat": "ZFA31200001234567",
+                "Renault": "VF1FLAHA6BY123456",
+            }.get(str(vehicle.get("manufacturer"))),
         )
     elif settings.transport == "esp32_serial":
         key = (
@@ -49,6 +71,7 @@ def build_transport(
             settings.serial_baud,
             settings.can_tx_enabled,
             settings.esp32_handshake_timeout,
+            profile_can_bitrate,
         )
         transport = shared_gateway_client(
             key,
@@ -59,6 +82,7 @@ def build_transport(
                 handshake_timeout=settings.esp32_handshake_timeout,
                 safety_profile="diagnostic_read_only",
                 require_diagnostic_can=False,
+                target_live_bitrate=profile_can_bitrate,
             ),
             f"esp32:{settings.serial_port}",
             receive_buses,
@@ -73,6 +97,7 @@ def build_transport(
             settings.can_tx_enabled,
             settings.esp32_handshake_timeout,
             settings.esp32_wifi_reconnect_interval,
+            profile_can_bitrate,
         )
         transport = shared_gateway_client(
             key,
@@ -84,6 +109,7 @@ def build_transport(
                 reconnect_interval=settings.esp32_wifi_reconnect_interval,
                 safety_profile="diagnostic_read_only",
                 require_diagnostic_can=False,
+                target_live_bitrate=profile_can_bitrate,
             ),
             f"esp32_wifi:{settings.esp32_wifi_host}:{settings.esp32_wifi_port}",
             receive_buses,

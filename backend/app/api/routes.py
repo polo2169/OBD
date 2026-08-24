@@ -5,7 +5,7 @@ from udsoncan.exceptions import NegativeResponseException, TimeoutException
 from app.config import settings
 from app.database import KnowledgeBase
 from app.diagnostic.obd import sensor_catalog, snapshot_sensors
-from app.diagnostic.identity import read_vehicle_identity
+from app.diagnostic.identity import create_manual_vehicle_identity, read_vehicle_identity
 from app.diagnostic.history import (
     active_vehicle,
     active_identity,
@@ -18,6 +18,7 @@ from app.diagnostic.history import (
 )
 from app.diagnostic.maintenance import maintenance_catalog
 from app.diagnostic.observed_dtcs import list_observed_dtcs, save_observed_dtc
+from app.diagnostic.oil_log import list_oil_log, save_oil_log_entry
 from app.diagnostic.psa_advanced import (
     advanced_catalog,
     calculate_seed_key,
@@ -63,8 +64,11 @@ from app.models import (
     EcuResetRequest,
     EcuResetResult,
     EcuScanResult,
+    ManualVehicleCreateRequest,
     ObservedDtcInput,
     ObservedDtcResult,
+    OilLogEntryInput,
+    OilLogEntryResult,
     OperatingModeRequest,
     PsaActionRequest,
     PsaActionResult,
@@ -173,7 +177,12 @@ def system_transport_connect(request: TransportConnectRequest) -> dict:
             detail="Arrête et sauvegarde la capture avant de changer de connexion ESP32.",
         )
     try:
-        return probe_and_select_transport(request.transport, request.endpoint, request.baud)
+        return probe_and_select_transport(
+            request.transport,
+            request.endpoint,
+            request.baud,
+            request.vehicle_profile,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -228,6 +237,22 @@ def observed_dtcs(
 def record_observed_dtc(entry: ObservedDtcInput) -> ObservedDtcResult:
     try:
         return save_observed_dtc(entry)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/diagnostic/oil-log", response_model=list[OilLogEntryResult])
+def oil_log(
+    vin: str | None = Query(default=None),
+    vehicle_profile: str | None = Query(default=None),
+) -> list[OilLogEntryResult]:
+    return list_oil_log(vin=vin, vehicle_profile=vehicle_profile)
+
+
+@router.post("/diagnostic/oil-log", response_model=OilLogEntryResult)
+def record_oil_log_entry(entry: OilLogEntryInput) -> OilLogEntryResult:
+    try:
+        return save_oil_log_entry(entry)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -397,6 +422,16 @@ def diagnostic_trace_import(request: DiagnosticTraceImportRequest) -> dict:
 @router.get("/diagnostic/vehicles")
 def diagnostic_vehicles() -> list[dict]:
     return list_vehicles()
+
+
+@router.post("/diagnostic/vehicles", response_model=VehicleIdentityResult)
+def diagnostic_create_manual_vehicle(request: ManualVehicleCreateRequest) -> VehicleIdentityResult:
+    try:
+        return create_manual_vehicle_identity(request.vehicle_profile, request.vin)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=exc.args[0]) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/diagnostic/vehicles/active")

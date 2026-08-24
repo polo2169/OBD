@@ -1,0 +1,66 @@
+manufacturer: Renault
+model: Trafic II Ph1
+platform: X83
+year: 2001-2005
+architecture: CAN multiplexé 250 kbit/s + diagnostic ISO/KWP sur K-Line
+confidence: community_cross_checked
+sources:
+  rencom_phase1_ecu_coverage:
+    url: https://www.obdtester.com/rencom-eculist/renault/trafic_ii_ph1_%5B2000_2005%5D
+    description: Le catalogue Trafic II phase 1 classe les calculateurs d'injection Bosch EDC15C et EDC16 sur le bus ISO, et non sur le bus CAN.
+  renault_network_diagnostics:
+    url: https://manualzz.com/doc/5292984/renault-trafic-%C3%A9quipement-%C3%A9lectrique-manuel-de-r%C3%A9paration
+    description: Le manuel Renault X83 documente le réseau multiplexé CAN reliant notamment l'injection à la prise diagnostic.
+  renault_2004_engine_range:
+    url: https://presse.renault.de/idealer-begleiter-fur-freizeit-reise-und-alltag/
+    description: La gamme Renault 2004 documente les 1.9 dCi 100 et 2.5 dCi 135; le 2.0 dCi du Trafic arrive avec la phase 2.
+notes:
+  - "Sur le X83 phase 1, voir des trames CAN à 250 kbit/s sur les broches 6/14 confirme le réseau multiplexé, pas la disponibilité d'OBD ISO-TP moteur."
+  - "L'injection phase 1 est diagnostiquée en ISO 9141-2 / KWP2000 sur K-Line, généralement via la broche OBD 7. Le matériel ESP32 actuel ne possède pas de transceiver K-Line."
+  - "La lecture VIN automatique est donc désactivée pour éviter d'émettre des requêtes CAN sans destinataire. Le véhicule peut être ajouté au Garage par saisie manuelle contrôlée du VIN."
+  - "Pour une carte grise indiquant 2005 et 2.0 dCi, confirmer P.1, P.2 et D.2 : la gamme Trafic 2.0 dCi 90/115 documentée commence en 2006."
+
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable: []
+  conditional:
+    - oil_service_reset
+    - injector_coding
+    - abs_bleed
+  not_applicable: []
+  notes:
+    - Aucune procédure active n'est disponible sans interface K-Line isolée et validation du calculateur exact.
+
+networks:
+  diagnostic_can:
+    bitrate: 250000
+    access: obd_pins_6_14
+    addressing: 11bit
+    purpose: passive_multiplex_capture_only
+    confidence: vehicle_observed
+  diagnostic_k_line:
+    access: obd_pin_7
+    protocol: ISO 9141-2 / ISO 14230 KWP2000
+    supported_by_current_gateway: false
+    confidence: community_cross_checked
+
+diagnostic:
+  identity_scope: manual_only
+  live_obd:
+    enabled: false
+    pids: []
+  vin_strategies: []
+  identity_fields: []
+
+ecus:
+  - key: engine
+    name: Calculateur d'injection phase 1
+    family: Bosch_EDC15C_EDC16_variant_dependent
+    protocol: iso9141_kwp2000_k_line
+    confidence: community_cross_checked
+    access: unavailable_current_hardware
+    network: diagnostic_k_line
+    optional: false
+    source: https://www.obdtester.com/rencom-eculist/renault/trafic_ii_ph1_%5B2000_2005%5D
+    notes:
+      - Un transceiver automobile K-Line dédié est requis; ne jamais relier directement la broche OBD 7 à un GPIO ESP32.

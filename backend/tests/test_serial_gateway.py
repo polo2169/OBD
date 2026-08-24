@@ -98,6 +98,77 @@ def test_gateway_allows_live_obd_when_diagnostic_satellite_is_absent(monkeypatch
     assert device.written[-1].endswith(b'"bus":"live"}\n')
 
 
+def test_gateway_configures_profile_live_bitrate_during_handshake(monkeypatch):
+    device = FakeSerial([
+        {
+            "type": "hello",
+            "protocol": 8,
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "live_can_ready": True,
+            "live_obd_read_only": True,
+            "diagnostic_can_ready": True,
+            "diagnostic_read_only": True,
+            "live_bitrate": 500_000,
+        },
+        {"type": "ack", "command": "set_bitrate", "bus": "live", "bitrate": 250_000},
+        {
+            "type": "hello",
+            "protocol": 8,
+            "readonly": False,
+            "can_ready": True,
+            "dual_can": True,
+            "live_can_ready": True,
+            "live_obd_read_only": True,
+            "diagnostic_can_ready": True,
+            "diagnostic_read_only": True,
+            "live_bitrate": 250_000,
+        },
+    ])
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport(
+        "/dev/fake",
+        921600,
+        tx_enabled=True,
+        require_diagnostic_can=False,
+        target_live_bitrate=250_000,
+    )
+
+    transport.open()
+
+    assert transport.hello and transport.hello["live_bitrate"] == 250_000
+    assert b'{"type":"set_bitrate","bus":"live","bitrate":250000}\n' in device.written
+
+
+def test_gateway_explains_when_old_firmware_cannot_select_250k(monkeypatch):
+    device = FakeSerial({
+        "type": "hello",
+        "protocol": 7,
+        "readonly": False,
+        "can_ready": True,
+        "dual_can": True,
+        "live_can_ready": True,
+        "live_obd_read_only": True,
+        "diagnostic_can_ready": True,
+        "diagnostic_read_only": True,
+        "live_bitrate": 500_000,
+    })
+    monkeypatch.setattr(serial_gateway.serial, "Serial", lambda *_args, **_kwargs: device)
+    transport = Esp32SerialTransport(
+        "/dev/fake",
+        921600,
+        tx_enabled=True,
+        require_diagnostic_can=False,
+        target_live_bitrate=250_000,
+    )
+
+    with pytest.raises(RuntimeError, match="protocole 8"):
+        transport.open()
+
+    assert device.closed
+
+
 def test_gateway_accepts_locked_firmware_and_blocks_raw_write(monkeypatch):
     from app.models import CanFrame
 

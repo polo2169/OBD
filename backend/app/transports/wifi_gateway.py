@@ -22,6 +22,7 @@ class Esp32WifiTransport(Transport):
         reconnect_interval: float = 0.5,
         safety_profile: TxSafetyProfile = "diagnostic_read_only",
         require_diagnostic_can: bool = True,
+        target_live_bitrate: int | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -30,6 +31,7 @@ class Esp32WifiTransport(Transport):
         self.reconnect_interval = reconnect_interval
         self.safety_profile = safety_profile
         self.require_diagnostic_can = require_diagnostic_can
+        self.target_live_bitrate = target_live_bitrate
         self.socket: socket.socket | None = None
         self.hello: dict | None = None
         self.last_stats: dict | None = None
@@ -158,8 +160,54 @@ class Esp32WifiTransport(Transport):
                 f"Aucun hello reçu de l’ESP32 Wi-Fi en {timeout:.1f} s."
             )
         self._validate_hello(self.hello)
+        self._ensure_live_bitrate(timeout)
         self._next_reconnect_at = 0.0
         self.debug("transport_open", transport=self.name, hello=self.hello)
+
+    def _ensure_live_bitrate(self, timeout: float) -> None:
+        target = self.target_live_bitrate
+        if target is None or self.hello is None:
+            return
+        current_value = self.hello.get("live_bitrate", self.hello.get("bitrate"))
+        current = int(current_value) if current_value is not None else None
+        if current == target:
+            return
+        protocol = int(self.hello.get("protocol", 0))
+        if protocol < 8:
+            raise RuntimeError(
+                f"Le profil véhicule exige {target} bit/s sur OBD 6/14, mais le firmware "
+                "ESP32 Wi-Fi ne sait pas changer de débit. Flashez le firmware protocole 8."
+            )
+
+        self._write_command({"type": "set_bitrate", "bus": "live", "bitrate": target})
+        deadline = time.monotonic() + timeout
+        acknowledged = False
+        while time.monotonic() < deadline:
+            message = self._read_json(max(0.01, deadline - time.monotonic()))
+            if message is None:
+                continue
+            message_type = message.get("type")
+            if message_type == "can_rx":
+                try:
+                    self._pending_frames.append(self._decode_frame(message))
+                except (KeyError, TypeError, ValueError) as exc:
+                    self.debug("gateway_decode_error", error=str(exc), message=message)
+                continue
+            if message_type in {"error", "fatal"}:
+                code = message.get("code", "BITRATE_CONFIGURATION_FAILED")
+                detail = message.get("message", "La passerelle a refusé le changement de débit CAN.")
+                raise RuntimeError(f"{code}: {detail}")
+            if message_type == "ack" and message.get("command") == "set_bitrate":
+                acknowledged = True
+            self._handle_non_frame_message(message)
+            hello_bitrate = (self.hello or {}).get(
+                "live_bitrate", (self.hello or {}).get("bitrate")
+            )
+            if acknowledged and hello_bitrate is not None and int(hello_bitrate) == target:
+                return
+        raise TimeoutError(
+            f"La passerelle Wi-Fi n'a pas confirmé le débit CAN {target} bit/s sur OBD 6/14."
+        )
 
     def _validate_hello(self, hello: dict) -> None:
         protocol = int(hello.get("protocol", 0))

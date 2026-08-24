@@ -37,7 +37,7 @@ propre transceiver CAN. Une seule ESP32 reste reliée au PC :
 
 | Rôle | CAN | Firmware |
 |---|---|---|
-| ESP32 principale | OBD 6/14, OBD 01/09 filtré | `esp32-dual-uart-main-diagnostic` |
+| ESP32 principale | OBD 6/14, lectures OBD 01/03/07/09 filtrées | `esp32-dual-uart-main-diagnostic` |
 | ESP32 satellite | OBD 3/8, diagnostic filtré | `esp32-dual-uart-satellite-diagnostic` |
 
 Relier les deux ESP32 en logique 3,3 V, sans convertisseur :
@@ -143,12 +143,17 @@ actions NAC nommées et l'accès de configuration déjà listé dans le firmware
 Reflasher `esp32-dual-uart-satellite-diagnostic` après la séance remet le verrou
 strictement lecture seule.
 
-Le `hello` de la carte principale doit annoncer `protocol=7`,
+Le `hello` de la carte principale doit annoncer `protocol=8`,
 `driver=twai+uart-twai`, `dual_can=true`, `live_listen_only=false`,
-`live_obd_read_only=true`, `live_tx_policy=obd_01_09_read_only`,
+`live_obd_read_only=true`, `live_tx_policy=obd_01_03_07_09_read_only`,
 `live_can_ready=true`, `diagnostic_can_ready=true` et
 `satellite_connected=true`. Le PC ne sélectionne que le port USB de la carte
 principale.
+
+Le protocole 8 accepte aussi la commande bornée `set_bitrate` sur le seul bus
+`live`. Le backend la pilote automatiquement depuis le profil véhicule et
+n'accepte que `250000` ou `500000` bit/s ; le bus diagnostic 3/8 reste à
+500 kbit/s.
 
 Pour l'ancien montage double CAN MCP2515 avec le quartz `16.000`, le profil reste
 disponible :
@@ -159,17 +164,17 @@ cd firmware/esp32-gateway
   -e esp32-dual-can-16mhz-serial-diagnostic -t upload
 ```
 
-Le `hello` attendu annonce `protocol=7`, `driver=twai+mcp2515`,
+Le `hello` attendu annonce `protocol=8`, `driver=twai+mcp2515`,
 `dual_can=true`, `live_can_ready=true`, `diagnostic_can_ready=true`,
 `live_listen_only=false`, `live_obd_read_only=true`,
-`live_tx_policy=obd_01_09_read_only`, `oscillator_mhz=16`, `spi_cs_pin=27` et
+`live_tx_policy=obd_01_03_07_09_read_only`, `oscillator_mhz=16`, `spi_cs_pin=27` et
 `spi_hz=8000000`. Ne pas flasher le profil `psa-lab` pour une lecture normale :
 il reste réservé aux actions nommées déjà validées et explicitement armées.
 
 Chaque ligne compacte conserve le format `F,...`; le bit `0x40` du champ flags
 identifie désormais une trame `diagnostic`. Le backend enregistre `bus: live` ou
 `bus: diagnostic`, utilise uniquement `live` pour le dashboard/replay, route les
-requêtes OBD `01`/`09` vers `live` et les requêtes UDS vers `diagnostic`.
+requêtes OBD `01`/`03`/`07`/`09` vers `live` et les requêtes UDS vers `diagnostic`.
 
 Trois barrières se cumulent pour `6/14` : l'interface exige la capacité annoncée
 par le `hello`, le backend valide l'identifiant et le service, puis le firmware

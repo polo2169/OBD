@@ -85,20 +85,28 @@ def test_system_transport_connect_probes_and_persists(tmp_path, monkeypatch):
             return None
 
     preference_path = tmp_path / "transport_selection.json"
+    selected_profiles: list[str | None] = []
+
+    def fake_build_transport(*, vehicle_profile=None):
+        selected_profiles.append(vehicle_profile)
+        return FakeEsp32Transport()
+
     monkeypatch.setattr(settings, "transport", "esp32_serial")
     monkeypatch.setattr(settings, "serial_port", "/dev/cu.test-esp32")
     monkeypatch.setattr(settings, "transport_selection_file", preference_path)
-    monkeypatch.setattr(selection, "build_transport", lambda: FakeEsp32Transport())
+    monkeypatch.setattr(selection, "build_transport", fake_build_transport)
 
     response = client.post("/api/system/transport/connect", json={
         "transport": "esp32_serial",
         "endpoint": "/dev/cu.test-esp32",
         "baud": 921600,
+        "vehicle_profile": "renault_trafic_x83",
     })
 
     assert response.status_code == 200
     assert response.json()["verified"] is True
     assert response.json()["hello"]["protocol"] == 3
+    assert selected_profiles == ["renault_trafic_x83"]
     assert json.loads(preference_path.read_text())["endpoint"] == "/dev/cu.test-esp32"
 
 
@@ -276,6 +284,42 @@ def test_observed_dtcs_are_persisted_and_enriched(tmp_path, monkeypatch):
     reopened = client.get("/api/diagnostic/dtcs/observed")
     assert reopened.status_code == 200
     assert [item["code"] for item in reopened.json()] == ["C0031"]
+
+
+def test_oil_log_entries_are_persisted_in_chronological_order(tmp_path, monkeypatch):
+    path = tmp_path / "oil_log.json"
+    monkeypatch.setattr(settings, "oil_log_file", path)
+
+    first = client.post("/api/diagnostic/oil-log", json={
+        "mileage_km": 104975,
+        "mileage_source": "can_signal",
+        "oil_level_note": "Entre mini et maxi",
+    })
+    assert first.status_code == 200
+    body = first.json()
+    assert body["mileage_km"] == 104975
+    assert body["mileage_source"] == "can_signal"
+    assert body["vin"] is None
+    assert body["id"]
+    assert body["recorded_at"]
+    assert path.exists()
+
+    second = client.post("/api/diagnostic/oil-log", json={
+        "mileage_km": 105320,
+        "oil_level_note": "Appoint fait, retour au maxi",
+        "oil_added_l": 0.5,
+    })
+    assert second.status_code == 200
+    assert second.json()["mileage_source"] == "manual"
+    assert second.json()["oil_added_l"] == 0.5
+
+    # Deux relevés distincts : contrairement aux DTC observés, il n'y a pas de
+    # déduplication — chaque lecture est un point du carnet.
+    reopened = client.get("/api/diagnostic/oil-log")
+    assert reopened.status_code == 200
+    entries = reopened.json()
+    assert [entry["mileage_km"] for entry in entries] == [104975, 105320]
+    assert entries[0]["id"] != entries[1]["id"]
 
 
 def test_behavioral_analysis_is_saved_and_can_be_reopened(tmp_path, monkeypatch):

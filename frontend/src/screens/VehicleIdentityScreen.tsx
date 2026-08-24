@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import { EmptyState } from "../components/ui";
@@ -5,7 +6,7 @@ import { hexadecimal } from "../format";
 import { LAB_MODE } from "../navigation";
 import type { CaptureStatus, DiagnosticSensorSnapshot, DidValue, Ecu, Report, Status, VehicleIdentityResult, VehicleProfileSummary } from "../types";
 
-type VehicleIdentityScreenProps={vehicleIdentity:VehicleIdentityResult|null;identityProfileKey:string;identityReadReady:boolean;capture:CaptureStatus|null;selectedIdentityProfile:VehicleProfileSummary|null;vehicleProfiles:VehicleProfileSummary[];setIdentityProfileKey:Dispatch<SetStateAction<string>>;setSelectedDiagnosticVin:Dispatch<SetStateAction<string>>;setVehicleIdentity:Dispatch<SetStateAction<VehicleIdentityResult|null>>;setInjectionSnapshot:Dispatch<SetStateAction<DiagnosticSensorSnapshot|null>>;setReport:Dispatch<SetStateAction<Report|null>>;setError:Dispatch<SetStateAction<string>>;vehicleManufacturers:string[];profilesForSelectedManufacturer:VehicleProfileSummary[];readVehicleIdentity:()=>Promise<void>;identityBusy:boolean;dualCanOperational:boolean;status:Status|null;liveObdReadOnly:boolean;readEngineObdDtcs:()=>Promise<void>;obdDtcBusy:boolean;obdDtcResult:Ecu|null;udsProbeEcuKey:string;setUdsProbeEcuKey:Dispatch<SetStateAction<string>>;setUdsProbeResult:Dispatch<SetStateAction<DidValue|null>>;testUdsPresence:()=>Promise<void>;udsProbeBusy:boolean;udsProbeResult:DidValue|null};
+type VehicleIdentityScreenProps={vehicleIdentity:VehicleIdentityResult|null;identityProfileKey:string;identityReadReady:boolean;capture:CaptureStatus|null;selectedIdentityProfile:VehicleProfileSummary|null;vehicleProfiles:VehicleProfileSummary[];setIdentityProfileKey:Dispatch<SetStateAction<string>>;setSelectedDiagnosticVin:Dispatch<SetStateAction<string>>;setVehicleIdentity:Dispatch<SetStateAction<VehicleIdentityResult|null>>;setInjectionSnapshot:Dispatch<SetStateAction<DiagnosticSensorSnapshot|null>>;setReport:Dispatch<SetStateAction<Report|null>>;setError:Dispatch<SetStateAction<string>>;vehicleManufacturers:string[];profilesForSelectedManufacturer:VehicleProfileSummary[];readVehicleIdentity:()=>Promise<void>;identityBusy:boolean;createManualVehicle:(vin:string)=>Promise<void>;manualVehicleBusy:boolean;status:Status|null;readEngineObdDtcs:()=>Promise<void>;obdDtcBusy:boolean;obdDtcResult:Ecu|null;udsProbeEcuKey:string;setUdsProbeEcuKey:Dispatch<SetStateAction<string>>;setUdsProbeResult:Dispatch<SetStateAction<DidValue|null>>;testUdsPresence:()=>Promise<void>;udsProbeBusy:boolean;udsProbeResult:DidValue|null};
 
 export function VehicleIdentityScreen({
   vehicleIdentity,
@@ -24,9 +25,9 @@ export function VehicleIdentityScreen({
   profilesForSelectedManufacturer,
   readVehicleIdentity,
   identityBusy,
-  dualCanOperational,
+  createManualVehicle,
+  manualVehicleBusy,
   status,
-  liveObdReadOnly,
   readEngineObdDtcs,
   obdDtcBusy,
   obdDtcResult,
@@ -37,8 +38,17 @@ export function VehicleIdentityScreen({
   udsProbeBusy,
   udsProbeResult
 }: VehicleIdentityScreenProps) {
+    const [manualVin, setManualVin] = useState("");
     const displayedIdentity = vehicleIdentity?.vehicle_profile === identityProfileKey ? vehicleIdentity : null;
     const successfulFields = displayedIdentity?.fields.filter((field) => field.value && !field.error) ?? [];
+    const gatewayVerified = status?.transport === "virtual" || status?.gateway_verified === true;
+    const fiatExperimentalProbe = identityProfileKey === "fiat_500_generic";
+    const automaticIdentityAvailable = Boolean(selectedIdentityProfile?.vin_methods.length);
+    const manualVinNormalized = manualVin.trim().toUpperCase();
+    const manualVinValid = /^[A-HJ-NPR-Z0-9]{17}$/.test(manualVinNormalized);
+    const bitrateLabel = selectedIdentityProfile?.can_bitrate
+      ? `${selectedIdentityProfile.can_bitrate / 1000} kbit/s`
+      : "Débit CAN à confirmer";
     return (
       <div className="identity-page">
         <section className="panel identity-hero">
@@ -48,7 +58,7 @@ export function VehicleIdentityScreen({
               <h2>Lire le VIN sans modifier le véhicule</h2>
               <p>OpenDiag essaie les méthodes documentées dans l'ordre, valide le format du VIN et conserve les échanges OBD/UDS dans une trace JSONL.</p>
             </div>
-            <span className={`status-pill ${identityReadReady ? "good" : "neutral"}`}><i /> {identityReadReady ? "Lecture prête" : capture?.active ? "Capture active" : "ESP32 à valider"}</span>
+            <span className={`status-pill ${identityReadReady ? "good" : "neutral"}`}><i /> {identityReadReady ? gatewayVerified ? "Lecture prête" : "Connexion automatique" : capture?.active ? "Capture active" : "Lecture indisponible"}</span>
           </div>
 
           <div className="identity-launcher">
@@ -76,23 +86,21 @@ export function VehicleIdentityScreen({
               </select>
             </label>
             <div className="identity-profile-summary">
-              <span>{selectedIdentityProfile?.architecture ?? "Architecture à confirmer"}</span>
+              <span>{selectedIdentityProfile?.architecture ?? "Architecture à confirmer"} · {bitrateLabel}</span>
               <strong>{selectedIdentityProfile?.platform ?? "Plateforme inconnue"}</strong>
               <small>{selectedIdentityProfile?.identity_scope === "identity_only" ? "Identification seulement" : "Profil diagnostic complet"}</small>
             </div>
             <button className="primary-button" onClick={() => void readVehicleIdentity()} disabled={identityBusy || !identityReadReady || !selectedIdentityProfile}>
-              {identityBusy ? "Lecture du véhicule…" : "Lire VIN + identité"}
+              {identityBusy ? "Lecture du véhicule…" : automaticIdentityAvailable ? "Lire VIN + identité" : "Lecture K-Line indisponible"}
             </button>
           </div>
 
-          {!identityReadReady && <p className="inline-alert">{capture?.active && !dualCanOperational
-            ? "Arrête et sauvegarde la capture avant cette lecture active."
-            : status?.can_tx_enabled
-              ? selectedIdentityProfile?.identity_scope === "identity_only" && !liveObdReadOnly
-                ? "Ce profil utilise l’OBD normalisé : flashe le firmware principal qui annonce live_obd_read_only=true."
-                : "Connecte l’ESP32 et vérifie la poignée de main du firmware diagnostic en lecture seule."
+          {!identityReadReady && automaticIdentityAvailable && <p className="inline-alert">{capture?.active
+              ? "Arrête et sauvegarde la capture avant cette lecture active."
               : "CAN_TX_ENABLED doit autoriser les requêtes de lecture; les écritures restent bloquées."}</p>}
-          {selectedIdentityProfile?.identity_scope === "identity_only" && <p className="inline-alert fiat-profile-note">Le profil Fiat est volontairement limité au VIN et aux informations OBD normalisées. Donne-moi ensuite l’année, la motorisation et si c’est une 500, 500X ou 500e pour construire le bon inventaire ECU.</p>}
+          {!automaticIdentityAvailable && <p className="inline-alert">Ce profil utilise une interface K-Line absente de la passerelle actuelle. La lecture automatique est bloquée; utilise le VIN de la carte grise pour créer le dossier local.</p>}
+          {identityReadReady && !gatewayVerified && <p className="inline-alert">La passerelle sélectionnée sera connectée et réglée automatiquement au débit du profil au lancement de la lecture.</p>}
+          {selectedIdentityProfile?.identity_scope === "identity_only" && <p className="inline-alert fiat-profile-note">Ce profil est volontairement limité au VIN, aux informations EOBD normalisées et aux DTC moteur en lecture seule. {selectedIdentityProfile.notes[0] ?? "Le scan constructeur complet reste désactivé tant que les calculateurs ne sont pas confirmés."}</p>}
         </section>
 
         {selectedIdentityProfile?.identity_scope === "identity_only" && <section className="panel">
@@ -117,7 +125,7 @@ export function VehicleIdentityScreen({
           )}
         </section>}
 
-        {selectedIdentityProfile?.identity_scope === "identity_only" && <section className="panel">
+        {fiatExperimentalProbe && <section className="panel">
           <div className="section-heading">
             <div><span className="eyebrow">Prudence avant d’aller plus loin</span><h2>Test de présence UDS</h2><p>Une seule lecture DID standard (0xF186, session de diagnostic active) pour voir si le calculateur répond en UDS — sans supposer qu’il le fasse.</p></div>
           </div>
@@ -150,9 +158,25 @@ export function VehicleIdentityScreen({
                   <div><span>Constructeur détecté</span><strong>{displayedIdentity.detected_manufacturer ?? "WMI non catalogué"}</strong></div>
                   <div><span>Correspondance profil</span><strong>{displayedIdentity.profile_match === true ? "Oui" : displayedIdentity.profile_match === false ? "Non" : "Non déterminée"}</strong></div>
                 </div>
-                <small className="identity-saved">Session {displayedIdentity.debug.session_id} · trace locale sauvegardée</small>
+                <small className="identity-saved">Véhicule ajouté au Garage · session {displayedIdentity.debug.session_id} · trace locale sauvegardée</small>
               </>
-            ) : <EmptyState title="VIN pas encore lu" text="Sélectionne la Peugeot ou la Fiat, connecte l’ESP32 diagnostic, puis lance une lecture." />}
+            ) : <>
+              <EmptyState title="VIN pas encore enregistré" text={automaticIdentityAvailable ? "Lance la lecture automatique ou saisis le VIN de la carte grise." : "La lecture K-Line nécessite une autre interface; saisis le VIN de la carte grise pour créer ce véhicule sans émission."} />
+              <div className="dtc-clear-form">
+                <label>VIN de la carte grise
+                  <input
+                    value={manualVin}
+                    maxLength={17}
+                    placeholder="VF1… · 17 caractères"
+                    onChange={(event) => setManualVin(event.target.value.toUpperCase())}
+                  />
+                </label>
+                <button className="secondary-button" disabled={!manualVinValid || manualVehicleBusy || capture?.active} onClick={() => void createManualVehicle(manualVinNormalized)}>
+                  {manualVehicleBusy ? "Ajout…" : "Ajouter au Garage"}
+                </button>
+              </div>
+              <p className="identity-note">Création locale uniquement : le VIN est validé syntaxiquement et aucune trame n’est envoyée au véhicule.</p>
+            </>}
           </article>
 
           <article className="panel identity-methods-panel">

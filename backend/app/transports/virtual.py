@@ -40,12 +40,14 @@ class VirtualVehicleTransport(Transport):
         response_ids: dict[int, int] | None = None,
         flow_control_ids: dict[int, int] | None = None,
         safety_profile: TxSafetyProfile = "diagnostic_read_only",
+        simulated_vin: str | None = None,
     ) -> None:
         self.read_only = read_only
         self.maintenance = maintenance
         self.response_ids = response_ids or {}
         self.flow_control_ids = flow_control_ids or {}
         self.safety_profile = safety_profile
+        self.simulated_vin = simulated_vin or "VF3LJHNYWJS123456"
         self._queue: queue.Queue[CanFrame] = queue.Queue()
         self._open = False
         self._request_id: int | None = None
@@ -204,7 +206,7 @@ class VirtualVehicleTransport(Transport):
 
     def _response(self, uds: bytes, request_id: int) -> bytes:
         obd_values = {
-            bytes.fromhex("0902"): b"\x49\x02\x01ZFA31200001234567",
+            bytes.fromhex("0902"): b"\x49\x02\x01" + self.simulated_vin.encode("ascii"),
             bytes.fromhex("0904"): b"\x49\x04\x01SIM-CAL-2026",
             bytes.fromhex("0906"): bytes.fromhex("49060112345678"),
             bytes.fromhex("090A"): b"\x49\x0A\x01SIM ENGINE ECU",
@@ -251,7 +253,7 @@ class VirtualVehicleTransport(Transport):
                 0xF187: b"PSA-9678521080",
                 0xF189: b"SW-2026.07",
                 0xF18C: f"SIM-{request_id:03X}-0001".encode(),
-                0xF190: b"VF3LJHNYWJS123456",
+                0xF190: self.simulated_vin.encode("ascii"),
             }
             if did in values:
                 return b"\x62" + uds[1:3] + values[did]

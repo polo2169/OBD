@@ -51,7 +51,7 @@
 
 // Enables the native OBD 6/14 controller in normal mode while retaining a
 // firmware allowlist limited to standardized 11-bit and 29-bit functional and
-// engine-physical OBD Mode 01/09 reads. ISO-TP flow control remains physical.
+// engine-physical OBD Mode 01/03/07/09 reads. ISO-TP flow control remains physical.
 // All UDS, clear-DTC and actuator traffic remains locked there.
 #ifndef LIVE_OBD_READ_ONLY
 #define LIVE_OBD_READ_ONLY 0

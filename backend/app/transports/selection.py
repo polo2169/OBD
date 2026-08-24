@@ -105,7 +105,12 @@ def _persist_selection(transport_name: str, endpoint: str, baud: int | None) -> 
     temporary.replace(path)
 
 
-def probe_and_select_transport(transport_name: str, endpoint: str, baud: int | None = None) -> dict[str, Any]:
+def probe_and_select_transport(
+    transport_name: str,
+    endpoint: str,
+    baud: int | None = None,
+    vehicle_profile: str | None = None,
+) -> dict[str, Any]:
     if transport_name not in {"esp32_serial", "esp32_wifi"}:
         raise ValueError("Seules les connexions ESP32 USB et Wi-Fi sont disponibles.")
 
@@ -139,9 +144,14 @@ def probe_and_select_transport(transport_name: str, endpoint: str, baud: int | N
         settings.esp32_wifi_host = host
         settings.esp32_wifi_port = port
 
-    transport = build_transport()
+    transport = None
     hello: dict[str, Any] | None = None
     try:
+        transport = (
+            build_transport(vehicle_profile=vehicle_profile)
+            if vehicle_profile is not None
+            else build_transport()
+        )
         transport.open()
         hello = getattr(transport, "hello", None)
     except Exception as exc:
@@ -163,7 +173,8 @@ def probe_and_select_transport(transport_name: str, endpoint: str, baud: int | N
             })
         raise
     finally:
-        transport.close()
+        if transport is not None:
+            transport.close()
 
     verified_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     selected_baud = settings.serial_baud if transport_name == "esp32_serial" else None

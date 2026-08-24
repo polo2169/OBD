@@ -115,6 +115,14 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
     "Dyn4_FRE.P264_VehV_VPsvValWhlFrtR": ("Vitesse roue avant droite", "Vitesse individuelle mesurée par l'ABS.", True),
     "Dyn4_FRE.P265_VehV_VPsvValWhlBckL": ("Vitesse roue arrière gauche", "Vitesse individuelle mesurée par l'ABS.", True),
     "Dyn4_FRE.P266_VehV_VPsvValWhlBckR": ("Vitesse roue arrière droite", "Vitesse individuelle mesurée par l'ABS.", True),
+    "DAT4_BSI_AEE2010.P015_Com_lTotDst": (
+        "Kilométrage total",
+        "Kilométrage absolu du véhicule (BSI, octets 5-7, 24 bits). Confirmé par la "
+        "documentation constructeur PSA du champ 552 et recoupé sur 29 captures "
+        "matérielles indépendantes (2026-08-01 → 2026-08-13, progression strictement "
+        "monotone 104 473 → 104 975 km).",
+        True,
+    ),
     "Dat_BSI.P103_Com_bRevGear": ("Marche arrière", "Indique que la marche arrière est engagée.", True),
     "Dyn_EasyMove.P337_Com_stPrkBrk": ("Frein de stationnement", "État 0x3AD validé sur la 308 : 0 relâché, 1 serré, 2 réservé/transition et 3 actionneur en mouvement.", True),
     "Dat_BSI.PARKING_BRAKE": ("Frein de stationnement (secours)", "Bit 0x412 source-confirmé mais jamais actif dans les captures locales; 0x3AD est la source T9 prioritaire.", False),
@@ -130,9 +138,21 @@ SENSOR_METADATA: dict[str, tuple[str, str, bool]] = {
         "Mesure du flotteur sensible au ballottement : sa forte corrélation avec l’accélération longitudinale impose un filtrage avant affichage.",
         True,
     ),
+    "Dat_CMM.P056_ACCD_p": (
+        "Pression climatisation",
+        "Pression du circuit réfrigérant (octet 7 de 0x488, commentaire d'origine DBC "
+        "\"Kältemitteldruck\", facteur 25 kPa/unité, plage déclarée 100-3100 kPa). Position "
+        "confirmée indépendamment, mais constante à 6375 kPa (octet brut 0xFF, hors plage "
+        "déclarée) sur trois captures véhicule distinctes : probable sentinelle "
+        "invalide/non disponible plutôt qu'une pression réelle, cohérent avec une clim non "
+        "sollicitée pendant ces trajets. Nécessite une capture avec climatisation active.",
+        False,
+    ),
     "Dat_CMM.P021_Com_volFlCons": (
         "Consommation passive — décodage rejeté",
-        "Ne suit ni le régime, ni la pédale, ni le couple sur cette 308; ce champ ne doit pas être interprété comme une consommation.",
+        "Ne suit ni le régime, ni la pédale, ni le couple sur cette 308; ce champ ne doit pas être interprété comme une consommation prise seule. "
+        "C'est un compteur de volume cumulé qui reboucle modulo 255 (confirmé sur capture véhicule) : "
+        "seul son incrément entre deux échantillons est exploitable, voir can_fuel_rate_lph/can_instant_consumption_l_100km.",
         False,
     ),
     "Dat2_CMM.P316_FlSys_volFlConsVirt": (

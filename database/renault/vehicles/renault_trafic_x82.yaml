@@ -1,0 +1,291 @@
+manufacturer: Renault
+model: Trafic III
+platform: X82
+year: 2014+ (Ph1/Ph2/Ph3)
+architecture: Renault CAN/UDS générique (plateforme X82)
+confidence: community_catalog
+sources:
+  ecu_addresses:
+    url: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    revision: fc2f49f
+    license: GPL-3.0
+    description: >-
+      Entrées de projet ddt4all « [X82] - Renault Trafic III » (et Ph2/Ph3) :
+      paires CAN requête/réponse (snat/dnat) par calculateur, extraites du
+      fichier de configuration JSON en clair du dépôt.
+  obd_vehicle_information:
+    url: https://github.com/OBDb/SAEJ1979
+    license: CC-BY-SA-4.0
+  ddt4all_vin_read:
+    url: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/cli/cmd_handlers/doip.py#L38
+    description: >-
+      ddt4all lit le VIN avec le service UDS standard « 22 F1 90 » (DID
+      0xF190), confirmant que la convention ISO 14229 déjà utilisée pour PSA
+      dans ce dépôt s'applique aussi côté Renault.
+  ddt4all_airbag_plugin_vehicle_list:
+    url: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/plugins/rsat4_reset.py#L28-L29
+    description: >-
+      Seule mention littérale « TRAFIC III » du code source ddt4all : le
+      calculateur airbag du Trafic III y partage sa définition avec
+      Twingo III/Zoe/Dokker/Duster ph2/Captur/Lodgy ph1-2.
+notes:
+  - "Profil initial : aucune donnée de capture réelle sur un Trafic III n'a encore été recoupée sur véhicule. Toutes les adresses viennent du catalogue communautaire ddt4all, pas d'une identification propre à ce dépôt."
+  - "Aucun décodeur CAN passif constructeur n'est documenté publiquement pour le X82 (recherche dédiée : ni opendbc, ni dépôt DBC communautaire, ni post de forum avec IDs/offsets concrets). Le profil démarre donc en diagnostic UDS/OBD standard uniquement ; le module Learn permettra de construire un catalogue broadcast_can à partir de captures réelles, comme cela a été fait pour Fiat."
+  - "Les calculateurs listés ci-dessous sont des adresses candidates issues d'un catalogue communautaire : seule une réponse UDS (positive ou négative) sur le véhicule confirme leur présence réelle."
+  - "ddt4all référence aussi des identifiants étendus 29 bits (motif 18DAxxF1) en parallèle des adresses 11 bits pour certains calculateurs (moteur, boîte, ABS/VDC) ; ils sont documentés en note par calculateur plutôt qu'utilisés par défaut, faute de confirmation sur un Trafic III réel."
+  - "Le fourgon existe en plusieurs motorisations dCi (Euro 5/Euro 6, avec ou sans AdBlue/FAP) et en versions traction/propulsion (dérivés Master) ; la présence exacte des équipements (boîte auto, AdBlue, radar, aide au stationnement) reste à confirmer par identification avant d'être présentée comme disponible."
+
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable:
+    - air_fuel_adaptation_reset
+    - crankshaft_relearn
+    - throttle_relearn
+    - oil_service_reset
+    - steering_angle_calibration
+    - window_calibration
+    - tire_configuration_reset
+    - proxy_alignment
+  conditional:
+    - abs_bleed
+    - adblue_reset
+    - adaptive_front_lighting_reset
+    - airbag_reset
+    - battery_adaptation
+    - brake_service_reset
+    - coolant_bleed
+    - dpf_regeneration
+    - egr_adaptation
+    - transmission_relearn
+    - immobilizer_relearn
+    - injector_coding
+    - language_change
+    - nox_sensor_reset
+    - odometer_module_replacement
+    - occupant_detection_calibration
+    - start_stop_reset
+    - tpms_reset
+    - transport_mode
+  not_applicable:
+    - air_level_calibration
+    - sunroof_calibration
+  notes:
+    - Fourgon multi-motorisation ; AdBlue, FAP, EGR, NOx, boîte pilotée/automatique et Stop&Start restent conditionnels à l'identification exacte de la version.
+    - Aucune procédure d'écriture n'est encore autorisée : les adresses UDS proviennent d'un catalogue communautaire et n'ont pas été recoupées sur un Trafic III réel.
+
+networks:
+  diagnostic_can:
+    bitrate: 500000
+    access: obd_pins_6_14
+    confidence: community_catalog
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+
+diagnostic:
+  identity_scope: full_profile
+  # Mêmes services UDS ISO 14229 génériques que le profil T9 (session, reset,
+  # lecture de DID standard) : aucun n'est propriétaire PSA, donc réutilisables
+  # tels quels tant qu'aucune réponse réelle n'a permis de les affiner pour ce
+  # véhicule.
+  probe_did: 0xF190
+  probe_payloads:
+    - "1001"
+    - "1003"
+    - "3E00"
+    - "22F186"
+    - "22F190"
+  read_dtcs: true
+  dtc_status_mask: 0xFF
+  # Adressage OBD-II physique standard du calculateur moteur, confirmé par
+  # ddt4all pour l'ECM du X82 (dnat=7E0 / snat=7E8, 11 bits).
+  obd_request_id: 0x7E0
+  obd_response_id: 0x7E8
+  live_obd:
+    enabled: true
+    interval_ms: 1000
+    pids:
+      - 0x04
+      - 0x05
+      - 0x06
+      - 0x07
+      - 0x0A
+      - 0x0B
+      - 0x0C
+      - 0x0D
+      - 0x0E
+      - 0x0F
+      - 0x10
+      - 0x11
+      - 0x14
+      - 0x15
+      - 0x1F
+      - 0x2F
+      - 0x33
+      - 0x42
+      - 0x43
+      - 0x46
+      - 0x49
+      - 0x4A
+      - 0x5C
+  vin_strategies:
+    - key: obd_mode09_vin
+      label: OBD-II moteur · Mode 09 PID 02
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      command: 0x0902
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+    - key: renault_ecm_f190_candidate
+      label: ECM Renault · DID F190 expérimental
+      protocol: uds
+      enabled: false
+      request_id: 0x7E0
+      response_id: 0x7E8
+      did: 0xF190
+      confidence: address_documented_command_experimental
+      source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    - key: renault_uch_f190_candidate
+      label: UCH Renault (BSI) · DID F190 expérimental
+      protocol: uds
+      enabled: false
+      request_id: 0x745
+      response_id: 0x765
+      did: 0xF190
+      confidence: address_documented_command_experimental
+      source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+  identity_fields:
+    - key: calibration_id
+      name: Identifiant de calibration
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x04
+      codec: indexed_ascii
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+    - key: calibration_verification_number
+      name: Numéro de vérification de calibration (CVN)
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x06
+      codec: indexed_hex
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+    - key: ecu_name
+      name: Nom du calculateur OBD
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      pid: 0x0A
+      codec: indexed_ascii
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+
+ecus:
+  - key: engine
+    name: Calculateur moteur (ECM)
+    family: ECM_29
+    request_id: 0x7E0
+    response_id: 0x7E8
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    notes:
+      - "ddt4all référence aussi une adresse étendue 29 bits 18DA15F1/18DAF115 pour ce calculateur ; non retenue par défaut faute de confirmation sur véhicule."
+
+  - key: gearbox
+    name: Boîte pilotée/automatique
+    family: AT_29B
+    request_id: 0x7E1
+    response_id: 0x7E9
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    notes:
+      - "Selon version : de nombreux Trafic III sont vendus en boîte manuelle uniquement, ce calculateur peut être absent."
+      - "ddt4all référence aussi une adresse étendue 29 bits 18DA18F1/18DAF118 ; non retenue par défaut faute de confirmation sur véhicule."
+
+  - key: abs_esp
+    name: ABS / VDC (contrôle dynamique du véhicule)
+    family: ABS_VDC
+    request_id: 0x740
+    response_id: 0x760
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    notes:
+      - "ddt4all référence aussi une adresse étendue 29 bits 18DA2DF1/18DAF12D ; non retenue par défaut faute de confirmation sur véhicule."
+
+  - key: power_steering
+    name: Direction assistée électrique (EPS)
+    family: EPS
+    request_id: 0x742
+    response_id: 0x762
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+
+  - key: body_computer
+    name: Unité centrale habitacle (UCH)
+    family: UCH
+    request_id: 0x745
+    response_id: 0x765
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    aliases:
+      - UCH
+
+  - key: airbag
+    name: Airbags / prétensionneurs (SRS)
+    family: AIRBAG_SRS
+    request_id: 0x752
+    response_id: 0x772
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+    notes:
+      - "ddt4all partage la définition de ce calculateur entre Trafic III et Twingo III/Zoe/Dokker/Duster ph2/Captur/Lodgy ph1-2 (plugin RSAT4)."
+
+  - key: gateway
+    name: Passerelle CAN (GW)
+    family: GW
+    request_id: 0x710
+    response_id: 0x730
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json
+
+  - key: instrument_cluster
+    name: Combiné d'instruments (TDB)
+    family: TDB
+    request_id: 0x743
+    response_id: 0x763
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/cedricp/ddt4all/blob/fc2f49f/src/ddt4all/resources/projects.json

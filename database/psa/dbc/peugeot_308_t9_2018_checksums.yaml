@@ -1,127 +1,702 @@
-vehicle: peugeot_308_t9_2018
-generated_at: 2026-08-11
-mode: passive_read_only
-corpus:
-  glob: data/sessions/learn-*.jsonl
-  sessions: 72
-  size_gb: 2.9
-algorithm:
-  name: psa_nibble_sum_4bit
-  expression: checksum = (initial - sum(payload_nibbles_with_checksum_cleared)) & 0xF
-  invariant: sum(all_transmitted_nibbles) & 0xF == initial
+manufacturer: Peugeot
+model: 308 II
+platform: T9
+year: 2018
+architecture: AEE2010.full
+confidence: community_catalog
+sources:
+  architecture:
+    url: https://github.com/prototux/PSA-RE/blob/74294e99bd8f4decbfcdceabb11c7413dd977f4d/cars/T9.yml
+    revision: 74294e99bd8f4decbfcdceabb11c7413dd977f4d
+    license: Apache-2.0
+  ecu_addresses:
+    url: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md
+    revision: c1409e60798f66bb63149505826170b5eb3c163f
+    license: GPL-3.0
+  passive_can_dbc:
+    url: https://github.com/commaai/opendbc/blob/master/opendbc/dbc/psa_aee2010_r3.dbc
+    revision: master
+    role: external_comparison
+  vehicle_can_capture:
+    file: can(2).jsonl
+    captured_at: 2026-08-12
+    role: vehicle_validation
+notes:
+  - PSA-RE confirme l'architecture AEE2010.full pour la plateforme T9.
+  - Les captures locales identifient plus précisément une variante de direction compatible AEE2010 R2/EVO : commande de couple BSI vers EPS sur 0x3F2, tandis que la consigne d'angle reste nulle.
+  - Le DBC AEE2010 R3 conservé dans opendbc est une base externe de comparaison ; son nom ne constitue pas une identification R3 de cette 308.
+  - La révision multiplexée exacte restera à confirmer par l'identification BSI/EPS et la topologie des bus ; le profil conserve donc le libellé source AEE2010.full.
+  - Les paires de diagnostic proviennent d'un catalogue communautaire de familles ECU.
+  - La présence exacte des calculateurs optionnels dépend de l'équipement du véhicule.
+  - Toute adresse doit être confirmée par une réponse UDS avant d'être considérée présente.
+  - La consommation carburant passive a été validée sur une capture véhicule de 589,24 s : trame 0x488 à ~10 Hz, compteur P021 observé sur 0..254 avec rebouclage modulo 255.
+  - La consommation instantanée n'est pas transmise directement en L/100 km : elle est dérivée de l'incrément du compteur de volume carburant 0x488 et de la vitesse 0x38D.
 
-validated:
-  - arbitration_id: 0x228
-    dlc: 8
-    message: T9_ENGINE_DYNAMICS_REDUNDANT_228
-    checksum: {byte: 3, nibble: low, initial: 0x3}
-    counter: {byte: 3, nibble: high, modulo: 16}
-    frames: 942978
-    valid: 942978
+maintenance:
+  policy: catalog_only_until_vehicle_validated
+  applicable:
+    - abs_bleed
+    - air_fuel_adaptation_reset
+    - airbag_reset
+    - battery_adaptation
+    - brake_service_reset
+    - crankshaft_relearn
+    - throttle_relearn
+    - oil_service_reset
+    - steering_angle_calibration
+    - tire_configuration_reset
+    - window_calibration
+    - proxy_alignment
+  conditional:
+    - adblue_reset
+    - adaptive_front_lighting_reset
+    - coolant_bleed
+    - dpf_regeneration
+    - egr_adaptation
+    - transmission_relearn
+    - immobilizer_relearn
+    - injector_coding
+    - language_change
+    - nox_sensor_reset
+    - odometer_module_replacement
+    - occupant_detection_calibration
+    - start_stop_reset
+    - sunroof_calibration
+    - tpms_reset
+    - transport_mode
+  not_applicable:
+    - air_level_calibration
+  notes:
+    - Le profil T9 couvre plusieurs motorisations ; AdBlue, FAP, EGR, NOx, boîte et Stop/Start restent conditionnels à l'identification exacte des calculateurs.
+    - Les commandes actives existantes du laboratoire PSA ne valent pas validation d'une procédure de maintenance.
 
-  - arbitration_id: 0x2ED
-    dlc: 7
-    message: T9_PROTECTED_STATUS_2ED
-    checksum: {byte: 0, nibble: high, initial: 0x2}
-    counter: {byte: 0, nibble: low, modulo: 16}
-    frames: 239935
-    valid: 239935
+networks:
+  diagnostic_can:
+    bitrate: 500000
+    access: obd_pins_3_8
+    confidence: community_confirmed
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/README.md#pinout
 
-  - arbitration_id: 0x2F5
-    dlc: 7
-    message: T9_STEERING_TORQUE_2F5
-    checksum: {byte: 0, nibble: high, initial: 0xB}
-    counter: {byte: 0, nibble: low, modulo: 16}
-    frames: 933226
-    valid: 933226
+diagnostic:
+  identity_scope: full_profile
+  # Un NRC UDS valide suffit à confirmer qu'un calculateur répond. En l'absence
+  # totale de réponse au probe, les autres DIDs ne sont pas envoyés.
+  probe_did: 0xF190
+  probe_payloads:
+    - "1001"
+    - "1003"
+    - "3E00"
+    - "22F186"
+    - "22F190"
+  read_dtcs: true
+  dtc_status_mask: 0xFF
+  dtc_status_masks:
+    - 0xFF
+    - 0x09
+  # Adressage OBD-II physique standard du calculateur moteur pour le mode
+  # capteurs normalisés. Ce mode est distinct des adresses diagnostic PSA.
+  obd_request_id: 0x7E0
+  obd_response_id: 0x7E8
+  live_obd:
+    enabled: true
+    interval_ms: 1000
+    # Complément normalisé au CAN passif AEE2010. Les signaux CAN validés
+    # gardent la priorité dans l'interface quand les deux sources existent.
+    pids:
+      - 0x04
+      - 0x05
+      - 0x0B
+      - 0x0C
+      - 0x0D
+      - 0x0F
+      - 0x11
+      - 0x2F
+      - 0x33
+      - 0x42
+      - 0x46
+      - 0x49
+      - 0x4A
+      - 0x5C
+  identification_dids:
+    # Zones d'identification PSA utilisées par PyPSADiag :
+    # ZA = références équipement/type, ZI = fournisseur/système/calibration.
+    - 0xF080
+    - 0xF0FE
+    - 0xF180
+    - 0xF181
+    - 0xF186
+    - 0xF187
+    - 0xF188
+    - 0xF189
+    - 0xF18A
+    - 0xF18B
+    - 0xF18C
+    - 0xF18E
+    - 0xF190
+    - 0xF191
+    - 0xF192
+    - 0xF193
+    - 0xF194
+    - 0xF195
+    - 0xF197
+  vin_strategies:
+    - key: psa_bsi_f190
+      label: BSI Peugeot · DID F190
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF190
+      confidence: community_confirmed
+      source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L347
+    - key: psa_engine_f190
+      label: Injection Peugeot · DID F190
+      protocol: uds
+      request_id: 0x6A8
+      response_id: 0x688
+      did: 0xF190
+      confidence: community_confirmed
+      source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L243
+    - key: obd_mode09_vin
+      label: OBD-II moteur · Mode 09 PID 02
+      protocol: obd
+      request_id: 0x7E0
+      response_id: 0x7E8
+      command: 0x0902
+      confidence: standardized
+      source: https://github.com/OBDb/SAEJ1979
+  identity_fields:
+    - key: boot_software_id
+      name: Référence logiciel boot
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF180
+      codec: ascii
+      confidence: standardized_did
+    - key: application_software_id
+      name: Référence logiciel application
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF181
+      codec: ascii
+      confidence: standardized_did
+    - key: spare_part_number
+      name: Référence pièce
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF187
+      codec: ascii
+      confidence: standardized_did
+    - key: software_version
+      name: Version logiciel
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF189
+      codec: ascii
+      confidence: standardized_did
+    - key: ecu_serial_number
+      name: Numéro de série ECU
+      protocol: uds
+      request_id: 0x752
+      response_id: 0x652
+      did: 0xF18C
+      codec: ascii
+      confidence: standardized_did
 
-  - arbitration_id: 0x329
-    dlc: 4
-    message: T9_GEARBOX_STATUS_329
-    checksum: {byte: 0, nibble: high, initial: 0xD}
-    counter: {byte: 0, nibble: low, modulo: 16}
-    frames: 476787
-    valid: 476787
 
-  - arbitration_id: 0x349
-    dlc: 8
-    message: T9_GEARBOX_TARGET_349
-    checksum: {byte: 6, nibble: high, initial: 0x6}
-    counter: {byte: 6, nibble: low, modulo: 16}
-    frames: 952844
-    valid: 952844
+passive_can:
+  enabled: true
+  bitrate: 500000
+  mode: read_only
+  confidence: vehicle_validated
+  source_ref: passive_can_dbc
+  validation:
+    capture_ref: can(2).jsonl
+    duration_s: 589.24
+    total_frames: 926637
+    unique_ids: 67
+    fuel_frame_count: 5895
+    fuel_frame_period_ms_median: 99.992
+    notes:
+      - Le DBC AEE2010 R3 sert de dictionnaire de signaux ; l'identification de la voiture reste AEE2010.full avec variante locale à confirmer.
+      - Les trames 0x208, 0x38D et 0x488 ont été observées directement sur ce véhicule et leurs champs ci-dessous sont cohérents avec la capture.
+      - Sur 0x488 byte 1, les valeurs observées vont de 0 à 254 ; 0xFF n'a pas été observé. Le compteur reboucle donc avec un modulus de 255 sur cette capture.
 
-  - arbitration_id: 0x38D
-    dlc: 8
-    message: T9_VEHICLE_DYNAMICS_38D
-    checksum: {byte: 5, nibble: low, initial: 0x7}
-    counter: {byte: 5, nibble: high, modulo: 16}
-    frames: 240282
-    valid: 240282
+  frames:
+    - id: 0x208
+      name: Dyn_CMM
+      period_ms: 10
+      transmitter: engine
+      confidence: vehicle_validated
+      signals:
+        - key: engine_rpm
+          name: Régime moteur
+          dbc_signal: P000_Com_nEng
+          start_bit: 7
+          length: 16
+          byte_order: big_endian
+          signed: false
+          factor: 0.125
+          offset: 0
+          unit: rpm
+          decode_hint: "uint16_be(data[0:2]) * 0.125"
+        - key: accelerator_pedal
+          name: Position pédale accélérateur
+          dbc_signal: P002_Com_rAPP
+          start_bit: 24
+          length: 8
+          byte_order: little_endian
+          signed: false
+          factor: 0.5
+          offset: 0
+          unit: percent
+          decode_hint: "data[3] * 0.5"
 
-  - arbitration_id: 0x3AD
-    dlc: 8
-    message: T9_EASY_MOVE_3AD
-    checksum: {byte: 7, nibble: low, initial: 0xD}
-    counter: {byte: 7, nibble: high, modulo: 16}
-    frames: 480554
-    valid: 480554
+    - id: 0x38D
+      name: HS2_DYN_ABR_38D
+      period_ms: 40
+      transmitter: abs_esp
+      confidence: vehicle_validated
+      signals:
+        - key: vehicle_speed
+          name: Vitesse véhicule roues
+          dbc_signal: VITESSE_VEHICULE_ROUES
+          start_bit: 7
+          length: 16
+          byte_order: big_endian
+          signed: false
+          factor: 0.01
+          offset: 0
+          unit: km/h
+          decode_hint: "uint16_be(data[0:2]) * 0.01"
+        - key: wheel_distance_counter
+          name: Distance cumulée roues
+          dbc_signal: DISTANCE_ROUES
+          start_bit: 23
+          length: 16
+          byte_order: big_endian
+          signed: false
+          factor: 0.1
+          offset: 0
+          unit: m
+          raw_modulus: 65536
+          decode_hint: "uint16_be(data[2:4]) * 0.1"
 
-  - arbitration_id: 0x3C9
-    dlc: 8
-    message: T9_GEARBOX_PROTECTED_3C9
-    checksum: {byte: 3, nibble: high, initial: 0xE}
-    counter: {byte: 3, nibble: low, modulo: 16}
-    frames: 952253
-    valid: 952251
-    note: Two isolated payloads are capture corruption or outliers.
+    - id: 0x488
+      name: Dat_CMM
+      period_ms: 100
+      transmitter: engine
+      confidence: vehicle_validated
+      signals:
+        - key: fuel_volume_counter
+          name: Compteur volume carburant consommé
+          dbc_signal: P021_Com_volFlCons
+          byte_index: 1
+          start_bit: 8
+          length: 8
+          byte_order: little_endian
+          signed: false
+          factor: 80
+          offset: 0
+          unit: mm^3
+          raw_min_observed: 0
+          raw_max_observed: 254
+          raw_modulus: 255
+          liters_per_tick: 0.00008
+          decode_hint: "data[1]"
+          notes:
+            - Le DBC décrit P021 avec un facteur de 80 mm^3 par unité.
+            - Sur la voiture, ce champ se comporte comme un compteur de volume cumulatif modulo 255, pas comme une valeur instantanée en L/100 km.
+            - Un compteur immobile pendant une décélération indique une consommation de carburant nulle sur cette fenêtre, cohérente avec la coupure d'injection.
 
-  - arbitration_id: 0x3CD
-    dlc: 8
-    message: T9_BRAKE_DYNAMICS_3CD
-    checksum: {byte: 7, nibble: high, initial: 0x3}
-    counter: {byte: 7, nibble: low, modulo: 16}
-    frames: 961914
-    valid: 961913
-    note: One isolated payload is capture corruption or an outlier.
+    - id: 0x552
+      name: DAT4_BSI_AEE2010
+      transmitter: bsi
+      confidence: vehicle_validated
+      signals:
+        - key: odometer_km
+          name: Kilométrage absolu
+          dbc_signal: P015_Com_lTotDst
+          byte_index: [4, 5, 6]
+          start_bit: 39
+          length: 24
+          byte_order: big_endian
+          signed: false
+          factor: 1
+          offset: 0
+          unit: km
+          decode_hint: "uint24_be(data[4:7])"
+          notes:
+            - "Confirmé par la documentation constructeur PSA du champ 552 (kilométrage absolu, octets 5-7 en indexation 1)."
+            - "Recoupé sur 29 captures matérielles indépendantes du 2026-08-01 au 2026-08-13 : progression strictement monotone 104 473 → 104 975 km, sans retour en arrière ni rebouclage, cohérente avec l'usage quotidien réel du véhicule."
 
-  - arbitration_id: 0x42D
-    dlc: 4
-    message: T9_PROTECTED_STATUS_42D
-    checksum: {byte: 2, nibble: high, initial: 0xC}
-    counter: {byte: 2, nibble: low, modulo: 16}
-    frames: 192087
-    valid: 192087
+  derived_signals:
+    - key: fuel_delta_ticks
+      name: Incrément de carburant
+      inputs:
+        - fuel_volume_counter
+      formula: "(current_raw - previous_raw + 255) % 255"
+      unit: tick
+      notes:
+        - Calculer uniquement entre deux échantillons 0x488 consécutifs.
+        - Ignorer un intervalle anormalement long ou une perte de synchronisation avant de reprendre le calcul.
 
-  - arbitration_id: 0x50D
-    dlc: 8
-    message: T9_ABS_INTERVENTION_50D
-    checksum: {byte: 7, nibble: low, initial: 0xC}
-    counter: {byte: 7, nibble: high, modulo: 16}
-    frames: 96106
-    valid: 96106
+    - key: fuel_delta_l
+      name: Volume consommé sur l'intervalle
+      inputs:
+        - fuel_delta_ticks
+      formula: "fuel_delta_ticks * 0.00008"
+      unit: L
 
-counter_only_no_global_nibble_checksum:
-  - {arbitration_id: 0x305, byte: 4, nibble: low, frames: 932094}
-  - {arbitration_id: 0x34D, byte: 5, nibble: low, frames: 480593}
-  - {arbitration_id: 0x3B8, byte: 6, nibble: high, frames: 235668}
-  - {arbitration_id: 0x40D, byte: 7, nibble: low, frames: 480593}
-  - {arbitration_id: 0x432, byte: 1, nibble: low, frames: 192107}
+    - key: fuel_rate
+      name: Débit carburant
+      inputs:
+        - fuel_delta_l
+        - delta_time_s
+      formula: "fuel_delta_l * 3600 / delta_time_s"
+      unit: L/h
+      smoothing:
+        method: sliding_window
+        recommended_window_ms: 1500
+        min_window_ms: 1000
+        max_window_ms: 2000
+      notes:
+        - Le lissage est nécessaire car un tick vaut 80 µL ; à 100 ms, la dérivée brute est naturellement quantifiée.
 
-special_or_unresolved:
-  - arbitration_id: 0x452
-    field: SpeedSetpointChecksum
-    width_bits: 2
-    status: source_confirmed_static_locally
-    algorithm: bit1=parity(high_nibble(setpoint)); bit0=parity(low_nibble(setpoint))
-    note: The local non-ACC payload kept its R3 frame checksum and frame counter at zero, so the generic CHK_INI=0x4 protection is not validated on this T9.
+    - key: instant_fuel_consumption
+      name: Consommation instantanée
+      inputs:
+        - fuel_rate
+        - vehicle_speed
+      formula: "fuel_rate / vehicle_speed * 100"
+      unit: L/100km
+      valid_when: "vehicle_speed >= 5"
+      stopped_behavior:
+        display: fuel_rate
+        unit: L/h
+      notes:
+        - À très basse vitesse, L/100 km devient numériquement instable ; afficher L/h sous le seuil.
 
-  - arbitration_id: 0x50E
-    field: XVVChecksum
-    width_bits: 2
-    status: layout_and_values_observed_algorithm_unresolved
-    note: Values 0..3 correlate with RVV setpoint changes. BSIFrameCounter is a shared four-bit counter and normally advances by two between consecutive 10 Hz frames.
+    - key: trip_fuel
+      name: Carburant consommé trajet
+      inputs:
+        - fuel_delta_l
+      formula: "sum(fuel_delta_l)"
+      unit: L
 
-  - arbitration_id: 0x3F2
-    status: r2_no_checksum_observed
-    note: The R3 checksum and counter locations stayed zero over 191254 local frames; they must not be synthesized for the vehicle's R2/EVO torque layout.
+    - key: trip_distance
+      name: Distance trajet
+      inputs:
+        - wheel_distance_counter
+      formula: "sum(((current_raw - previous_raw + 65536) % 65536) * 0.1)"
+      unit: m
+
+    - key: average_fuel_consumption
+      name: Consommation moyenne trajet
+      inputs:
+        - trip_fuel
+        - trip_distance
+      formula: "trip_fuel / (trip_distance / 1000) * 100"
+      unit: L/100km
+      valid_when: "trip_distance > 0"
+
+ecus:
+  - key: engine
+    name: Calculateur moteur / injection
+    family: INJ
+    request_id: 0x6A8
+    response_id: 0x688
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L243
+    dtc_catalogs:
+      - EDC17C60
+      - DCM62
+      - DCM62_F
+      - CMM_DCM71
+      - CMM_DCM71_F
+      - VD46
+      - V46
+      - V46_21
+      - V46_6
+      - MEVD17_4_2
+      - MEVD17_4_4
+
+  - key: gearbox
+    name: Aisin TF-71SC / AT6 III (EAT6)
+    family: BOITEVIT
+    request_id: 0x6A9
+    response_id: 0x689
+    # Cette EAT6 exige à la fois BS=0 et un Flow Control au DLC naturel de
+    # trois octets. FC 30 00 00 rembourré à huit octets est ignoré.
+    flow_control_blocksize: 0
+    isotp_tx_padding: null
+    protocol: uds
+    confidence: vehicle_identified
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L250
+    aliases:
+      - EAT6
+      - AT6 III
+      - Aisin TF-71SC
+    telecoding_variant: BVA_AM6_AT6_UDS
+    telecoding_write_allowed: false
+    identification_dids:
+      - 0x2100
+      - 0x2101
+    dtc_catalogs:
+      - BVA_EATN8
+      - BVA_AM6_AT6_UDS
+    dtc_status_masks:
+      - 0x09
+      - 0xFF
+    notes:
+      - "F080 observé: PSA 9805709280 (deux occurrences dans la zone)."
+      - "F0FE observé: FFFF00003056100A0D02510708FFFFFF0002000001920681."
+      - "2100=00FEFFFCFF003801; 2101=00FEFFFEFFBFBE."
+      - "Réponses longues confirmées avec Flow Control 30 00 00 non rembourré (DLC=3)."
+
+  - key: abs_esp
+    name: ABS / ESP90 Bosch 9.0
+    family: ABRASR
+    request_id: 0x6AD
+    response_id: 0x68D
+    protocol: uds
+    confidence: vehicle_identified
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L227
+    aliases:
+      - ESP90
+      - Bosch ESP 9.0
+    # Confirmé par les zones F080/F0FE et par les réponses 2100..2103 du VIN.
+    # La référence PSA 9812786180 est répertoriée comme Bosch ESP 9.0 ; le
+    # motif complet 2102=06000000A400 correspond aussi aux lectures ESP90
+    # communautaires. Ne plus proposer le schéma incompatible ESPMK100_UDS.
+    telecoding_variant: ESP90
+    # Plusieurs clés ESP90 existent. Une mauvaise clé peut verrouiller le
+    # télécodage du calculateur : sauvegarde/lecture oui, écriture non tant que
+    # la clé exacte de cet exemplaire n'est pas prouvée indépendamment.
+    telecoding_write_allowed: false
+    identification_dids:
+      - 0x2100
+      - 0x2101
+      - 0x2102
+      - 0x2103
+    dtc_catalogs:
+      - ESP90
+      - ABRASR
+    # 0x09 cible d'abord les défauts échoués/confirmés. 0xFF reste un repli
+    # exhaustif, sans présenter les moniteurs 0x40/0x50 comme des pannes.
+    dtc_status_masks:
+      - 0x09
+      - 0xFF
+    notes:
+      - "F080 observé: PSA 9826694380 et 9812786180."
+      - "F0FE observé: 00000000039201061103D41802FFFFFF0002000001928338."
+      - "2100=06A29212BDFB210000000040FF000000A420200B8CE3FFE0A01004FF01."
+      - "2101=06FFFFF7FFFFFFEFFFFFFFFFFFFFFDFFFF7FFFEFFFFBFFFFEFFE7EFF."
+      - "2102=06000000A400; 2103=06FFFDFFFF; sens détaillé non documenté."
+
+  - key: bsi
+    name: Boîtier de servitude intelligent
+    family: BMF_UDS_PSA
+    request_id: 0x752
+    response_id: 0x652
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L347
+    dtc_catalogs:
+      - BSI2010
+
+  - key: airbag
+    name: Airbags / prétensionneurs
+    family: AIRBAG
+    request_id: 0x744
+    response_id: 0x644
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L229
+    dtc_catalogs:
+      - RBG_UDS
+      - RBG_SPEED_UDS
+      - SRS
+      - ORC
+
+  - key: power_steering
+    name: Direction assistée électrique
+    family: DIRECTN
+    request_id: 0x6B5
+    response_id: 0x695
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L241
+    dtc_catalogs:
+      - DAE_UDS
+      - EPS
+    address_candidates:
+      - request_id: 0x796
+        response_id: 0x797
+        label: Direction motorisée / EPS_M
+        confidence: community_family_catalog
+        source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L191
+
+  - key: instrument_cluster
+    name: Combiné d'instruments
+    family: COMBINE
+    request_id: 0x75F
+    response_id: 0x65F
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: false
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L238
+    dtc_catalogs:
+      - COMBINE_UDS
+      - IP
+
+  - key: climate_control
+    name: Climatisation
+    family: CLIM
+    request_id: 0x76D
+    response_id: 0x66D
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L237
+    dtc_catalogs:
+      - CLIM_REGULEE_UDS
+      - HVAC
+
+  - key: front_camera
+    name: Caméra vidéo multifonction
+    family: CVM
+    request_id: 0x74A
+    response_id: 0x64A
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L289
+    aliases:
+      - CVM
+      - CVM_2
+      - CVM_3
+    dtc_catalogs:
+      - CVM
+      - CVM_2
+      - CVM_3
+    notes:
+      - Présente uniquement si le véhicule possède les aides à la conduite correspondantes.
+
+  - key: parking_assistance
+    name: Aide au stationnement
+    family: AAS
+    request_id: 0x75D
+    response_id: 0x65D
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L226
+    dtc_catalogs:
+      - AAS_UDS
+      - AAS_UDS_G6
+
+  - key: telematics
+    name: Autoradio / télématique (SMEG, NAC ou RCC)
+    family: TELEMAT
+    request_id: 0x764
+    response_id: 0x664
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L247
+    dtc_catalogs:
+      - NAC
+      - RCC
+
+  - key: gear_selector
+    name: Commande électrique de boîte / sélecteur
+    family: COMELBVA
+    request_id: 0x6AA
+    response_id: 0x68A
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L66
+    dtc_catalogs:
+      - COMELEC2
+      - GSM
+
+  - key: rain_light_sensor
+    name: Capteur de pluie et luminosité
+    family: CPL
+    request_id: 0x730
+    response_id: 0x710
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L17
+    dtc_catalogs:
+      - PLUIE_LUMINOSITE_UDS
+
+  - key: front_radar
+    name: Radar avant / régulation adaptative
+    family: ARTIV
+    request_id: 0x6B6
+    response_id: 0x696
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L32
+    dtc_catalogs:
+      - ARTIV
+      - ARTIV_UDS
+      - RADAR_AV_4
+
+  - key: tire_pressure
+    name: Surveillance pression pneumatiques
+    family: DSG
+    request_id: 0x6AF
+    response_id: 0x68F
+    protocol: uds
+    confidence: community_family_catalog
+    access: read_only
+    network: diagnostic_can
+    optional: true
+    source: https://github.com/ludwig-v/arduino-psa-diag/blob/c1409e60798f66bb63149505826170b5eb3c163f/ECU_LIST.md#L26
+    dtc_catalogs:
+      - DSG_UDS
+      - TPMS

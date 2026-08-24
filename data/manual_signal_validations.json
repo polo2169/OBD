@@ -59,11 +59,29 @@
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:27:40+00:00"
   },
+  "can_fuel_rate_lph": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T155300Z-757befbc",
+    "validated_at": "2026-08-12T22:49:42+00:00"
+  },
+  "can_instant_consumption_l_100km": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T155300Z-757befbc",
+    "validated_at": "2026-08-12T22:49:35+00:00"
+  },
   "coolant_temperature_c": {
     "validated": true,
     "note": null,
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:17+00:00"
+  },
+  "cruise_activation_request": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T155300Z-757befbc",
+    "validated_at": "2026-08-12T22:49:53+00:00"
   },
   "cruise_active_candidate": {
     "validated": true,
@@ -71,11 +89,23 @@
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:27:49+00:00"
   },
+  "cruise_mode_raw": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T155300Z-757befbc",
+    "validated_at": "2026-08-12T22:49:49+00:00"
+  },
   "cruise_setpoint_kph": {
     "validated": true,
     "note": null,
     "session_id": "learn-20260805T065635Z-bfd7b5b7",
     "validated_at": "2026-08-05T21:28:07+00:00"
+  },
+  "cruise_xvv_state": {
+    "validated": true,
+    "note": null,
+    "session_id": "learn-20260805T155300Z-757befbc",
+    "validated_at": "2026-08-12T22:49:47+00:00"
   },
   "current_gear": {
     "validated": true,

@@ -114,7 +114,7 @@ export const vehicleSensorCandidates: VehicleSensorCandidate[] = [
   { id: "can-ambient-temperature", label: "Température extérieure", system: "Climatisation", description: "Température ambiante diffusée sur le réseau.", source: "can", liveFields: ["ambient_temperature_c"], priority: 2 },
   { id: "psa-cabin-temperature", label: "Température habitacle", system: "Climatisation", description: "Sonde intérieure utilisée par la régulation.", source: "psa", priority: 1 },
   { id: "psa-evaporator-temperature", label: "Température évaporateur", system: "Climatisation", description: "Protection contre le givrage.", source: "psa", priority: 2 },
-  { id: "psa-refrigerant-pressure", label: "Pression réfrigérant", system: "Climatisation", description: "Pression du circuit haute pression.", source: "psa", priority: 1 },
+  { id: "can-refrigerant-pressure", label: "Pression réfrigérant", system: "Climatisation", description: "Pression du circuit réfrigérant (0x488 octet 7) ; constant à 6375 kPa (octet brut 0xFF, hors plage) sur trois captures, probable sentinelle invalide en l'absence de demande clim.", source: "can", liveFields: ["climate_pressure_kpa"], priority: 1, optional: true },
   { id: "psa-sunlight", label: "Ensoleillement", system: "Climatisation", description: "Charge solaire gauche/droite si disponible.", source: "psa", optional: true, priority: 3 },
   { id: "psa-blower", label: "Vitesse pulseur", system: "Climatisation", description: "Consigne et retour du ventilateur habitacle.", source: "psa", priority: 2 },
   { id: "psa-flaps", label: "Position des volets de climatisation", system: "Climatisation", description: "Mixage, distribution et recyclage.", source: "psa", priority: 3 },
@@ -152,7 +152,7 @@ export const fiat500SensorCandidates: VehicleSensorCandidate[] = [
   { id: "fiat-knock", label: "Capteur de cliquetis", system: "Moteur / injection", description: "Signal de détonation utilisé pour corriger l'avance; correction détaillée à identifier.", source: "fiat", applicability: "gasoline", priority: 2 },
   { id: "fiat-oil-switch", label: "Contacteur de pression d'huile", system: "Moteur / injection", description: "État logique d'alerte; ce moteur ne fournit pas nécessairement une pression analogique en bar.", source: "fiat", priority: 1 },
   { id: "fiat-brake-switch", label: "Contacteur de pédale de frein", system: "Commandes conducteur", description: "Deux états de frein transmis au calculateur moteur et au réseau CAN.", source: "fiat", priority: 1 },
-  { id: "fiat-clutch-switch", label: "Contacteur de pédale d'embrayage", system: "Commandes conducteur", description: "Candidat 0x0628A001 octet 5 bit 5, présent dans la capture; à confirmer par trois appuis annotés.", source: "fiat", optional: true, priority: 2 },
+  { id: "fiat-clutch-switch", label: "Contacteur de pédale d'embrayage", system: "Commandes conducteur", description: "Candidat 0x0628A001 octet 5 bit 5 (0x20), présent dans la capture; bit 4 séparé pour la demande accélérateur.", source: "fiat", liveFields: ["fiat_clutch_pedal_candidate", "fiat_accelerator_request_candidate", "fiat_clutch_accelerator_state_raw"], optional: true, priority: 1 },
 
   { id: "fiat-lambda-upstream", label: "Sonde lambda amont catalyseur", system: "Dépollution", description: "Sonde de régulation de richesse; tension EOBD candidate 01/14 selon les PID annoncés par l'ECU.", source: "fiat", applicability: "gasoline", priority: 1 },
   { id: "fiat-lambda-downstream", label: "Sonde lambda aval catalyseur", system: "Dépollution", description: "Contrôle de l'efficacité catalyseur; tension EOBD candidate 01/15.", source: "fiat", applicability: "gasoline", priority: 1 },
@@ -167,15 +167,15 @@ export const fiat500SensorCandidates: VehicleSensorCandidate[] = [
   { id: "fiat-yaw-lateral", label: "Lacet et accélération latérale", system: "Freinage / châssis", description: "Capteur combiné du système ESP; absent des versions sans ESP.", source: "fiat", liveFields: ["yaw_rate_deg_s", "lateral_accel_ms2"], optional: true, priority: 2 },
 
   { id: "fiat-battery-voltage", label: "Tension réseau 12 V", system: "Électricité", description: "Tension d'alimentation du calculateur, normalisée par le PID EOBD 01/42.", source: "can", liveFields: ["battery_voltage_v"], priority: 1 },
-  { id: "fiat-charging", label: "État de charge alternateur", system: "Électricité", description: "Commande et état du circuit de charge; valeurs constructeur à identifier sur le CAN Fiat.", source: "fiat", priority: 2 },
+  { id: "fiat-charging", label: "État de charge alternateur", system: "Électricité", description: "La tension EOBD 01/42 est la référence; 0x0A18A001 fournit en complément une charge électrique brute candidate.", source: "fiat", liveFields: ["fiat_electrical_load_candidate_raw"], priority: 2 },
 
   { id: "fiat-fuel-level", label: "Niveau de carburant", system: "Habitacle / Body Computer", description: "Flotteur traité par le Body Computer et le combiné; PID EOBD 01/2F seulement si l'ECU le relaie.", source: "fiat", liveFields: ["fuel_level_pct"], priority: 1 },
   { id: "fiat-doors", label: "Portes et hayon", system: "Habitacle / Body Computer", description: "Porte conducteur validée sur 0x0A18A000 octet 2 bit 3; autres ouvrants encore à identifier.", source: "fiat", liveFields: ["driver_door"], priority: 1 },
   { id: "fiat-lights", label: "Feux et clignotants", system: "Habitacle / Body Computer", description: "Commandes et retours d'éclairage nécessaires à l'animation de la vue du dessus.", source: "fiat", liveFields: ["turn_signal", "low_beam", "high_beam"], priority: 1 },
   { id: "fiat-wipers", label: "Essuie-glaces", system: "Habitacle / Body Computer", description: "Position du commodo et état de fonctionnement; trames B-CAN à identifier.", source: "fiat", liveFields: ["front_wiper_status"], priority: 2 },
   { id: "fiat-reverse-parking", label: "Marche arrière et frein à main", system: "Habitacle / Body Computer", description: "Frein à main candidat sur 0x0A18A000 octet 0 bit 5; marche arrière encore à identifier.", source: "fiat", liveFields: ["reverse", "parking_brake"], priority: 1 },
-  { id: "fiat-city-defrost", label: "Mode City et dégivrage arrière", system: "Habitacle / Body Computer", description: "Bits candidats observés sur 0x0A18A000; à confirmer par actions annotées.", source: "fiat", priority: 2 },
-  { id: "fiat-start-stop-state", label: "État et disponibilité Start&Stop", system: "Habitacle / Body Computer", description: "Candidats sur 0x0C1CA000, uniquement si la voiture est équipée du Start&Stop.", source: "fiat", optional: true, priority: 2 },
+  { id: "fiat-city-defrost", label: "Mode City et dégivrage arrière", system: "Habitacle / Body Computer", description: "Bits candidats observés sur 0x0A18A000; à confirmer par actions annotées.", source: "fiat", liveFields: ["fiat_city_mode_candidate", "fiat_rear_window_heater_candidate"], priority: 2 },
+  { id: "fiat-start-stop-state", label: "État et disponibilité Start&Stop", system: "Habitacle / Body Computer", description: "Octet 2 de 0x0C1CA000 : état brut, activation, disponibilité et condition portes/ceinture décodés séparément. Les conditions batterie/température restent à lire par diagnostic.", source: "fiat", liveFields: ["fiat_start_stop_state_raw", "fiat_start_stop_active_candidate", "fiat_start_stop_available_candidate", "fiat_start_stop_door_or_seatbelt_ok_candidate", "fiat_engine_running_candidate"], optional: true, priority: 1 },
   { id: "fiat-network-clock", label: "Date et heure du véhicule", system: "Combiné d'instruments", description: "Horloge BCD candidate sur 0x0C28A000, cohérente avec la date de la capture.", source: "fiat", priority: 2 },
   { id: "fiat-odometer", label: "Kilométrage total", system: "Combiné d'instruments", description: "Valeur mémorisée par le combiné/Body Computer; lecture constructeur à documenter.", source: "fiat", priority: 2 },
 
@@ -186,6 +186,41 @@ export const fiat500SensorCandidates: VehicleSensorCandidate[] = [
   { id: "fiat-gps-position", label: "Position GPS navigateur", system: "Trajet / position", description: "Latitude, longitude, précision et cap fournis par le navigateur pendant l'enregistrement.", source: "can", liveFields: ["latitude", "longitude", "gps_accuracy_m", "gps_heading_deg"], optional: true, priority: 1 },
 ];
 
+// Renault Trafic III (X82) · aucun décodeur CAN passif constructeur documenté
+// publiquement pour cette plateforme (voir database/renault/vehicles/
+// renault_trafic_x82.yaml). Cette liste se limite donc volontairement aux PID
+// OBD Mode 01 normalisés déjà exposés par le direct hybride ; elle s'étoffera
+// avec des entrées "renault" au fur et à mesure des captures réelles, comme
+// cela a été fait pour Fiat.
+export const renaultTraficSensorCandidates: VehicleSensorCandidate[] = [
+  { id: "renault-engine-rpm", label: "Régime moteur", system: "Moteur / injection", description: "PID EOBD 01/0C normalisé.", source: "can", liveFields: ["engine_rpm"], priority: 1 },
+  { id: "renault-speed", label: "Vitesse véhicule", system: "Freinage / châssis", description: "PID EOBD 01/0D normalisé.", source: "can", liveFields: ["speed_kph"], priority: 1 },
+  { id: "renault-coolant-temperature", label: "Température de liquide de refroidissement", system: "Moteur / injection", description: "PID EOBD 01/05 normalisé.", source: "can", liveFields: ["coolant_temperature_c"], priority: 1 },
+  { id: "renault-intake-temperature", label: "Température d'air d'admission", system: "Moteur / injection", description: "PID EOBD 01/0F normalisé.", source: "can", liveFields: ["intake_air_temperature_c"], priority: 2 },
+  { id: "renault-throttle", label: "Position papillon", system: "Moteur / injection", description: "PID EOBD 01/11 normalisé.", source: "can", liveFields: ["throttle_position_pct"], priority: 2 },
+  { id: "renault-fuel-trims", label: "Corrections de richesse court/long terme", system: "Dépollution", description: "PIDs EOBD 01/06 et 01/07 normalisés.", source: "can", applicability: "gasoline", priority: 2 },
+  { id: "renault-fuel-level", label: "Niveau de carburant", system: "Habitacle", description: "PID EOBD 01/2F normalisé, seulement si l'ECU le relaie.", source: "can", liveFields: ["fuel_level_pct"], optional: true, priority: 2 },
+  { id: "renault-battery-voltage", label: "Tension réseau 12 V", system: "Électricité", description: "PID EOBD 01/42 normalisé.", source: "can", liveFields: ["battery_voltage_v"], priority: 1 },
+  { id: "renault-ambient-temperature", label: "Température extérieure", system: "Climatisation", description: "PID EOBD 01/46 normalisé, seulement si relayé par le moteur.", source: "can", liveFields: ["ambient_temperature_c"], optional: true, priority: 2 },
+];
+
+function brandForProfile(profileKey?: string | null): "psa" | "fiat" | "renault" | "generic" {
+  if (!profileKey) return "generic";
+  if (profileKey === "fiat_500_generic") return "fiat";
+  if (profileKey.startsWith("renault_")) return "renault";
+  if (profileKey.startsWith("peugeot_") || profileKey.startsWith("psa_")) return "psa";
+  return "generic";
+}
+
 export function sensorCandidatesForProfile(profileKey?: string | null): VehicleSensorCandidate[] {
-  return profileKey === "fiat_500_generic" ? fiat500SensorCandidates : vehicleSensorCandidates;
+  switch (brandForProfile(profileKey)) {
+    case "fiat":
+      return fiat500SensorCandidates;
+    case "renault":
+      return renaultTraficSensorCandidates;
+    default:
+      // PSA profiles, and any other/unknown profile — preserves the prior
+      // fallback behavior for anything that wasn't Fiat.
+      return vehicleSensorCandidates;
+  }
 }

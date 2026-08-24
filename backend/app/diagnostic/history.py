@@ -71,6 +71,18 @@ def _vehicle_dir(vin: str, manufacturer: str | None = None) -> Path:
     return _root() / _manufacturer_key(item.get("manufacturer")) / vin
 
 
+def vehicle_storage_dir(vin: str) -> Path:
+    """Return the canonical on-disk directory for a known Garage vehicle."""
+    if not _VIN.fullmatch(vin):
+        raise ValueError("VIN invalide.")
+    with _LOCK:
+        registry = _registry()
+        item = registry["vehicles"].get(vin)
+        if not isinstance(item, dict):
+            raise KeyError("Véhicule inconnu : ajoute-le d’abord au Garage.")
+        return _vehicle_dir(vin, item.get("manufacturer"))
+
+
 def active_identity(vehicle_profile: str) -> dict | None:
     with _LOCK:
         registry = _registry()

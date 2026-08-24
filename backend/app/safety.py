@@ -83,7 +83,7 @@ def authorize_live_obd_can_frame(
         else {0x7DF, 0x7E0}
     )
     if arbitration_id not in allowed_ids:
-        return SafetyDecision(False, "Identifiant non autorisé par l'allowlist EOBD Mode 01/09 sur 6/14.")
+        return SafetyDecision(False, "Identifiant non autorisé par l'allowlist EOBD lecture seule sur 6/14.")
     if not data or len(data) > 8:
         return SafetyDecision(False, "Longueur de trame ISO-TP invalide sur OBD 6/14.")
 
@@ -98,12 +98,16 @@ def authorize_live_obd_can_frame(
         return SafetyDecision(False, "Requêtes OBD multi-trames verrouillées sur 6/14.")
 
     application_length = data[0] & 0x0F
-    if application_length != 2 or len(data) < 3:
-        return SafetyDecision(False, "Une lecture OBD 6/14 doit contenir exactement un mode et un PID.")
+    if application_length not in {1, 2} or len(data) < application_length + 1:
+        return SafetyDecision(False, "Longueur de lecture OBD invalide sur 6/14.")
     service = data[1]
-    if service not in {0x01, 0x09}:
+    if service in {0x01, 0x09} and application_length == 2:
+        return SafetyDecision(True, "Lecture PID OBD Mode 01/09 autorisée sur 6/14.")
+    if service in {0x03, 0x07} and application_length == 1:
+        return SafetyDecision(True, "Lecture DTC OBD Mode 03/07 autorisée sur 6/14.")
+    if service not in {0x01, 0x03, 0x07, 0x09}:
         return SafetyDecision(False, f"Mode OBD 0x{service:02X} verrouillé sur 6/14.")
-    return SafetyDecision(True, "Lecture OBD Mode 01/09 autorisée sur 6/14.")
+    return SafetyDecision(False, f"Longueur invalide pour le Mode OBD 0x{service:02X}.")
 
 
 def authorize_diagnostic_can_frame(

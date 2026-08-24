@@ -58,6 +58,33 @@ def current_lead(leads: list[dict[str, Any]]) -> dict[str, Any]:
     return leads[0]
 
 
+def lead_speed_estimate(
+    lead: dict[str, Any],
+    ego_speed_ms: float,
+    model_speed_ms: float,
+) -> tuple[float, float] | None:
+    """Return ``(lead speed, relative speed)`` using radard's vision math.
+
+    The model lead velocity is expressed against its own estimate of ego
+    velocity.  Subtracting the model ego velocity gives ``vRel``; adding the
+    vehicle speed (CAN when available) gives the corrected absolute lead
+    velocity used by openpilot's vision-only radar path.
+    """
+    velocities = lead.get("v")
+    if not isinstance(velocities, list) or not velocities:
+        return None
+    try:
+        vision_lead_ms = float(velocities[0])
+        ego_speed_ms = float(ego_speed_ms)
+        model_speed_ms = float(model_speed_ms)
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(value) for value in (vision_lead_ms, ego_speed_ms, model_speed_ms)):
+        return None
+    relative_speed_ms = vision_lead_ms - model_speed_ms
+    return ego_speed_ms + relative_speed_ms, relative_speed_ms
+
+
 class FrameBuffer:
     def __init__(self, data: np.ndarray):
         self.data = data

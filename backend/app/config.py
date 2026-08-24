@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     manual_signal_validations_file: Path = Path("../data/manual_signal_validations.json")
     live_sensor_registry_file: Path = Path("../data/runtime/live_sensor_registry.json")
     observed_dtcs_file: Path = Path("../data/runtime/observed_dtcs.json")
+    oil_log_file: Path = Path("../data/runtime/oil_log.json")
     diagnostic_history_dir: Path = Path("../data/diagnostics")
     telecoding_backup_dir: Path = Path("../data/runtime/telecoding")
     diagnostic_trace_import_dir: Path = Path("../data/diagbox_imports")

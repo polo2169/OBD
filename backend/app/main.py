@@ -4,6 +4,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.routes import router
 from app.api.learn_routes import router as learn_router
+from app.api.maintenance_routes import router as maintenance_router
 from app.config import settings
 
 app = FastAPI(
@@ -39,6 +40,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(router)
 app.include_router(learn_router)
+app.include_router(maintenance_router)
 
 
 @app.get("/")

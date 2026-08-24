@@ -15,10 +15,27 @@ from app.learn.opendbc import get_opendbc_decoder
 from app.learn.session_vehicle import load_session_vehicle, session_vehicle_mtime_ns
 
 
-CACHE_VERSION = 36
+CACHE_VERSION = 38
 SAMPLE_PERIOD_US = 100_000
 WHEELBASE_M = 2.62
 STEERING_RATIO = 15.3
+
+# Consommation dérivée du compteur de volume carburant 0x488 (Dat_CMM,
+# P021_Com_volFlCons) et de la vitesse 0x38D. Le calculateur ne transmet pas
+# de L/100km : voir database/psa/dbc/peugeot_308_t9_2018_checksums.yaml pour
+# la validation sur capture véhicule (589,24 s, compteur observé 0..254 avec
+# rebouclage confirmé, 0xFF jamais observé) et le détail du raisonnement.
+# facteur DBC officiel : 1 tick (octet brut) = 80 mm³.
+FUEL_TICK_MODULUS_MM3 = 255 * 80
+FUEL_RATE_WINDOW_MS = 1500
+# Au-delà, on considère la synchronisation perdue (perte de trames, coupure
+# contact) plutôt que de calculer un delta aberrant sur un grand intervalle.
+FUEL_MAX_GAP_MS = 5000
+# Écarte un intervalle dont le débit instantané impliqué dépasse largement ce
+# qu'un moteur de cette gamme peut consommer, révélateur d'une resynchronisation
+# du compteur (redémarrage ECU) plutôt que d'une consommation réelle.
+FUEL_IMPLAUSIBLE_RATE_LPH = 80.0
+FUEL_MIN_SPEED_FOR_L100KM_KPH = 5.0
 
 # Non documenté dans opendbc ; extrait en octets bruts, hors du pipeline de
 # décodage par message nommé. Candidat radar de stationnement avant, non validé.
@@ -72,6 +89,7 @@ TARGET_IDS = {
     0x488,  # températures moteur / huile / admission
     0x50D,  # intervention ABS
     0x50E,  # régulateur - consigne de vitesse (Dat_CLIM)
+    0x552,  # kilométrage absolu (BSI)
     0x56E,  # pédale accélérateur
     0x572,  # retenue
     0x588,  # état pression d'huile / pression atmosphérique
@@ -109,6 +127,7 @@ STATE_FIELDS = tuple(
 )
 
 FIELD_QUALITY = {
+    "odometer_km": "validated_on_vehicle",
     "steering_angle_deg": "validated_on_vehicle",
     "steering_rate_deg_s": "validated_on_vehicle",
     "driver_torque": "validated_on_vehicle",
@@ -118,8 +137,12 @@ FIELD_QUALITY = {
     "accelerator_secondary_pct": "cross_check_only",
     "engine_torque_nm": "opendbc_candidate",
     "idle_setpoint_rpm": "opendbc_candidate",
+    "climate_pressure_kpa": "opendbc_candidate",
     "fuel_consumption_candidate_mm3": "rejected_on_vehicle",
     "virtual_fuel_consumption_candidate_mm3": "rejected_on_vehicle",
+    "can_fuel_rate_lph": "derived_from_0x488_0x38d_vehicle_validated_counter",
+    "can_instant_consumption_l_100km": "derived_from_0x488_0x38d_vehicle_validated_counter",
+    "can_trip_fuel_l": "derived_from_0x488_0x38d_vehicle_validated_counter",
     "current_gear": "vehicle_validated_0x348_byte0_high_nibble_with_legacy_fallback",
     "target_gear": "opendbc_candidate",
     "gear_shift_active": "opendbc_candidate",
@@ -201,9 +224,28 @@ FIELD_QUALITY = {
     "speed_389_candidate_raw": "experimental_unvalidated_candidate",
     "fiat_clock_hour_candidate": "fiat_500_vehicle_observed_candidate",
     "fiat_clock_minute_candidate": "fiat_500_vehicle_observed_candidate",
+    "fiat_clock_day_candidate": "fiat_500_vehicle_observed_candidate",
+    "fiat_clock_month_candidate": "fiat_500_vehicle_observed_candidate",
+    "fiat_clock_year_candidate": "fiat_500_vehicle_observed_candidate",
     "fiat_start_stop_state_raw": "experimental_unvalidated_candidate",
+    "fiat_start_stop_active_candidate": "fiat_500_community_candidate",
+    "fiat_start_stop_available_candidate": "fiat_500_community_candidate",
+    "fiat_start_stop_door_or_seatbelt_ok_candidate": "fiat_500_community_candidate",
     "fiat_clutch_pedal_candidate": "experimental_unvalidated_candidate",
+    "fiat_accelerator_request_candidate": "fiat_500_community_candidate",
+    "fiat_clutch_accelerator_state_raw": "fiat_500_community_candidate",
     "fiat_battery_voltage_candidate_v": "fiat_500_vehicle_observed_candidate",
+    "fiat_contact_on_candidate": "fiat_500_community_candidate",
+    "fiat_ignition_active_candidate": "fiat_500_community_candidate",
+    "fiat_city_mode_candidate": "fiat_500_community_candidate",
+    "fiat_rear_window_heater_candidate": "fiat_500_community_candidate",
+    "fiat_engine_running_candidate": "fiat_500_community_candidate",
+    "fiat_speed_related_raw_candidate": "fiat_500_community_candidate_raw",
+    "fiat_speed_0a18a006_candidate_kph": "fiat_500_community_candidate",
+    "fiat_speed_0a28a000_candidate_kph": "fiat_500_community_candidate",
+    "fiat_speed_0a28a006_candidate_kph": "fiat_500_community_candidate",
+    "fiat_wheel_activity_counter_raw": "fiat_500_community_candidate_raw",
+    "fiat_electrical_load_candidate_raw": "fiat_500_community_candidate_raw",
     "fiat_a1_fast_nibble_candidate": "experimental_unvalidated_candidate",
     "fiat_mode_flag_candidate": "experimental_unvalidated_candidate",
     "fiat_mode_analog_candidate_raw": "experimental_unvalidated_candidate",
@@ -394,6 +436,13 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["brake_pressure_raw"] = _number(values, "BRAKE_PRESSURE")
         state["lateral_accel_ms2"] = _number(values, "LATERAL_ACCELERATION")
         state["yaw_rate_deg_s"] = _number(values, "YAW_RATE")
+    elif message == "DAT4_BSI_AEE2010":
+        # Kilométrage absolu, octets 5-7 (24 bits big-endian). Validé sur véhicule :
+        # confirmé par la documentation constructeur PSA du champ 552 et recoupé
+        # par 29 captures matérielles indépendantes du 2026-08-01 au 2026-08-13
+        # (progression strictement monotone 104473 -> 104975 km, cohérente avec
+        # la conduite quotidienne réelle du véhicule).
+        state["odometer_km"] = _number(values, "P015_Com_lTotDst")
     elif message == "Dat_BSI":
         state["reverse"] = _boolean(values, "P103_Com_bRevGear")
         if not state.get("_parking_brake_from_3ad"):
@@ -443,6 +492,7 @@ def _update_state(message: str, values: dict[str, dict[str, Any]], state: dict[s
         state["intake_air_temperature_c"] = _number(values, "P158_Air_tAFS")
         state["idle_setpoint_rpm"] = _number(values, "P022_Com_nSetPLo")
         state["fuel_consumption_candidate_mm3"] = _number(values, "P021_Com_volFlCons")
+        state["climate_pressure_kpa"] = _number(values, "P056_ACCD_p")
     elif message == "Dat2_CMM":
         pressure_switch = _number(values, "P278_Oil_stPSwmp")
         state["oil_pressure_switch"] = bool(pressure_switch) if pressure_switch is not None else None
@@ -501,6 +551,12 @@ OBD_REPLAY_FIELDS: dict[str, tuple[str, float]] = {
     "engine_runtime": ("engine_runtime_s", 1.0),
     "fuel_level": ("fuel_level_pct", 1.0),
     "fuel_rate": ("fuel_rate_lph", 1.0),
+    "fuel_system_status": ("fuel_system_status_raw", 1.0),
+    "secondary_air_status": ("secondary_air_status_raw", 1.0),
+    "oxygen_sensors_present": ("oxygen_sensors_present_raw", 1.0),
+    "obd_standard": ("obd_standard_raw", 1.0),
+    "catalyst_temperature_b1s1": ("catalyst_temperature_b1s1_c", 1.0),
+    "monitor_status_current_cycle": ("monitor_status_current_cycle_raw", 1.0),
     "coolant_temperature": ("coolant_temperature_c", 1.0),
     "intake_air_temperature": ("intake_air_temperature_c", 1.0),
     "engine_oil_temperature": ("oil_temperature_c", 1.0),
@@ -508,11 +564,21 @@ OBD_REPLAY_FIELDS: dict[str, tuple[str, float]] = {
     "ambient_temperature": ("ambient_temperature_c", 1.0),
     "accelerator_pedal_d": ("accelerator_pct", 1.0),
     "accelerator_pedal_e": ("accelerator_secondary_pct", 1.0),
+    "accelerator_pedal_f": ("accelerator_tertiary_pct", 1.0),
     "relative_accelerator_position": ("relative_accelerator_position_pct", 1.0),
     "barometric_pressure": ("atmospheric_pressure_hpa", 10.0),
+    "maximum_maf": ("maximum_maf_g_s", 1.0),
+    "ethanol_fuel_percent": ("ethanol_fuel_pct", 1.0),
+    "absolute_evap_vapor_pressure": ("absolute_evap_vapor_pressure_kpa", 1.0),
+    "evap_vapor_pressure_alt": ("evap_vapor_pressure_alt_pa", 1.0),
+    "emission_requirements": ("emission_requirements_raw", 1.0),
+    "driver_demand_torque": ("driver_demand_torque_pct", 1.0),
+    "actual_engine_torque": ("actual_engine_torque_pct", 1.0),
+    "engine_reference_torque": ("engine_reference_torque_nm", 1.0),
 }
 
 FIAT_500_REPLAY_IDS = {
+    0x0210A006,
     0x0218A006,
     0x0618A001,
     0x0810A000,
@@ -521,6 +587,9 @@ FIAT_500_REPLAY_IDS = {
     0x0C1CA000,
     0x0628A001,
     0x0A18A001,
+    0x0A18A006,
+    0x0A28A000,
+    0x0A28A006,
 }
 
 
@@ -557,7 +626,10 @@ def _update_fiat_500_state(
     """Apply only Fiat fields observed on this VIN and documented independently."""
 
     updated: set[str] = set()
-    if arbitration_id == 0x0618A001 and len(data) >= 4:
+    if arbitration_id == 0x0210A006 and len(data) >= 6:
+        state["fiat_speed_related_raw_candidate"] = int.from_bytes(data[4:6], "big")
+        updated.add("fiat_speed_related_raw_candidate")
+    elif arbitration_id == 0x0618A001 and len(data) >= 4:
         rpm = int.from_bytes(data[2:4], "big")
         if 0 <= rpm <= 8_000:
             state["engine_rpm"] = rpm
@@ -593,7 +665,24 @@ def _update_fiat_500_state(
     elif arbitration_id == 0x0A18A000 and len(data) >= 3:
         state["parking_brake"] = bool(data[0] & 0x20)
         state["driver_door"] = bool(data[2] & 0x08)
-        updated.update({"parking_brake", "driver_door"})
+        state["fiat_contact_on_candidate"] = bool(data[2] & 0x40)
+        state["fiat_ignition_active_candidate"] = bool(data[2] & 0x80)
+        updated.update({
+            "parking_brake",
+            "driver_door",
+            "fiat_contact_on_candidate",
+            "fiat_ignition_active_candidate",
+        })
+        if len(data) >= 7:
+            state["fiat_city_mode_candidate"] = bool(data[4] & 0x08)
+            state["fiat_rear_window_heater_candidate"] = bool(data[6] & 0x10)
+            updated.update({
+                "fiat_city_mode_candidate",
+                "fiat_rear_window_heater_candidate",
+            })
+        if len(data) >= 8:
+            state["fiat_wheel_activity_counter_raw"] = data[7]
+            updated.add("fiat_wheel_activity_counter_raw")
     elif arbitration_id == 0x0C28A000 and len(data) >= 2:
         # Horloge véhicule : octet 0 = heure BCD, octet 1 = minute BCD.
         # Auto-validé par l'incrément d'exactement +1 minute toutes les 60 s réelles.
@@ -605,24 +694,82 @@ def _update_fiat_500_state(
         if minute is not None and 0 <= minute <= 59:
             state["fiat_clock_minute_candidate"] = minute
             updated.add("fiat_clock_minute_candidate")
+        if len(data) >= 6:
+            day = _fiat_bcd_byte(data[2])
+            month = _fiat_bcd_byte(data[3])
+            year_high = _fiat_bcd_byte(data[4])
+            year_low = _fiat_bcd_byte(data[5])
+            if day is not None and 1 <= day <= 31:
+                state["fiat_clock_day_candidate"] = day
+                updated.add("fiat_clock_day_candidate")
+            if month is not None and 1 <= month <= 12:
+                state["fiat_clock_month_candidate"] = month
+                updated.add("fiat_clock_month_candidate")
+            if year_high is not None and year_low is not None:
+                state["fiat_clock_year_candidate"] = year_high * 100 + year_low
+                updated.add("fiat_clock_year_candidate")
     elif arbitration_id == 0x0C1CA000 and len(data) >= 3:
-        state["fiat_start_stop_state_raw"] = data[1]
-        updated.add("fiat_start_stop_state_raw")
+        start_stop_state = data[2]
+        state["fiat_start_stop_state_raw"] = start_stop_state
+        state["fiat_start_stop_active_candidate"] = bool(start_stop_state & 0x20)
+        state["fiat_start_stop_available_candidate"] = (start_stop_state & 0xC0) == 0xC0
+        state["fiat_start_stop_door_or_seatbelt_ok_candidate"] = bool(start_stop_state & 0x04)
+        updated.update({
+            "fiat_start_stop_state_raw",
+            "fiat_start_stop_active_candidate",
+            "fiat_start_stop_available_candidate",
+            "fiat_start_stop_door_or_seatbelt_ok_candidate",
+        })
     elif arbitration_id == 0x0628A001 and len(data) >= 6:
-        state["fiat_clutch_pedal_candidate"] = data[5] == 0x10
+        pedal_state = data[5] & 0x30
+        state["fiat_clutch_pedal_candidate"] = bool(pedal_state & 0x20)
+        state["fiat_accelerator_request_candidate"] = bool(pedal_state & 0x10)
+        state["fiat_clutch_accelerator_state_raw"] = pedal_state
         state["fiat_battery_voltage_candidate_v"] = round(data[3] * 0.1, 1)
-        updated.update({"fiat_clutch_pedal_candidate", "fiat_battery_voltage_candidate_v"})
+        updated.update({
+            "fiat_clutch_pedal_candidate",
+            "fiat_accelerator_request_candidate",
+            "fiat_clutch_accelerator_state_raw",
+            "fiat_battery_voltage_candidate_v",
+        })
     elif arbitration_id == 0x0A18A001 and len(data) >= 7:
         # Nibble bas de l'octet 3 : change toutes les 100-300 ms, bien trop vite
         # pour un rapport de boîte. Signification réelle non identifiée.
         state["fiat_a1_fast_nibble_candidate"] = data[3] & 0x0F
         state["fiat_mode_flag_candidate"] = bool(data[4])
         state["fiat_mode_analog_candidate_raw"] = data[5]
+        state["fiat_electrical_load_candidate_raw"] = int.from_bytes(data[4:6], "big")
         updated.update({
             "fiat_a1_fast_nibble_candidate",
             "fiat_mode_flag_candidate",
             "fiat_mode_analog_candidate_raw",
+            "fiat_electrical_load_candidate_raw",
         })
+    elif arbitration_id == 0x0A18A006 and len(data) >= 4:
+        state["fiat_engine_running_candidate"] = data[0] == 1
+        state["fiat_speed_0a18a006_candidate_kph"] = round(
+            int.from_bytes(data[2:4], "big") / 16.0,
+            2,
+        )
+        updated.update({
+            "fiat_engine_running_candidate",
+            "fiat_speed_0a18a006_candidate_kph",
+        })
+    elif arbitration_id == 0x0A28A000 and len(data) >= 2:
+        state["fiat_speed_0a28a000_candidate_kph"] = round(
+            int.from_bytes(data[0:2], "big") / 16.0,
+            2,
+        )
+        updated.add("fiat_speed_0a28a000_candidate_kph")
+        if len(data) >= 4:
+            state["fiat_wheel_activity_counter_raw"] = data[3]
+            updated.add("fiat_wheel_activity_counter_raw")
+    elif arbitration_id == 0x0A28A006 and len(data) >= 4:
+        state["fiat_speed_0a28a006_candidate_kph"] = round(
+            int.from_bytes(data[2:4], "big") / 16.0,
+            2,
+        )
+        updated.add("fiat_speed_0a28a006_candidate_kph")
     return updated
 
 
@@ -1176,6 +1323,64 @@ def _events(points: list[ReplaySample]) -> list[ReplayEvent]:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="lights", label="Feux de route allumés" if point.high_beam else "Feux de route éteints", value=point.high_beam))
             if point.brake_active and not previous.brake_active:
                 events.append(ReplayEvent(t_ms=point.t_ms, kind="brake", label="Frein conducteur", value=True))
+            if (
+                point.fiat_clutch_pedal_candidate is not None
+                and point.fiat_clutch_pedal_candidate != previous.fiat_clutch_pedal_candidate
+            ):
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="clutch",
+                    label=(
+                        "Embrayage enfoncé"
+                        if point.fiat_clutch_pedal_candidate
+                        else "Embrayage relâché"
+                    ),
+                    value=point.fiat_clutch_pedal_candidate,
+                ))
+            if (
+                point.fiat_start_stop_available_candidate is not None
+                and point.fiat_start_stop_available_candidate
+                != previous.fiat_start_stop_available_candidate
+            ):
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="start_stop",
+                    label=(
+                        "Start&Stop disponible"
+                        if point.fiat_start_stop_available_candidate
+                        else "Start&Stop indisponible"
+                    ),
+                    value=point.fiat_start_stop_available_candidate,
+                ))
+            if (
+                point.fiat_start_stop_active_candidate is not None
+                and point.fiat_start_stop_active_candidate
+                != previous.fiat_start_stop_active_candidate
+            ):
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="start_stop",
+                    label=(
+                        "Start&Stop activé"
+                        if point.fiat_start_stop_active_candidate
+                        else "Start&Stop désactivé"
+                    ),
+                    value=point.fiat_start_stop_active_candidate,
+                ))
+            if (
+                point.fiat_engine_running_candidate is not None
+                and point.fiat_engine_running_candidate != previous.fiat_engine_running_candidate
+            ):
+                events.append(ReplayEvent(
+                    t_ms=point.t_ms,
+                    kind="engine",
+                    label=(
+                        "Moteur en fonctionnement"
+                        if point.fiat_engine_running_candidate
+                        else "Moteur arrêté"
+                    ),
+                    value=point.fiat_engine_running_candidate,
+                ))
             if point.cruise_probable != previous.cruise_probable:
                 events.append(
                     ReplayEvent(
@@ -1281,6 +1486,94 @@ def _estimate_fuel_consumption(
         f"{distance_km:.1f} km. Ce n'est pas un débitmètre instantané ; fiable uniquement sur plusieurs "
         "kilomètres sans plein pendant l'essai."
     )
+
+
+def _compute_can_fuel_consumption(points: list[ReplaySample]) -> bool:
+    """Débit et consommation dérivés du compteur de volume carburant 0x488.
+
+    P021_Com_volFlCons n'est pas une mesure instantanée : c'est un compteur de
+    volume cumulé qui reboucle modulo 255 (comportement confirmé sur capture
+    véhicule, cf. database/psa/dbc/peugeot_308_t9_2018_checksums.yaml). La
+    valeur brute prise seule reste donc à juste titre marquée "rejetée" dans
+    FIELD_QUALITY/sensor_metadata — ce sont ses *incréments* qui portent
+    l'information : reconstruits ici entre échantillons consécutifs, lissés
+    sur une fenêtre glissante pour amortir la quantification (un tick vaut
+    80 mm³ = 0,00008 L), puis rapportés à la vitesse (0x38D) pour obtenir un
+    L/100km.
+    """
+    # Chaque entrée de fenêtre est (début d'intervalle, fin d'intervalle,
+    # volume consommé pendant cet intervalle) ; le début est nécessaire pour
+    # que la durée couverte par la fenêtre inclue le tout premier intervalle
+    # (sinon le débit calculé serait systématiquement surestimé).
+    window: list[tuple[int, int, float]] = []
+    trip_total_l = 0.0
+    previous_raw: float | None = None
+    previous_t_ms: int | None = None
+    populated = False
+
+    for point in points:
+        raw = point.fuel_consumption_candidate_mm3
+        if raw is not None and previous_raw is not None and previous_t_ms is not None:
+            gap_ms = point.t_ms - previous_t_ms
+            if 0 < gap_ms <= FUEL_MAX_GAP_MS:
+                delta_mm3 = (raw - previous_raw) % FUEL_TICK_MODULUS_MM3
+                delta_l = delta_mm3 / 1_000_000
+                implied_rate_lph = delta_l * 3_600_000 / gap_ms
+                if implied_rate_lph <= FUEL_IMPLAUSIBLE_RATE_LPH:
+                    trip_total_l += delta_l
+                    window.append((previous_t_ms, point.t_ms, delta_l))
+        if raw is not None:
+            previous_raw = raw
+            previous_t_ms = point.t_ms
+            point.can_trip_fuel_l = round(trip_total_l, 4)
+            populated = True
+
+        window[:] = [
+            (start_ms, end_ms, delta_l) for start_ms, end_ms, delta_l in window
+            if point.t_ms - end_ms <= FUEL_RATE_WINDOW_MS
+        ]
+        if window:
+            window_span_ms = window[-1][1] - window[0][0]
+            if window_span_ms > 0:
+                rate_lph = sum(delta_l for _, _, delta_l in window) * 3_600_000 / window_span_ms
+                point.can_fuel_rate_lph = round(rate_lph, 3)
+                if point.speed_kph is not None and point.speed_kph >= FUEL_MIN_SPEED_FOR_L100KM_KPH:
+                    point.can_instant_consumption_l_100km = round(rate_lph / point.speed_kph * 100, 2)
+
+    return populated
+
+
+def _summarize_can_fuel_consumption(
+    points: list[ReplaySample],
+    distance_m: float,
+    available: bool,
+) -> tuple[float | None, float | None, str | None]:
+    if not available:
+        return None, None, None
+    trip_total_l = next(
+        (point.can_trip_fuel_l for point in reversed(points) if point.can_trip_fuel_l is not None),
+        None,
+    )
+    if trip_total_l is None:
+        return None, None, "Aucun incrément exploitable du compteur 0x488 sur cette capture."
+
+    distance_km = distance_m / 1000
+    if distance_km < 0.3:
+        return trip_total_l, None, "Trajet trop court pour une moyenne L/100km fiable."
+
+    average = trip_total_l / distance_km * 100
+    note = (
+        f"Calculée à partir du compteur de volume carburant 0x488 (incréments modulo, "
+        f"lissés sur {FUEL_RATE_WINDOW_MS} ms) rapportée à la distance reconstruite "
+        f"({distance_km:.2f} km). Contrairement à l'estimation par flotteur ci-dessus, c'est "
+        "un débitmètre reconstruit, exploitable dès quelques centaines de mètres."
+    )
+    if not 0 <= average <= 40:
+        return trip_total_l, None, (
+            f"{note} Moyenne hors plage plausible ({average:.1f} L/100km) : probablement une "
+            "resynchronisation du compteur pendant la capture."
+        )
+    return trip_total_l, round(average, 2), note
 
 
 def _build_replay(path: Path, session_id: str) -> ReplayData:
@@ -1506,6 +1799,14 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
             "cruise_setpoint_step_kph",
         })
 
+    can_fuel_available = _compute_can_fuel_consumption(points)
+    if can_fuel_available:
+        available_fields.update({
+            "can_fuel_rate_lph",
+            "can_instant_consumption_l_100km",
+            "can_trip_fuel_l",
+        })
+
     steering_zero, distance_m, route_bounds = _reconstruct_route(points)
     raw_distances = [point.distance_m for point in points]
     gps_points = _parse_gps_points(gps_events, first_frame_us, duration_ms)
@@ -1530,6 +1831,9 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         )
         route_method = "driver_confirmed_osrm"
     estimated_fuel_consumption_l_100km, fuel_consumption_note = _estimate_fuel_consumption(points, distance_m)
+    can_trip_fuel_total_l, can_average_fuel_consumption_l_100km, can_fuel_consumption_note = (
+        _summarize_can_fuel_consumption(points, distance_m, can_fuel_available)
+    )
     if used_gps_point_count:
         available_fields.update({"latitude", "longitude", "gps_accuracy_m"})
         if any(point.altitude_m is not None for point in gps_points):
@@ -1762,6 +2066,9 @@ def _build_replay(path: Path, session_id: str) -> ReplayData:
         distance_km=round(distance_m / 1000, 3),
         estimated_fuel_consumption_l_100km=estimated_fuel_consumption_l_100km,
         fuel_consumption_note=fuel_consumption_note,
+        can_average_fuel_consumption_l_100km=can_average_fuel_consumption_l_100km,
+        can_trip_fuel_total_l=can_trip_fuel_total_l,
+        can_fuel_consumption_note=can_fuel_consumption_note,
         gps_available=bool(gps_points),
         gps_point_count=len(gps_points),
         route_method=route_method,

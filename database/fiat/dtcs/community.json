@@ -1,0 +1,315 @@
+{
+  "_meta": {
+    "catalog": "fiat_community",
+    "entry_count": 100,
+    "imported": "2026-08-22",
+    "language": "mixed (English/Italian)",
+    "license": "MIT",
+    "original_source": "https://dot.report/dtc/",
+    "revision": "b56a07a2ffc0d574e68e6426ff55418ee4173b7a",
+    "scope": "Community Fiat manufacturer-code labels. Not filtered for the Fiat 500, engine family or model year; always cross-check against the emitting ECU.",
+    "source": "https://github.com/kierandrewett/obd"
+  },
+  "codes": {
+    "B2253": {
+      "title": "Circuito bloccaggio cortocircuito verso positivo"
+    },
+    "B2255": {
+      "title": "Tempo scaduto richiesta sistema lavavetri anteriore"
+    },
+    "B2258": {
+      "title": "Circuito rele sistema lavafari cortocircuito verso positivo"
+    },
+    "B2260": {
+      "title": "Circuito motorino portiera cortocircuito verso positivo"
+    },
+    "B2261": {
+      "title": "Interruttore luci di parcheggio"
+    },
+    "B2262": {
+      "title": "Tempo scaduto tergicristallo da posizione di arresto a posizione di arresto"
+    },
+    "B2263": {
+      "title": "Circuito ingresso radio cortocircuito verso positivo"
+    },
+    "B2264": {
+      "title": "Interruttore antinebbia cortocircuito verso negativo"
+    },
+    "B2265": {
+      "title": "Apertura cortocircuito verso negativo"
+    },
+    "B2267": {
+      "title": "Valvola di miscelazione destra"
+    },
+    "B2268": {
+      "title": "Comando A/C sul volante circuito aperto"
+    },
+    "B2269": {
+      "title": "Comando A/C sul volante cortocircuito verso negativo"
+    },
+    "B2270": {
+      "title": "Superamento tempo massimo consentito chiusura portiera elettrica scorrevole"
+    },
+    "B2271": {
+      "title": "La portiera scorrevole elettrica non ha raggiunto la posizione di massima apertura durante lautodiagnosi"
+    },
+    "P1003": {
+      "title": "Ext. influence on quantity"
+    },
+    "P1101": {
+      "title": "Pressure loss in the boost circuit"
+    },
+    "P1105": {
+      "title": "Altitude sensor"
+    },
+    "P1106": {
+      "title": "Boost pressure sensor"
+    },
+    "P1108": {
+      "title": "Electric fan - assembly 1"
+    },
+    "P1109": {
+      "title": "Electric fan - assembly 2"
+    },
+    "P1112": {
+      "title": "Control fuel pressure"
+    },
+    "P1118": {
+      "title": "Diesel pressure control"
+    },
+    "P1121": {
+      "title": "Throttle position potentiometer 1 [signal implausible]"
+    },
+    "P1122": {
+      "title": "Throttle position sensor [signal implausible]"
+    },
+    "P1132": {
+      "title": "Sensor of catalyst temperature"
+    },
+    "P1133": {
+      "title": "Oxygen sensor B1-S1"
+    },
+    "P1135": {
+      "title": "Oxygen sensor B1-S2"
+    },
+    "P1138": {
+      "title": "Diesel pressure circuit"
+    },
+    "P1141": {
+      "title": "Worheiwid. 1 below"
+    },
+    "P1153": {
+      "title": "Lambda 2 signal above catal.(deviated)"
+    },
+    "P1155": {
+      "title": "Preheating resistance 2 above catal."
+    },
+    "P1169": {
+      "title": "Voltage condition 1"
+    },
+    "P1170": {
+      "title": "Mixture ratio [Minimum lean fuel]"
+    },
+    "P1173": {
+      "title": "Mixture 1 stength (additive)"
+    },
+    "P1175": {
+      "title": "Mixture 2 stength (multiplicative)"
+    },
+    "P1177": {
+      "title": "Mixture 1 stength (multiplicative)"
+    },
+    "P1221": {
+      "title": "Accelerator potent. track 1"
+    },
+    "P1222": {
+      "title": "Accelerator potent. track 2"
+    },
+    "P1226": {
+      "title": "Accelerator pedal movement"
+    },
+    "P1300": {
+      "title": "Relais pre/after heating"
+    },
+    "P1301": {
+      "title": "Classification injector"
+    },
+    "P1314": {
+      "title": "Vertical acc."
+    },
+    "P1320": {
+      "title": "Timing/revs synchronisation"
+    },
+    "P1325": {
+      "title": "Knock measuring circuit"
+    },
+    "P1326": {
+      "title": "Knock control"
+    },
+    "P1336": {
+      "title": "Torque control(request)"
+    },
+    "P1337": {
+      "title": "Torque control(comparision)"
+    },
+    "P1404": {
+      "title": "Circuit TL4226"
+    },
+    "P1408": {
+      "title": "Coolant heating circuit"
+    },
+    "P1421": {
+      "title": "Catalytic converter 1 temperature"
+    },
+    "P1425": {
+      "title": "Catalytic converter 2 temperature"
+    },
+    "P1429": {
+      "title": "Pressure sensor discharging"
+    },
+    "P1435": {
+      "title": "Additve addition system"
+    },
+    "P1446": {
+      "title": "Additive"
+    },
+    "P1448": {
+      "title": "Particle filter (FAP)"
+    },
+    "P1451": {
+      "title": "Intake air heater control"
+    },
+    "P1458": {
+      "title": "Water valve"
+    },
+    "P1504": {
+      "title": "Input key"
+    },
+    "P1511": {
+      "title": "Battery voltage below sensing"
+    },
+    "P1512": {
+      "title": "Driver minute block"
+    },
+    "P1513": {
+      "title": "Idle speed regulator"
+    },
+    "P1519": {
+      "title": "Cooler control unit"
+    },
+    "P1529": {
+      "title": "Clutch switch"
+    },
+    "P1531": {
+      "title": "A/C compressor relay"
+    },
+    "P1536": {
+      "title": "ESP system"
+    },
+    "P1555": {
+      "title": "Brake/Accelerate signal implausible"
+    },
+    "P1603": {
+      "title": "Control Unit Power Supply"
+    },
+    "P1604": {
+      "title": "Main relay"
+    },
+    "P1608": {
+      "title": "Engine coolant temperature indicator"
+    },
+    "P1612": {
+      "title": "Fuel filter heater relay"
+    },
+    "P1613": {
+      "title": "Fuel contain water"
+    },
+    "P1653": {
+      "title": "Camshaft position (phase) regulation"
+    },
+    "P1655": {
+      "title": "Control module malfunction"
+    },
+    "P1664": {
+      "title": "Repeat throttle angle [over max. value]"
+    },
+    "P1673": {
+      "title": "Voltage condition 1"
+    },
+    "P1674": {
+      "title": "Voltage condition 2"
+    },
+    "P1680": {
+      "title": "Motorised throttle(spring)"
+    },
+    "P1682": {
+      "title": "Motorised throttle"
+    },
+    "P1683": {
+      "title": "Motorised throttle(recovery)"
+    },
+    "P1685": {
+      "title": "Motorised throttle(without learn)"
+    },
+    "P1687": {
+      "title": "Throttle driven [signal implausible]"
+    },
+    "P1688": {
+      "title": "Motorised throttle(2nd idle learn)"
+    },
+    "P1689": {
+      "title": "Motorised throttle(self-compensation)"
+    },
+    "P1690": {
+      "title": "Safety cut-off"
+    },
+    "P1702": {
+      "title": "Connector lamp from A/T"
+    },
+    "P1703": {
+      "title": "Engine shut-down from aut. gearbox"
+    },
+    "P1704": {
+      "title": "Auto transmission"
+    },
+    "P1705": {
+      "title": "Auto transmission RPM Regulation"
+    },
+    "P1706": {
+      "title": "Throttle signal"
+    },
+    "P1707": {
+      "title": "Pulley check"
+    },
+    "P1708": {
+      "title": "Secondary pressure check"
+    },
+    "P1709": {
+      "title": "Chutch check"
+    },
+    "P1712": {
+      "title": "Lever Release solenoid"
+    },
+    "P1713": {
+      "title": "Neutral Signal to engine ECU"
+    },
+    "P1722": {
+      "title": "Idle Increase Signal to Engine ECU"
+    },
+    "U1715": {
+      "title": "Tensione batteria"
+    },
+    "U2003": {
+      "title": "Sistema audio - unita CD/DJ non risponde"
+    },
+    "U2522": {
+      "title": "Guasto di comunicazione tra ECU ABS e il modulo di comando cambio"
+    },
+    "U2526": {
+      "title": "Bus comunicazione CAN"
+    },
+    "U2607": {
+      "title": "Rete comunicazione veicolo"
+    }
+  }
+}

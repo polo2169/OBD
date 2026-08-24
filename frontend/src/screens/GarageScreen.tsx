@@ -8,7 +8,7 @@ import type {
 } from "../types";
 import type { View } from "../navigation";
 
-type GarageEventFilter = "all" | "diagnostic" | "capture" | "identity";
+type GarageEventFilter = "all" | "diagnostic" | "capture" | "maintenance" | "identity";
 
 type GarageScreenProps = {
   vehicleLinkedSessions: DiscoverySession[];
@@ -30,6 +30,7 @@ type GarageScreenProps = {
   onSelectReport: (scanId: string) => Promise<void>;
   onLoadReplay: (sessionId: string, force?: boolean) => Promise<void>;
   onSelectIdentityProfile: (profile: string) => void;
+  onAddVehicle: () => void;
   onNavigate: (view: View) => void;
   onSelectVehicle: (vin: string) => Promise<void>;
   onFilterChange: (filter: GarageEventFilter) => void;
@@ -56,6 +57,7 @@ export function GarageScreen({
   onSelectReport,
   onLoadReplay,
   onSelectIdentityProfile,
+  onAddVehicle,
   onNavigate,
   onSelectVehicle,
   onFilterChange,
@@ -72,6 +74,7 @@ export function GarageScreen({
     { key: "all", label: "Tout" },
     { key: "diagnostic", label: "Diagnostics" },
     { key: "capture", label: "Trajets & captures" },
+    { key: "maintenance", label: "Entretien" },
     { key: "identity", label: "Identité" },
   ];
 
@@ -82,6 +85,8 @@ export function GarageScreen({
     } else if (entry.sessionId) {
       await onLoadReplay(entry.sessionId);
       onNavigate("replay");
+    } else if (entry.kind === "maintenance") {
+      onNavigate("maintenance");
     } else {
       if (selectedVehicle) onSelectIdentityProfile(selectedVehicle.vehicle_profile);
       onNavigate("identity");
@@ -110,7 +115,7 @@ export function GarageScreen({
           </div>
         </section>
       ) : (
-        <section className="panel"><EmptyState title="Aucun véhicule chargé" text="Lis le VIN pour créer un dossier véhicule fiable avant une capture ou un diagnostic." action={<button className="primary-button" onClick={() => onNavigate("identity")}>Identifier le véhicule</button>} /></section>
+        <section className="panel"><EmptyState title="Aucun véhicule chargé" text="Lis le VIN pour créer un dossier véhicule fiable avant une capture ou un diagnostic." action={<button className="primary-button" onClick={onAddVehicle}>Identifier le véhicule</button>} /></section>
       )}
 
       <section className="garage-workspace">
@@ -127,19 +132,19 @@ export function GarageScreen({
               </button>;
             })}
           </div>
-          <button className="garage-add-vehicle" onClick={() => onNavigate("identity")}>＋ Ajouter par lecture VIN</button>
+          <button className="garage-add-vehicle" disabled={capture?.active} onClick={onAddVehicle}>＋ Ajouter par lecture VIN</button>
           {capture?.active && <p className="garage-lock-note">Le changement de véhicule est bloqué pendant l’enregistrement en cours.</p>}
         </aside>
 
         <section className="panel garage-timeline-panel">
           <div className="section-heading garage-timeline-heading">
-            <div><span className="eyebrow">Historique consolidé</span><h2>Chronologie du véhicule</h2><p>Diagnostics, captures et identité restent séparés des autres VIN.</p></div>
+            <div><span className="eyebrow">Historique consolidé</span><h2>Chronologie du véhicule</h2><p>Diagnostics, captures, entretiens et identité restent séparés des autres VIN.</p></div>
             <div className="garage-filter-tabs">{filterOptions.map((option) => <button className={eventFilter === option.key ? "active" : ""} onClick={() => onFilterChange(option.key)} key={option.key}>{option.label}</button>)}</div>
           </div>
           <div className="vehicle-timeline">
             {vehicleTimeline.map((entry) => <button className={`timeline-entry ${entry.kind} ${entry.severity ?? "neutral"}`} onClick={() => void openTimelineEntry(entry)} key={entry.id}>
               <time>{formatDate(entry.timestampMs * 1000)}</time>
-              <i><span>{entry.kind === "diagnostic" ? "DTC" : entry.kind === "capture" ? "CAN" : "VIN"}</span></i>
+              <i><span>{entry.kind === "diagnostic" ? "DTC" : entry.kind === "capture" ? "CAN" : entry.kind === "maintenance" ? "ENT" : "VIN"}</span></i>
               <div><strong>{entry.title}</strong><p>{entry.description}</p></div><span>{entry.badge}</span><b>→</b>
             </button>)}
             {!vehicleTimeline.length && <EmptyState title="Aucun événement dans cette vue" text="Change le filtre ou réalise une première opération sur le véhicule chargé." />}

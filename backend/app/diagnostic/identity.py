@@ -26,6 +26,7 @@ WMI_MANUFACTURERS = {
     "ZFA": "Fiat",
     "ZFB": "Fiat",
     "3C3": "Fiat",
+    "VF1": "Renault",
 }
 
 
@@ -60,6 +61,56 @@ def decode_obd_vin(response: bytes) -> str:
 
 def manufacturer_from_vin(vin: str) -> str | None:
     return WMI_MANUFACTURERS.get(vin[:3].upper()) if validate_vin(vin) else None
+
+
+def create_manual_vehicle_identity(profile_key: str, vin: str) -> VehicleIdentityResult:
+    """Create a local garage identity without touching the vehicle bus."""
+    normalized_vin = vin.strip().upper()
+    if not validate_vin(normalized_vin):
+        raise ValueError("VIN manuel invalide : saisir exactement 17 caractères sans I, O ni Q.")
+
+    vehicle = _profile(profile_key)
+    trace = SessionWriter()
+    detected_manufacturer = manufacturer_from_vin(normalized_vin)
+    configured_manufacturer = str(vehicle.get("manufacturer", "Inconnu"))
+    profile_match = (
+        detected_manufacturer.casefold() == configured_manufacturer.casefold()
+        if detected_manufacturer
+        else None
+    )
+    result = VehicleIdentityResult(
+        vehicle_profile=profile_key,
+        manufacturer=configured_manufacturer,
+        model=str(vehicle.get("model", "Inconnu")),
+        year=vehicle.get("year"),
+        transport="manual:no-vehicle-io",
+        found=True,
+        vin=normalized_vin,
+        wmi=normalized_vin[:3],
+        detected_manufacturer=detected_manufacturer,
+        profile_match=profile_match,
+        warnings=[
+            "VIN saisi manuellement : aucune trame n'a été émise vers le véhicule. "
+            "Le VIN est validé syntaxiquement, mais doit être contrôlé sur la carte grise."
+        ],
+    )
+    if profile_match is False:
+        result.warnings.append(
+            f"Le WMI {result.wmi} indique {detected_manufacturer}, "
+            f"mais le profil sélectionné est {configured_manufacturer}."
+        )
+    trace.write({
+        "type": "vehicle_identity_manual",
+        "vehicle_profile": profile_key,
+        "vin": normalized_vin,
+        "wmi": result.wmi,
+        "detected_manufacturer": detected_manufacturer,
+        "profile_match": profile_match,
+        "vehicle_io": False,
+    })
+    result.debug = DebugSummary(**trace.finish())
+    save_identity(result)
+    return result
 
 
 def _decode_obd_field(response: bytes, pid: int, codec: str) -> str:

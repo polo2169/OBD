@@ -110,6 +110,8 @@ def test_live_6_14_policy_only_allows_obd_read_modes_and_flow_control():
     assert authorize_live_obd_can_frame(0x18DB33F1, True, bytes.fromhex("0201000000000000")).allowed
     assert authorize_live_obd_can_frame(0x18DA10F1, True, bytes.fromhex("0209020000000000")).allowed
     assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0209020000000000")).allowed
+    assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0103000000000000")).allowed
+    assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("0107000000000000")).allowed
     assert authorize_live_obd_can_frame(0x7E0, False, bytes.fromhex("3008000000000000")).allowed
     assert authorize_live_obd_can_frame(0x18DA10F1, True, bytes.fromhex("3008000000000000")).allowed
 

@@ -116,6 +116,9 @@ def _decode_dtcs(
             status_hex=f"{item.status:02X}",
             status_labels=item.status_labels,
             title=definition.get("title"),
+            description=definition.get("description"),
+            common_causes=definition.get("common_causes", []),
+            repair_difficulty=definition.get("repair_difficulty"),
             catalogs=definition.get("catalogs", []),
             source=definition.get("source"),
             confidence=definition.get("confidence", "raw_only"),
@@ -471,7 +474,12 @@ def read_engine_obd_dtcs(ecu_key: str = "engine", vehicle_profile: str | None = 
         raise ValueError(f"Adresses non documentées pour {ecu.name}.")
 
     trace = SessionWriter() if settings.debug_sessions_enabled else None
-    transport = build_transport(_trace_sink(trace) if trace else None)
+    transport = build_transport(
+        _trace_sink(trace) if trace else None,
+        receive_buses=("default", "live"),
+        require_diagnostic_can=False,
+        vehicle_profile=profile_key,
+    )
     if trace:
         trace.write({"type": "obd_dtc_read_start", "ecu": ecu_key})
 
@@ -487,6 +495,7 @@ def read_engine_obd_dtcs(ecu_key: str = "engine", vehicle_profile: str | None = 
             ecu.response_id,
             timeout=settings.diagnostic_timeout,
             read_only=settings.read_only,
+            tx_bus="live",
             flow_control_id=ecu.flow_control_id,
             flow_control_blocksize=ecu.flow_control_blocksize,
             tx_padding=ecu.isotp_tx_padding,
@@ -510,6 +519,9 @@ def read_engine_obd_dtcs(ecu_key: str = "engine", vehicle_profile: str | None = 
                         status_hex="00",
                         status_labels=[],
                         title=definition.get("title"),
+                        description=definition.get("description"),
+                        common_causes=definition.get("common_causes", []),
+                        repair_difficulty=definition.get("repair_difficulty"),
                         catalogs=definition.get("catalogs", []),
                         source=definition.get("source"),
                         confidence=definition.get("confidence", "raw_only"),

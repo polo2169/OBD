@@ -121,6 +121,9 @@ export type DtcValue = {
   status_hex: string;
   status_labels: string[];
   title?: string | null;
+  description?: string | null;
+  common_causes?: string[];
+  repair_difficulty?: string | null;
   catalogs: string[];
   source?: string | null;
   confidence: string;
@@ -176,10 +179,117 @@ export type ObservedDtc = {
   note?: string | null;
   source: string;
   title?: string | null;
+  description?: string | null;
+  common_causes?: string[];
+  repair_difficulty?: string | null;
   catalogs: string[];
   catalog_source?: string | null;
   confidence: string;
   recorded_at: string;
+};
+
+export type OilLogEntry = {
+  id: string;
+  mileage_km: number;
+  mileage_source: string;
+  oil_level_note?: string | null;
+  oil_added_l?: number | null;
+  note?: string | null;
+  vin?: string | null;
+  vehicle_profile?: string | null;
+  recorded_at: string;
+};
+
+export type OilLogEntryInput = {
+  mileage_km: number;
+  mileage_source?: string;
+  oil_level_note?: string | null;
+  oil_added_l?: number | null;
+  note?: string | null;
+};
+
+export type MaintenancePart = {
+  name: string;
+  manufacturer?: string | null;
+  part_number?: string | null;
+  serial_number?: string | null;
+  removed_part_number?: string | null;
+  removed_serial_number?: string | null;
+  quantity: number;
+  unit_price?: number | null;
+  warranty_until?: string | null;
+  note?: string | null;
+};
+
+export type MaintenanceDocument = {
+  id: string;
+  kind: "invoice" | "receipt" | "photo" | "warranty" | "other";
+  original_name: string;
+  media_type: string;
+  size_bytes: number;
+  sha256: string;
+  uploaded_at: string;
+  download_url: string;
+};
+
+export type MaintenanceRecordInput = {
+  vin: string;
+  vehicle_profile?: string | null;
+  performed_at: string;
+  mileage_km: number;
+  mileage_source: "manual" | "can_signal" | "invoice" | "history_estimate";
+  mileage_note?: string | null;
+  title: string;
+  category: string;
+  workshop?: string | null;
+  invoice_number?: string | null;
+  invoice_total?: number | null;
+  currency: string;
+  labor_hours?: number | null;
+  notes?: string | null;
+  parts: MaintenancePart[];
+};
+
+export type MaintenanceMileageObservation = {
+  observed_at: string;
+  mileage_km: number;
+  source: "can_session" | "maintenance" | "invoice" | "oil_log";
+  label: string;
+};
+
+export type MaintenanceMileageEstimate = {
+  vin: string;
+  requested_date: string;
+  mileage_km?: number | null;
+  method: "exact_date" | "interpolated" | "nearest_before" | "nearest_after" | "unavailable";
+  confidence: "high" | "medium" | "low" | "unavailable";
+  is_estimate: boolean;
+  message: string;
+  observations: MaintenanceMileageObservation[];
+};
+
+export type MaintenanceInvoiceAnalysis = {
+  performed_at?: string | null;
+  mileage_km?: number | null;
+  title?: string | null;
+  category: string;
+  workshop?: string | null;
+  invoice_number?: string | null;
+  invoice_total?: number | null;
+  currency: string;
+  parts: MaintenancePart[];
+  confidence: number;
+  ocr_used: boolean;
+  extracted_text_excerpt: string;
+  warnings: string[];
+};
+
+export type MaintenanceRecord = MaintenanceRecordInput & {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+  documents: MaintenanceDocument[];
 };
 
 export type Ecu = {
@@ -283,7 +393,7 @@ export type DiagnosticVehicle = {
 
 export type VehicleTimelineEntry = {
   id: string;
-  kind: "diagnostic" | "capture" | "identity";
+  kind: "diagnostic" | "capture" | "identity" | "maintenance";
   timestampMs: number;
   title: string;
   description: string;
@@ -407,6 +517,9 @@ export type VehicleProfileSummary = {
   confidence: string;
   identity_scope: "full_profile" | "identity_only" | string;
   vin_methods: string[];
+  identity_protocols: string[];
+  identity_buses: string[];
+  can_bitrate?: number | null;
   notes: string[];
 };
 
@@ -956,6 +1069,7 @@ export type BehavioralAnalysis = {
 export type ReplaySample = {
   t_ms: number;
   speed_kph?: number | null;
+  odometer_km?: number | null;
   engine_rpm?: number | null;
   engine_load_pct?: number | null;
   absolute_engine_load_pct?: number | null;
@@ -980,16 +1094,35 @@ export type ReplaySample = {
   engine_runtime_s?: number | null;
   fuel_level_pct?: number | null;
   fuel_rate_lph?: number | null;
+  fuel_system_status_raw?: number | null;
+  secondary_air_status_raw?: number | null;
+  oxygen_sensors_present_raw?: number | null;
+  obd_standard_raw?: number | null;
+  catalyst_temperature_b1s1_c?: number | null;
+  monitor_status_current_cycle_raw?: number | null;
   steering_angle_deg?: number | null;
   steering_rate_deg_s?: number | null;
   driver_torque?: number | null;
   accelerator_pct?: number | null;
   accelerator_secondary_pct?: number | null;
+  accelerator_tertiary_pct?: number | null;
   relative_accelerator_position_pct?: number | null;
   engine_torque_nm?: number | null;
+  driver_demand_torque_pct?: number | null;
+  actual_engine_torque_pct?: number | null;
+  engine_reference_torque_nm?: number | null;
+  maximum_maf_g_s?: number | null;
+  ethanol_fuel_pct?: number | null;
+  absolute_evap_vapor_pressure_kpa?: number | null;
+  evap_vapor_pressure_alt_pa?: number | null;
+  emission_requirements_raw?: number | null;
   idle_setpoint_rpm?: number | null;
   fuel_consumption_candidate_mm3?: number | null;
   virtual_fuel_consumption_candidate_mm3?: number | null;
+  climate_pressure_kpa?: number | null;
+  can_fuel_rate_lph?: number | null;
+  can_instant_consumption_l_100km?: number | null;
+  can_trip_fuel_l?: number | null;
   current_gear?: number | null;
   target_gear?: number | null;
   gear_shift_active?: boolean | null;
@@ -1081,9 +1214,28 @@ export type ReplaySample = {
   speed_389_candidate_raw?: number | null;
   fiat_clock_hour_candidate?: number | null;
   fiat_clock_minute_candidate?: number | null;
+  fiat_clock_day_candidate?: number | null;
+  fiat_clock_month_candidate?: number | null;
+  fiat_clock_year_candidate?: number | null;
   fiat_start_stop_state_raw?: number | null;
+  fiat_start_stop_active_candidate?: boolean | null;
+  fiat_start_stop_available_candidate?: boolean | null;
+  fiat_start_stop_door_or_seatbelt_ok_candidate?: boolean | null;
   fiat_clutch_pedal_candidate?: boolean | null;
+  fiat_accelerator_request_candidate?: boolean | null;
+  fiat_clutch_accelerator_state_raw?: number | null;
   fiat_battery_voltage_candidate_v?: number | null;
+  fiat_contact_on_candidate?: boolean | null;
+  fiat_ignition_active_candidate?: boolean | null;
+  fiat_city_mode_candidate?: boolean | null;
+  fiat_rear_window_heater_candidate?: boolean | null;
+  fiat_engine_running_candidate?: boolean | null;
+  fiat_speed_related_raw_candidate?: number | null;
+  fiat_speed_0a18a006_candidate_kph?: number | null;
+  fiat_speed_0a28a000_candidate_kph?: number | null;
+  fiat_speed_0a28a006_candidate_kph?: number | null;
+  fiat_wheel_activity_counter_raw?: number | null;
+  fiat_electrical_load_candidate_raw?: number | null;
   fiat_a1_fast_nibble_candidate?: number | null;
   fiat_mode_flag_candidate?: boolean | null;
   fiat_mode_analog_candidate_raw?: number | null;
@@ -1129,6 +1281,9 @@ export type ReplayData = {
   distance_km: number;
   estimated_fuel_consumption_l_100km?: number | null;
   fuel_consumption_note?: string | null;
+  can_average_fuel_consumption_l_100km?: number | null;
+  can_trip_fuel_total_l?: number | null;
+  can_fuel_consumption_note?: string | null;
   gps_available: boolean;
   gps_point_count: number;
   route_method: string;
