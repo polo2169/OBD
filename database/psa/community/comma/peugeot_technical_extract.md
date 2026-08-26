@@ -155,9 +155,9 @@ Le message `Dat_CLIM`, malgré son nom historique, est émis par le BSI et conti
 | `P222_Typ_PrpCtl_Req` | `60|1@1+` | Type de requête; enum à confirmer |
 | `P221_Speed_setPoint_Typ` / `TYPE_REGUL_LONGI` | `61|2@1+` | 0 OFF, 1 RVV/régulateur, 2 LVV/limiteur, 3 réservé/ACC selon variante |
 | `DDE_ACTIVATION_RVV_ACC` | bit 7 du dernier octet (`63|1`) | Demande d'activation RVV; 1 pendant la régulation active |
-| `P232_Com_stXVVChkSum` | `4|2@1+` | Checksum XVV |
+| `P232_Com_stXVVChkSum` | `4|2@1+` | Parité des deux demi-octets de la consigne : bit 1 pour le demi-octet haut, bit 0 pour le bas |
 
-Statistiques locales : 64 285 trames dans 42 sessions, DLC 8, période médiane 100,001 ms. `P219` prend 49 valeurs distinctes de 37 à 255; 255 domine hors régulation. La consigne a été confirmée sur cinq engagements dans quatre essais. Dans les 337 sessions rattachées au VIN, les valeurs du dernier octet confirment notamment les familles `0x00` (OFF), `0x20` (RVV sélectionné), `0x40` (LVV sélectionné) et `0xA0` (RVV actif).
+Statistiques locales : 104 190 trames dans 55 sessions, DLC 8, période voisine de 100 ms. La formule de `P232` reproduit les 104 190 trames sans erreur. `P219` couvre localement 37 à 255; 255 domine hors régulation. La consigne a été confirmée sur plusieurs engagements. Les valeurs du dernier octet confirment notamment les familles `0x00` (OFF), `0x20` (RVV sélectionné), `0x40` (LVV sélectionné) et `0xA0` (RVV actif).
 
 ### Commandes du commodo visibles dans le replay
 

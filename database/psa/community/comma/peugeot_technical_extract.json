@@ -314,19 +314,19 @@
       "function": "Classic cruise-control orders and setpoint, multiplexed with climate data",
       "confidence": "vehicle_confirmed",
       "vehicle_observed": {
-        "frame_count": 64285,
-        "session_count": 42,
-        "median_period_ms": 100.001,
+        "frame_count": 104190,
+        "session_count": 55,
+        "median_period_ms": 99.998,
         "setpoint_min": 37,
         "setpoint_max": 255,
-        "setpoint_unique_values": 49,
+        "setpoint_unique_values": 110,
         "inactive_value": 255,
-        "validation": "Mode, activation and setpoint correlated across dedicated local tests",
+        "validation": "Mode, activation and setpoint correlated across dedicated local tests; setpoint parity checksum validated with zero mismatches over all 104190 frames",
         "last_byte_family_counts_across_vin_sessions": {
-          "0x00_off": 6099,
-          "0x20_rvv_selected": 51634,
+          "0x00_off": 6605,
+          "0x20_rvv_selected": 84178,
           "0x40_lvv_selected": 28,
-          "0xA0_rvv_active": 5075
+          "0xA0_rvv_active": 13379
         },
         "control_observations": [
           {"control": "ON", "method": "direct_mode_equals_1", "confidence": "vehicle_confirmed", "session": "learn-20260805T065418Z-fca10a57"},
@@ -342,7 +342,7 @@
         {"name": "P222_Typ_PrpCtl_Req", "start_bit": 60, "length": 1, "byte_order": "little_endian", "factor": 1, "function": "Cruise request type"},
         {"name": "P221_Speed_setPoint_Typ", "alias": "TYPE_REGUL_LONGI", "start_bit": 61, "length": 2, "byte_order": "little_endian", "factor": 1, "enum": {"0": "off", "1": "rvv_cruise", "2": "lvv_limiter", "3": "reserved_or_acc_variant"}, "function": "Longitudinal regulation selector", "confidence": "vehicle_confirmed"},
         {"name": "DDE_ACTIVATION_RVV_ACC", "start_bit": 63, "length": 1, "byte_order": "little_endian", "factor": 1, "enum": {"0": "inactive", "1": "activation_requested"}, "function": "RVV activation request", "confidence": "vehicle_confirmed"},
-        {"name": "P232_Com_stXVVChkSum", "start_bit": 4, "length": 2, "byte_order": "little_endian", "factor": 1, "function": "XVV checksum"}
+        {"name": "P232_Com_stXVVChkSum", "start_bit": 4, "length": 2, "byte_order": "little_endian", "factor": 1, "function": "Setpoint checksum: bit 1 is the bit-parity of the high nibble and bit 0 is the bit-parity of the low nibble", "confidence": "vehicle_confirmed"}
       ],
       "sources": [
         "https://discord.com/channels/469524606043160576/943275077137498112/1216469720828608594",

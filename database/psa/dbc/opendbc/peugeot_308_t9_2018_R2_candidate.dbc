@@ -187,7 +187,7 @@ CM_ SG_ 1010 ColumnAngleSetpointDeg "Angle-command layout is source-confirmed bu
 CM_ SG_ 1042 RearLeftDoorOpen "Undocumented byte 6 mask 0x20, confirmed by repeated closed-open-closed tests on the rear-left door.";
 CM_ SG_ 1042 RearRightDoorOpen "Undocumented byte 6 mask 0x40, confirmed by repeated closed-open-closed tests on the rear-right door.";
 CM_ BO_ 1106 "BSI driver/ACC command frame. Observed locally at about 20 Hz but with longitudinal regulation and ACC requests inactive; signal layout is source-confirmed for AEE2010 R3.";
-CM_ BO_ 1294 "CruiseMode and CruiseActivationRequest were recovered from the original PSA source DBC and confirmed by local selector/road tests. Last-byte high nibble observed: 0x0 off, 0x2 cruise selected, 0x4 limiter selected, 0xA cruise active; the low nibble contains the rolling counter.";
+CM_ BO_ 1294 "CruiseMode and CruiseActivationRequest were recovered from the original PSA source DBC and confirmed by local selector/road tests. Last-byte high nibble observed: 0x0 off, 0x2 cruise selected, 0x4 limiter selected, 0xA cruise active; the low nibble contains the rolling counter. XVVChecksum was validated over 104190 local frames with zero mismatches: bit 1 is the bit-parity of the setpoint high nibble and bit 0 is the bit-parity of the low nibble.";
 CM_ SG_ 1294 CruiseSetpointKph "Confirmed over five cruise engagements in four independent tests. Raw 255 means inactive/unavailable.";
 CM_ SG_ 1294 CruiseMode "Validated during learn-20260805T065418Z-fca10a57: the selector sequence cruise-off-limiter-off-cruise produced 1-0-2-0-1.";
 CM_ SG_ 1294 CruiseActivationRequest "Validated against five engagements and the 0x208 XVV state. This is the BSI activation request/effect, not a direct electrical button contact.";
