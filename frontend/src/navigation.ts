@@ -36,7 +36,7 @@ export const ECU_LIVE_CATALOG: Record<EcuLiveView, { name: string; glyph: string
 
 export type View = "dashboard" | "garage" | "studio" | "replay" | "sensors" | "inventory" | "identity" | "injection" | "maintenance" | "psa" | "ecus" | "dtcs" | "discovery" | "database" | "security" | EcuLiveView;
 
-export type NavModule = "diagnostic" | "atelier" | "learn";
+export type NavModule = "advanced";
 
 export const views: View[] = ["dashboard", "garage", "studio", "replay", "sensors", "inventory", "identity", "injection", "maintenance", "psa", "ecus", "dtcs", "discovery", "database", "security", ...ECU_LIVE_VIEW_KEYS];
 
@@ -51,14 +51,14 @@ export function initialView(): View {
 
 export const viewTitles: Record<View, { eyebrow: string; title: string; description: string }> = {
   dashboard: {
-    eyebrow: "Vue d'ensemble",
-    title: "Atelier diagnostic",
-    description: "État du véhicule, sécurité et accès rapide aux opérations.",
+    eyebrow: "Mon véhicule",
+    title: "Accueil",
+    description: "L’essentiel du véhicule actif, son entretien et les points à suivre.",
   },
   garage: {
-    eyebrow: "Dossier véhicule",
-    title: "Garage & suivi temporel",
-    description: "Charge le bon VIN et retrouve diagnostics, trajets et interventions dans une chronologie unique.",
+    eyebrow: "Mes véhicules",
+    title: "Garage",
+    description: "Sélectionne un véhicule et retrouve tout son historique dans un seul dossier.",
   },
   studio: {
     eyebrow: "Composition libre",
@@ -91,9 +91,9 @@ export const viewTitles: Record<View, { eyebrow: string; title: string; descript
     description: "Air, carburant, pression de rampe, combustion, EGR et températures en lecture seule.",
   },
   maintenance: {
-    eyebrow: "Capacités par véhicule",
-    title: "Services de maintenance",
-    description: "29 fonctions classées par applicabilité, équipement, risque et niveau de validation.",
+    eyebrow: "Carnet du véhicule",
+    title: "Entretien & réparations",
+    description: "Ajoute une facture, une réparation ou un diagnostic et suis les recommandations à venir.",
   },
   psa: {
     eyebrow: "UDS constructeur · accès protégé",

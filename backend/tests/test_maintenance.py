@@ -15,6 +15,7 @@ def test_maintenance_catalog_exposes_full_matrix_without_unvalidated_execution(p
     assert len({service["key"] for service in catalog["services"]}) == catalog["service_count"]
     assert not catalog["execution_enabled"]
     assert not any(service["execution_enabled"] for service in catalog["services"])
+    assert all(isinstance(note, str) for note in catalog["notes"])
     assert any(protocol["key"] == "iso15765_can" and protocol["supported"] for protocol in catalog["protocol_coverage"])
     assert any(protocol["key"] == "can_fd" and not protocol["supported"] for protocol in catalog["protocol_coverage"])
 

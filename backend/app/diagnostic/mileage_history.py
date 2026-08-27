@@ -119,6 +119,8 @@ def mileage_observations(vin: str) -> list[MileageObservation]:
     vehicle_storage_dir(vin)
     observations = _cached_session_observations(vin)
     for record in list_maintenance_records(vin):
+        if record.mileage_km is None or record.performed_at is None:
+            continue
         source: Literal["maintenance", "invoice"] = (
             "invoice" if record.mileage_source == "invoice" else "maintenance"
         )

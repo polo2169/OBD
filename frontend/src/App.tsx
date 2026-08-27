@@ -84,6 +84,8 @@ import type {
   MaintenanceMileageEstimate,
   MaintenanceRecord,
   MaintenanceRecordInput,
+  ServiceProvider,
+  ServiceProviderInput,
   ObservedDtc,
   OilLogEntry,
   OilLogEntryInput,
@@ -257,9 +259,7 @@ export default function App() {
   const [view, setView] = useState<View>(initialView);
   const [openNavModule, setOpenNavModule] = useState<NavModule | null>(() => {
     const initial = initialView();
-    if (["ecus", "sensors", "dtcs", "identity"].includes(initial)) return "diagnostic";
-    if ((["injection", "maintenance", "studio", ...ECU_LIVE_VIEW_KEYS] as View[]).includes(initial)) return "atelier";
-    if (["discovery", "inventory", "replay"].includes(initial)) return "learn";
+    if ((["identity", "injection", "studio", "discovery", "inventory", "replay", "database", "security", "psa", ...ECU_LIVE_VIEW_KEYS] as View[]).includes(initial)) return "advanced";
     return null;
   });
   const [status, setStatus] = useState<Status | null>(null);
@@ -304,7 +304,15 @@ export default function App() {
   const [oilLog, setOilLog] = useState<OilLogEntry[]>([]);
   const [oilLogBusy, setOilLogBusy] = useState(false);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
+  const [maintenanceProviders, setMaintenanceProviders] = useState<ServiceProvider[]>([]);
   const [maintenanceRecordBusy, setMaintenanceRecordBusy] = useState(false);
+  const [maintenanceCreateIntent, setMaintenanceCreateIntent] = useState<{
+    key: number;
+    eventType: MaintenanceRecordInput["event_type"];
+  } | null>(null);
+  useEffect(() => {
+    if (view !== "maintenance") setMaintenanceCreateIntent(null);
+  }, [view]);
   const [diagnosticVehicles, setDiagnosticVehicles] = useState<DiagnosticVehicle[]>([]);
   const [selectedDiagnosticVin, setSelectedDiagnosticVin] = useState(
     () => window.localStorage.getItem("opendiag.diagnostic-vin") ?? "",
@@ -744,12 +752,14 @@ export default function App() {
     }
     for (const entry of maintenanceRecords) {
       if (entry.vin !== selectedDiagnosticVin) continue;
+      const eventDate = entry.performed_at || entry.purchased_at;
+      if (!eventDate) continue;
       entries.push({
         id: entry.id,
         kind: "maintenance",
-        timestampMs: new Date(`${entry.performed_at}T12:00:00`).getTime(),
+        timestampMs: new Date(`${eventDate}T12:00:00`).getTime(),
         title: entry.title,
-        description: `${entry.mileage_km.toLocaleString("fr-FR")} km · ${entry.parts.length} pièce(s)${entry.workshop ? ` · ${entry.workshop}` : ""}`,
+        description: `${entry.mileage_km == null ? "Kilométrage inconnu" : `${entry.mileage_km.toLocaleString("fr-FR")} km`} · ${entry.parts.length} pièce(s)${entry.workshop ? ` · ${entry.workshop}` : ""}`,
         badge: entry.documents.length ? `${entry.documents.length} justificatif(s)` : entry.category,
         severity: "good",
       });
@@ -1779,7 +1789,7 @@ export default function App() {
       if (selected) query.set("vin", selected);
       else if (profile) query.set("vehicle_profile", profile);
       const suffix = query.toString() ? `?${query.toString()}` : "";
-      const [latest, history, observations, oilLogEntries, maintenanceEntries] = await Promise.all([
+      const [latest, history, observations, oilLogEntries, maintenanceEntries, providers] = await Promise.all([
         api<Report>(`/api/diagnostic/reports/latest${suffix}`).catch(() => null),
         api<DiagnosticReportSummary[]>(`/api/diagnostic/reports${suffix}`).catch(() => []),
         api<ObservedDtc[]>(`/api/diagnostic/dtcs/observed${suffix}`).catch(() => []),
@@ -1787,18 +1797,21 @@ export default function App() {
         selected
           ? api<MaintenanceRecord[]>(`/api/maintenance/records?vin=${encodeURIComponent(selected)}`).catch(() => [])
           : Promise.resolve([]),
+        api<ServiceProvider[]>("/api/maintenance/providers").catch(() => []),
       ]);
       setReport(latest);
       setDiagnosticReportHistory(history);
       setObservedDtcs(observations);
       setOilLog(oilLogEntries);
       setMaintenanceRecords(maintenanceEntries);
+      setMaintenanceProviders(providers);
     } catch {
       setDiagnosticVehicles([]);
       setDiagnosticReportHistory([]);
       setObservedDtcs([]);
       setOilLog([]);
       setMaintenanceRecords([]);
+      setMaintenanceProviders([]);
     }
   }
 
@@ -1851,10 +1864,97 @@ export default function App() {
           setError(`L’intervention est enregistrée, mais un justificatif n’a pas été ajouté : ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      setMaintenanceRecords(await api<MaintenanceRecord[]>(`/api/maintenance/records?vin=${encodeURIComponent(entry.vin)}`));
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return false;
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function updateMaintenanceRecord(recordId: string, entry: MaintenanceRecordInput): Promise<boolean> {
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      const saved = await api<MaintenanceRecord>(`/api/maintenance/records/${encodeURIComponent(recordId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      setMaintenanceRecords((current) => current.map((record) => record.id === saved.id ? saved : record));
+      setMaintenanceRecords(await api<MaintenanceRecord[]>(`/api/maintenance/records?vin=${encodeURIComponent(entry.vin)}`));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function setMaintenanceRecommendationStatus(
+    recordId: string,
+    recommendationIndex: number,
+    status: "open" | "completed" | "dismissed",
+  ): Promise<boolean> {
+    const record = maintenanceRecords.find((item) => item.id === recordId);
+    if (!record) return false;
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      await api<MaintenanceRecord>(
+        `/api/maintenance/records/${encodeURIComponent(recordId)}/recommendations/${recommendationIndex}?vin=${encodeURIComponent(record.vin)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        },
+      );
+      setMaintenanceRecords(await api<MaintenanceRecord[]>(`/api/maintenance/records?vin=${encodeURIComponent(record.vin)}`));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function createMaintenanceProvider(entry: ServiceProviderInput): Promise<ServiceProvider | null> {
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      const saved = await api<ServiceProvider>("/api/maintenance/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      setMaintenanceProviders((current) => [...current, saved].sort((a, b) => (a.display_name || a.legal_name).localeCompare(b.display_name || b.legal_name, "fr")));
+      return saved;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setMaintenanceRecordBusy(false);
+    }
+  }
+
+  async function updateMaintenanceProvider(providerId: string, entry: ServiceProviderInput): Promise<ServiceProvider | null> {
+    setMaintenanceRecordBusy(true);
+    setError("");
+    try {
+      const saved = await api<ServiceProvider>(`/api/maintenance/providers/${encodeURIComponent(providerId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      setMaintenanceProviders((current) => current.map((provider) => provider.id === saved.id ? saved : provider));
+      return saved;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
     } finally {
       setMaintenanceRecordBusy(false);
     }
@@ -2694,18 +2794,21 @@ export default function App() {
       <DashboardScreen
         status={status}
         statusError={statusError}
-        activeVehicleLabel={activeVehicleLabel}
         selectedVehicle={selectedDiagnosticVehicle}
+        diagnosticVehicles={diagnosticVehicles}
+        vehicleSelectionBusy={vehicleSelectionBusy}
         report={report}
         detectedEcuCount={detectedEcus.length}
         dtcCount={dtcCount}
-        observedDtcCount={observedDtcs.length}
         capture={capture}
-        validationQueueCount={validationQueue.length}
         diagnosticReady={diagnosticReady}
-        inventoryRowCount={sensorInventoryRows.length}
-        inventoryCounts={inventoryCounts}
-        formatDuration={formatDuration}
+        maintenanceRecords={maintenanceRecords}
+        liveOdometerKm={passiveSensors?.active ? studioLiveSample?.point.odometer_km ?? null : null}
+        onSelectVehicle={selectDiagnosticVehicle}
+        onAddMaintenance={(eventType) => {
+          setMaintenanceCreateIntent({ key: Date.now(), eventType });
+          setView("maintenance");
+        }}
         onNavigate={setView}
       />
     );
@@ -2912,11 +3015,17 @@ export default function App() {
         oilLogBusy={oilLogBusy}
         vehicle={selectedDiagnosticVehicle}
         maintenanceRecords={maintenanceRecords}
+        maintenanceProviders={maintenanceProviders}
         maintenanceRecordBusy={maintenanceRecordBusy}
         onCreateMaintenanceRecord={createMaintenanceRecord}
+        onUpdateMaintenanceRecord={updateMaintenanceRecord}
+        onSetMaintenanceRecommendationStatus={setMaintenanceRecommendationStatus}
+        onCreateMaintenanceProvider={createMaintenanceProvider}
+        onUpdateMaintenanceProvider={updateMaintenanceProvider}
         onAddMaintenanceDocuments={addMaintenanceDocuments}
         onEstimateMaintenanceMileage={estimateMaintenanceMileage}
         onAnalyzeMaintenanceInvoice={analyzeMaintenanceInvoice}
+        createIntent={maintenanceCreateIntent}
       />
     );
   }
@@ -3148,7 +3257,6 @@ export default function App() {
       captureActive={Boolean(capture?.active)}
       detectedEcuCount={report ? detectedEcus.length : undefined}
       dtcCount={dtcCount || undefined}
-      maintenanceServiceCount={maintenanceCatalog?.service_count}
       validationQueueCount={validationQueue.length || undefined}
       activeTitle={activeTitle}
       onNavigate={setView}

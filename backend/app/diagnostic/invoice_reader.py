@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+import logging
 import re
-import shutil
-import subprocess
 import tempfile
 import unicodedata
 
@@ -12,6 +13,11 @@ from fastapi import UploadFile
 from pydantic import BaseModel, Field
 
 from app.diagnostic.maintenance_history import AttachmentTooLargeError, MaintenancePart
+from app.maintenance.models import (
+    DocumentImportSnapshot,
+    ImportedField,
+    ServiceProviderInput,
+)
 
 
 _MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -20,7 +26,11 @@ _CHUNK_SIZE = 1024 * 1024
 
 
 class InvoiceAnalysis(BaseModel):
+    purchased_at: date | None = None
     performed_at: date | None = None
+    performed_at_source: Literal[
+        "document_explicit", "vehicle_return", "invoice_date_assumed"
+    ] | None = None
     mileage_km: int | None = Field(default=None, ge=0, le=9_999_999)
     title: str | None = None
     category: str = "Réparation"
@@ -29,10 +39,13 @@ class InvoiceAnalysis(BaseModel):
     invoice_total: float | None = Field(default=None, ge=0)
     currency: str = "EUR"
     parts: list[MaintenancePart] = Field(default_factory=list)
+    provider_candidate: ServiceProviderInput | None = None
+    matched_provider_id: str | None = None
     confidence: float = Field(ge=0, le=1)
     ocr_used: bool
     extracted_text_excerpt: str
     warnings: list[str] = Field(default_factory=list)
+    import_snapshot: DocumentImportSnapshot
 
 
 def _plain(value: str) -> str:
@@ -54,58 +67,124 @@ def _document_type(header: bytes) -> tuple[str, str] | None:
     return None
 
 
-def _run_text(command: list[str], timeout: int = 30) -> str:
+@lru_cache(maxsize=1)
+def _rapid_ocr():
+    logging.getLogger("RapidOCR").setLevel(logging.WARNING)
     try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError("La lecture automatique de la facture a expiré ou n’est pas disponible.") from exc
-    return completed.stdout if completed.returncode == 0 else ""
+        from rapidocr import ModelType, OCRVersion, RapidOCR
+    except ImportError as exc:
+        raise ValueError(
+            "OCR local indisponible : installe les dépendances Python RapidOCR."
+        ) from exc
+    return RapidOCR(
+        params={
+            "Det.model_type": ModelType.SMALL,
+            "Det.ocr_version": OCRVersion.PPOCRV6,
+            "Rec.model_type": ModelType.SMALL,
+            "Rec.ocr_version": OCRVersion.PPOCRV6,
+            "Global.text_score": 0.45,
+        }
+    )
+
+
+def _result_text(result) -> str:
+    texts = getattr(result, "txts", None)
+    scores = getattr(result, "scores", None)
+    if texts is None:
+        return ""
+    if scores is None:
+        return "\n".join(str(value).strip() for value in texts if str(value).strip())
+    return "\n".join(
+        str(value).strip()
+        for value, score in zip(texts, scores)
+        if str(value).strip() and float(score) >= 0.40
+    )
+
+
+def _ocr_array(image) -> str:
+    try:
+        import cv2
+    except ImportError as exc:
+        raise ValueError(
+            "Décodage d’image indisponible : installe opencv-python-headless."
+        ) from exc
+    if image is None or not getattr(image, "size", 0):
+        raise ValueError("L’image de la facture est illisible.")
+    longest = max(image.shape[:2])
+    scale = min(3.0, max(0.5, 2200 / longest))
+    if abs(scale - 1.0) > 0.05:
+        interpolation = cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=interpolation)
+    candidates: list[tuple[int, str]] = []
+    for rotation in (
+        None,
+        cv2.ROTATE_90_CLOCKWISE,
+        cv2.ROTATE_180,
+        cv2.ROTATE_90_COUNTERCLOCKWISE,
+    ):
+        oriented = image if rotation is None else cv2.rotate(image, rotation)
+        text = _result_text(_rapid_ocr()(oriented))
+        candidates.append((sum(character.isalnum() for character in text), text))
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def _ocr_image(path: Path) -> str:
-    executable = shutil.which("tesseract")
-    if not executable:
-        raise ValueError("OCR indisponible : installe Tesseract pour lire les factures photographiées.")
-    text = _run_text([executable, str(path), "stdout", "-l", "fra+eng", "--psm", "6"], timeout=45)
-    if not text:
-        text = _run_text([executable, str(path), "stdout", "--psm", "6"], timeout=45)
-    return text
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        raise ValueError(
+            "Décodage d’image indisponible : installe les dépendances Python OCR."
+        ) from exc
+    encoded = np.fromfile(path, dtype=np.uint8)
+    return _ocr_array(cv2.imdecode(encoded, cv2.IMREAD_COLOR))
+
+
+def _pdf_page_image(page):
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as exc:
+        raise ValueError(
+            "Décodage PDF indisponible : installe les dépendances Python OCR."
+        ) from exc
+    pixmap = page.get_pixmap(dpi=200, alpha=False)
+    rgb = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+        pixmap.height, pixmap.width, pixmap.n
+    )
+    conversion = cv2.COLOR_RGBA2BGR if pixmap.n == 4 else cv2.COLOR_RGB2BGR
+    return cv2.cvtColor(rgb, conversion)
 
 
 def _extract_text(path: Path, media_type: str) -> tuple[str, bool]:
     if media_type.startswith("image/"):
         return _ocr_image(path), True
 
-    text = ""
-    pdftotext = shutil.which("pdftotext")
-    if pdftotext:
-        text = _run_text([pdftotext, "-layout", str(path), "-"], timeout=30)
-    if len(text.strip()) >= 30:
-        return text, False
-
-    pdftoppm = shutil.which("pdftoppm")
-    if not pdftoppm:
-        if pdftotext:
-            return text, False
-        raise ValueError("Lecture PDF indisponible : installe Poppler (pdftotext/pdftoppm).")
-    prefix = path.parent / "invoice-page"
     try:
-        subprocess.run(
-            [pdftoppm, "-f", "1", "-l", "3", "-r", "200", "-png", str(path), str(prefix)],
-            check=False,
-            capture_output=True,
-            timeout=45,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError("La conversion OCR du PDF a échoué.") from exc
-    pages = sorted(path.parent.glob("invoice-page-*.png"))
-    return "\n".join(_ocr_image(page) for page in pages), True
+        import pymupdf
+    except ImportError as exc:
+        raise ValueError(
+            "Lecture PDF indisponible : installe la dépendance Python PyMuPDF."
+        ) from exc
+    try:
+        with pymupdf.open(path) as document:
+            if document.page_count > 50:
+                raise ValueError("Le document dépasse la limite de 50 pages.")
+            native_text = "\n\n".join(
+                document.load_page(index).get_text("text", sort=True)
+                for index in range(document.page_count)
+            )
+            if len(native_text.strip()) >= 30:
+                return native_text, False
+            ocr_text = "\n\n".join(
+                _ocr_array(_pdf_page_image(document.load_page(index)))
+                for index in range(document.page_count)
+            )
+            return ocr_text, True
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Le PDF est illisible ou endommagé.") from exc
 
 
 def _parse_date(value: str) -> date | None:
@@ -140,6 +219,81 @@ def _first_match(lines: list[str], pattern: re.Pattern[str]) -> re.Match[str] | 
     return None
 
 
+def _provider_name(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines[:-1]):
+        plain = _plain(line).strip(" :/")
+        if plain in {"seller / vendeur", "vendeur", "seller"}:
+            candidate = lines[index + 1]
+            if 2 < len(candidate) <= 180:
+                return candidate
+    business_markers = (
+        "garage", "automobiles", "auto service", "norauto", "oscaro", "ovoko",
+        "controle technique", "contrôle technique", "carrosserie", "pneus", "peugeot",
+    )
+    for line in lines[:20]:
+        plain = _plain(line)
+        if "adresse de facturation" in plain:
+            candidate = re.split(r"adresse de facturation", line, flags=re.I)[0].strip()
+            if candidate and any(marker in _plain(candidate) for marker in business_markers):
+                return candidate
+        if any(marker in plain for marker in business_markers) and not any(
+            excluded in plain for excluded in ("facture", "adresse de facturation", "total", "promotion")
+        ):
+            return line
+    excluded = (
+        "facture", "invoice", "date", "siret", "siren", "tva", "telephone",
+        "tel ", "client", "adresse", "france", "vendeur", "seller", "acheteur", "buyer",
+    )
+    return next(
+        (
+            line for line in lines[:15]
+            if 3 <= len(line) <= 120
+            and any(character.isalpha() for character in line)
+            and not any(word in _plain(line) for word in excluded)
+        ),
+        None,
+    )
+
+
+def _provider_candidate(lines: list[str], name: str | None, title: str | None) -> ServiceProviderInput | None:
+    if not name:
+        return None
+    context = _plain(" ".join(lines[:40]))
+    plain_name = _plain(name)
+    if any(marker in plain_name for marker in ("oscaro", "ovoko", "autodoc", "mister auto")):
+        kind = "parts_supplier"
+    elif "controle technique" in context or "contrôle technique" in context:
+        kind = "inspection_center"
+    elif "carrosserie" in plain_name:
+        kind = "body_shop"
+    elif any(marker in plain_name for marker in ("pneu", "pneumatique", "norauto")):
+        kind = "tire_shop"
+    elif any(marker in plain_name for marker in ("peugeot", "citroen", "citroën", "renault", "fiat")):
+        kind = "dealership"
+    elif "garage" in plain_name or title:
+        kind = "garage"
+    else:
+        kind = "other"
+
+    joined = "\n".join(lines)
+    siret_match = re.search(r"\bSIRET\s*[:#]?\s*([\d ]{14,20})", joined, re.I)
+    siren_match = re.search(r"\bSIREN\s*[:#]?\s*([\d ]{9,14})", joined, re.I)
+    vat_match = re.search(r"(?:TVA|VAT)(?:\s+intracommunautaire|\s+No[.]?)?\s*[:#]?\s*([A-Z]{2}\s*[A-Z0-9 ]{8,16})", joined, re.I)
+    phone_match = re.search(r"(?:T[ée]l(?:[ée]phone)?|Phone)\s*[:#]?\s*([+\d][\d .-]{7,})", joined, re.I)
+    email_match = re.search(r"[\w.+-]+@[\w.-]+\.[A-Z]{2,}", joined, re.I)
+    return ServiceProviderInput(
+        kind=kind,
+        legal_name=name,
+        siret=siret_match.group(1) if siret_match else None,
+        siren=siren_match.group(1) if siren_match else None,
+        vat_number=vat_match.group(1) if vat_match else None,
+        phone=phone_match.group(1).strip() if phone_match else None,
+        email=email_match.group(0) if email_match else None,
+        aliases=[name],
+        verified_by_user=False,
+    )
+
+
 def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
     text = text[:_MAX_TEXT_CHARS]
     lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
@@ -150,7 +304,7 @@ def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
     date_pattern = re.compile(r"(?:date(?:\s+de\s+facture)?\s*[:#-]?\s*)?(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})", re.I)
     labelled_date = next((date_pattern.search(line) for line in lines if "date" in _plain(line)), None)
     date_match = labelled_date or _first_match(lines, date_pattern)
-    performed_at = _parse_date(date_match.group(1)) if date_match else None
+    invoice_date = _parse_date(date_match.group(1)) if date_match else None
 
     invoice_pattern = re.compile(r"(?:facture|invoice)\s*(?:n(?:o|°|º)?|num(?:e|é)ro|#)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9./_-]{2,})", re.I)
     invoice_match = _first_match(lines, invoice_pattern)
@@ -167,20 +321,23 @@ def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
     total = None
     total_line_pattern = re.compile(r"(?:net\s+[àa]\s+payer|total\s*ttc|montant\s*ttc|total\s+facture)", re.I)
     money_pattern = re.compile(r"(?<!\d)(\d{1,3}(?:[ .]\d{3})*(?:[,.]\d{2})|\d+[,.]\d{2})\s*(?:€|eur)?", re.I)
-    for line in reversed(lines):
+    for index in range(len(lines) - 1, -1, -1):
+        line = lines[index]
         if total_line_pattern.search(line):
             amounts = money_pattern.findall(line)
             if amounts:
                 total = _amount(amounts[-1])
                 break
+            for neighbor in (index - 1, index + 1):
+                if 0 <= neighbor < len(lines):
+                    nearby = money_pattern.findall(lines[neighbor])
+                    if nearby:
+                        total = _amount(nearby[-1])
+                        break
+            if total is not None:
+                break
 
-    workshop = None
-    excluded_workshop = ("facture", "invoice", "date", "siret", "siren", "tva", "telephone", "tel ", "client")
-    for line in lines[:12]:
-        plain = _plain(line)
-        if 3 <= len(line) <= 120 and any(char.isalpha() for char in line) and not any(word in plain for word in excluded_workshop):
-            workshop = line
-            break
+    workshop = _provider_name(lines)
 
     reference_pattern = re.compile(r"(?:r[ée]f(?:[ée]rence)?|reference|article|oem)\s*\.?(?:\s*n(?:o|°|º)?\s*)?[:#-]?\s*([A-Z0-9][A-Z0-9./_-]{3,})", re.I)
     serial_pattern = re.compile(r"(?:n(?:o|°|º)?\s*(?:de\s*)?s[ée]rie|serial(?:\s+number)?)\s*\.?\s*[:#-]?\s*([A-Z0-9][A-Z0-9./_-]{3,})", re.I)
@@ -225,13 +382,42 @@ def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
     if not title and parts:
         title = f"Remplacement {parts[0].name}"[:180]
 
+    provider_candidate = _provider_candidate(lines, workshop, title)
+    explicit_intervention_match = next(
+        (
+            date_pattern.search(line)
+            for line in lines
+            if any(
+                marker in _plain(line)
+                for marker in ("date intervention", "date des travaux", "date restitution")
+            )
+            and date_pattern.search(line)
+        ),
+        None,
+    )
+    if explicit_intervention_match:
+        performed_at = _parse_date(explicit_intervention_match.group(1))
+        performed_at_source = "document_explicit"
+    elif provider_candidate and provider_candidate.kind in {
+        "garage", "dealership", "inspection_center", "body_shop", "tire_shop"
+    }:
+        performed_at = invoice_date
+        performed_at_source = "invoice_date_assumed" if invoice_date else None
+    else:
+        performed_at = None
+        performed_at_source = None
+
     detected_fields = sum(value is not None for value in (
-        performed_at, mileage, title, workshop, invoice_number, total,
+        invoice_date, mileage, title, workshop, invoice_number, total,
     )) + min(2, len(parts))
     confidence = min(0.98, 0.25 + detected_fields * 0.09)
     warnings: list[str] = []
-    if performed_at is None:
+    if invoice_date is None:
         warnings.append("Date non détectée : vérifie-la avant l’enregistrement.")
+    if performed_at is None:
+        warnings.append("Renseigne la date de pose : une facture de pièces ne prouve pas le montage.")
+    elif performed_at_source == "invoice_date_assumed":
+        warnings.append("Date de pose proposée d’après la date de facture du garage : à confirmer.")
     if mileage is None:
         warnings.append("Kilométrage absent de la facture : une estimation datée peut être proposée.")
     if not parts:
@@ -240,8 +426,63 @@ def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
         warnings.append("Aucun numéro de série clairement libellé n’a été détecté.")
     warnings.append("Contrôle obligatoire : corrige les champs préremplis avant de sauvegarder.")
 
+    snapshot = DocumentImportSnapshot(
+        engine="rapidocr" if ocr_used else "pymupdf_native_text",
+        analyzed_at=datetime.now(timezone.utc),
+        fields={
+            "purchased_at": ImportedField(
+                raw_value=date_match.group(1) if date_match else None,
+                normalized_value=invoice_date.isoformat() if invoice_date else None,
+                confidence=0.9 if date_match else None,
+                evidence=date_match.group(0) if date_match else None,
+            ),
+            "performed_at": ImportedField(
+                raw_value=explicit_intervention_match.group(1) if explicit_intervention_match else None,
+                normalized_value=performed_at.isoformat() if performed_at else None,
+                confidence=0.95 if explicit_intervention_match else 0.55 if performed_at else None,
+                evidence=(
+                    explicit_intervention_match.group(0)
+                    if explicit_intervention_match
+                    else "Date de facture utilisée comme proposition" if performed_at else None
+                ),
+            ),
+            "mileage_km": ImportedField(
+                raw_value=mileage_match.group(0) if mileage_match else None,
+                normalized_value=mileage,
+                confidence=0.9 if mileage_match else None,
+                evidence=mileage_match.group(0) if mileage_match else None,
+            ),
+            "invoice_number": ImportedField(
+                raw_value=invoice_match.group(0) if invoice_match else None,
+                normalized_value=invoice_number,
+                confidence=0.9 if invoice_match else None,
+                evidence=invoice_match.group(0) if invoice_match else None,
+            ),
+            "invoice_total": ImportedField(
+                raw_value=total,
+                normalized_value=total,
+                confidence=0.9 if total is not None else None,
+            ),
+            "provider": ImportedField(
+                raw_value=workshop,
+                normalized_value=provider_candidate.legal_name if provider_candidate else None,
+                confidence=0.7 if provider_candidate else None,
+                evidence=workshop,
+            ),
+        },
+        raw_payload={
+            "parts": [part.model_dump(mode="json") for part in parts],
+            "provider_candidate": (
+                provider_candidate.model_dump(mode="json") if provider_candidate else None
+            ),
+        },
+        text_excerpt="\n".join(lines)[:6_000],
+        warnings=warnings,
+    )
     return InvoiceAnalysis(
+        purchased_at=invoice_date,
         performed_at=performed_at,
+        performed_at_source=performed_at_source,
         mileage_km=mileage,
         title=title,
         workshop=workshop,
@@ -249,10 +490,12 @@ def parse_invoice_text(text: str, *, ocr_used: bool = False) -> InvoiceAnalysis:
         invoice_total=total,
         currency="EUR" if "€" in text or "eur" in text.casefold() else "EUR",
         parts=parts,
+        provider_candidate=provider_candidate,
         confidence=round(confidence, 2),
         ocr_used=ocr_used,
         extracted_text_excerpt="\n".join(lines)[:6_000],
         warnings=warnings,
+        import_snapshot=snapshot,
     )
 
 

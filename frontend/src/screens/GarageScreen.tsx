@@ -109,9 +109,10 @@ export function GarageScreen({
             <article><span>Dernière activité</span><strong>{lastActivity ? formatDate(lastActivity.timestampMs * 1000) : "—"}</strong><small>{lastActivity?.title ?? "Dossier récemment créé"}</small></article>
           </div>
           <div className="garage-quick-actions">
-            <button className="primary-button" onClick={() => onNavigate("studio")}>Ouvrir le direct</button>
+            <button className="primary-button" onClick={() => onNavigate("dashboard")}>Voir l’accueil du véhicule</button>
+            <button className="secondary-button" onClick={() => onNavigate("maintenance")}>Entretien &amp; réparations</button>
             <button className="secondary-button" onClick={() => onNavigate("ecus")}>Lancer un diagnostic</button>
-            <button className="ghost-button" onClick={() => { onSelectIdentityProfile(selectedVehicle.vehicle_profile); onNavigate("identity"); }}>Relire l’identité</button>
+            <button className="ghost-button" onClick={() => { onSelectIdentityProfile(selectedVehicle.vehicle_profile); onNavigate("identity"); }}>Voir l’identité</button>
           </div>
         </section>
       ) : (

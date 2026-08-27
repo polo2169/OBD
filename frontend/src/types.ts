@@ -219,35 +219,144 @@ export type MaintenancePart = {
   unit_price?: number | null;
   warranty_until?: string | null;
   note?: string | null;
+  usage: "installed" | "consumed" | "tool" | "shipping" | "discount" | "not_used" | "returned";
+  system_code?: string | null;
+  component_code?: string | null;
+  position?: "front" | "rear" | "front_left" | "front_right" | "rear_left" | "rear_right" | "engine" | "cabin" | "other" | null;
+  invoice_line_id?: string | null;
+};
+
+export type ServiceProviderInput = {
+  kind: "garage" | "dealership" | "inspection_center" | "body_shop" | "tire_shop" | "parts_supplier" | "other";
+  legal_name: string;
+  display_name?: string | null;
+  network?: string | null;
+  siren?: string | null;
+  siret?: string | null;
+  vat_number?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  country_code: string;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  aliases: string[];
+  verified_by_user: boolean;
+};
+
+export type ServiceProvider = ServiceProviderInput & {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+};
+
+export type DocumentImportSnapshot = {
+  engine: string;
+  engine_version?: string | null;
+  analyzed_at: string;
+  document_id?: string | null;
+  fields: Record<string, {
+    raw_value?: unknown;
+    normalized_value?: unknown;
+    confidence?: number | null;
+    evidence?: string | null;
+  }>;
+  raw_payload: Record<string, unknown>;
+  text_excerpt: string;
+  warnings: string[];
 };
 
 export type MaintenanceDocument = {
   id: string;
-  kind: "invoice" | "receipt" | "photo" | "warranty" | "other";
+  kind: "invoice" | "receipt" | "photo" | "warranty" | "diagnostic_report" | "work_order" | "recommendation" | "other";
   original_name: string;
   media_type: string;
   size_bytes: number;
   sha256: string;
   uploaded_at: string;
   download_url: string;
+  page_count: number;
+  source_names: string[];
+  normalized: boolean;
+};
+
+export type MaintenanceCostLine = {
+  line_type: "part" | "product" | "service" | "labor" | "shipping" | "discount" | "other";
+  description: string;
+  reference?: string | null;
+  tariff_code?: string | null;
+  quantity?: number | null;
+  labor_hours?: number | null;
+  unit_price_excl_tax?: number | null;
+  unit_price_incl_tax?: number | null;
+  discount_percent?: number | null;
+  net_unit_price_excl_tax?: number | null;
+  amount_excl_tax?: number | null;
+  amount_incl_tax?: number | null;
+  page_number?: number | null;
+  confidence: "high" | "medium" | "low" | "unknown";
+  source_text: string[];
+};
+
+export type MaintenanceRecommendation = {
+  title: string;
+  details?: string | null;
+  status: "open" | "monitoring" | "completed" | "dismissed";
+  source: "manual" | "document" | "handwritten_note" | "diagnostic";
+  recommended_at_km?: number | null;
+  due_date?: string | null;
+  due_mileage_km?: number | null;
+  follow_up_after_km?: number | null;
+  confidence: "high" | "medium" | "low" | "unknown";
+  auto_managed?: boolean;
+  completed_by_record_id?: string | null;
+  completed_at?: string | null;
+  completion_reason?: string | null;
 };
 
 export type MaintenanceRecordInput = {
   vin: string;
   vehicle_profile?: string | null;
-  performed_at: string;
-  mileage_km: number;
+  schema_version: 1;
+  record_status: "draft" | "confirmed";
+  source_system?: string | null;
+  source_import_key?: string | null;
+  event_type: "maintenance" | "repair" | "diagnostic" | "inspection" | "technical_inspection" | "upgrade" | "other";
+  purchased_at?: string | null;
+  performed_at?: string | null;
+  performed_at_source: "manual" | "document_explicit" | "vehicle_return" | "invoice_date_assumed" | "estimated";
+  mileage_km?: number | null;
   mileage_source: "manual" | "can_signal" | "invoice" | "history_estimate";
   mileage_note?: string | null;
   title: string;
   category: string;
   workshop?: string | null;
+  performed_by: "owner" | "service_provider" | "unknown";
+  performer_provider_id?: string | null;
+  seller_provider_id?: string | null;
+  invoice_issuer_provider_id?: string | null;
   invoice_number?: string | null;
+  document_client_name?: string | null;
+  document_vehicle_vin?: string | null;
+  document_registration?: string | null;
+  document_page_count?: number | null;
+  document_pagination_status: "complete" | "partial" | "inferred" | "unknown";
+  document_dossier_id?: string | null;
+  invoice_subtotal?: number | null;
+  invoice_tax?: number | null;
   invoice_total?: number | null;
   currency: string;
   labor_hours?: number | null;
   notes?: string | null;
   parts: MaintenancePart[];
+  cost_lines: MaintenanceCostLine[];
+  recommendations: MaintenanceRecommendation[];
+  import_snapshot?: DocumentImportSnapshot | null;
 };
 
 export type MaintenanceMileageObservation = {
@@ -269,7 +378,9 @@ export type MaintenanceMileageEstimate = {
 };
 
 export type MaintenanceInvoiceAnalysis = {
+  purchased_at?: string | null;
   performed_at?: string | null;
+  performed_at_source?: "document_explicit" | "vehicle_return" | "invoice_date_assumed" | null;
   mileage_km?: number | null;
   title?: string | null;
   category: string;
@@ -278,10 +389,13 @@ export type MaintenanceInvoiceAnalysis = {
   invoice_total?: number | null;
   currency: string;
   parts: MaintenancePart[];
+  provider_candidate?: ServiceProviderInput | null;
+  matched_provider_id?: string | null;
   confidence: number;
   ocr_used: boolean;
   extracted_text_excerpt: string;
   warnings: string[];
+  import_snapshot: DocumentImportSnapshot;
 };
 
 export type MaintenanceRecord = MaintenanceRecordInput & {
@@ -290,6 +404,35 @@ export type MaintenanceRecord = MaintenanceRecordInput & {
   updated_at: string;
   revision: number;
   documents: MaintenanceDocument[];
+};
+
+export type MaintenanceForecastItem = {
+  id: string;
+  kind: "history" | "recommendation" | "scheduled";
+  title: string;
+  mileage_km: number;
+  due_date: string;
+  status: "completed" | "due" | "upcoming";
+  estimated_cost_min?: number | null;
+  estimated_cost_max?: number | null;
+  source_label: string;
+  confidence: "confirmed" | "high" | "medium" | "low" | "unknown" | "estimated";
+  record_id?: string | null;
+  recommendation_index?: number | null;
+  component_code?: string | null;
+  sequence?: number | null;
+};
+
+export type MaintenanceForecast = {
+  vin: string;
+  start_date: string;
+  start_date_estimated: boolean;
+  current_date: string;
+  current_mileage_km: number;
+  horizon_mileage_km: number;
+  annual_mileage_km: number;
+  annual_mileage_source: string;
+  items: MaintenanceForecastItem[];
 };
 
 export type Ecu = {

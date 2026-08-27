@@ -97,7 +97,7 @@ maintenance:
     - nox_sensor_reset
   notes:
     - Applicabilité établie pour une Fiat 500 type 312 essence 1.2 de 2010 ; les équipements optionnels doivent être détectés avant affichage comme disponibles.
-    - Aucune séquence de maintenance Fiat n'est encore autorisée à l'émission : les adresses Body/Combiné restent à valider sur le véhicule.
+    - "Aucune séquence de maintenance Fiat n'est encore autorisée à l'émission : les adresses Body/Combiné restent à valider sur le véhicule."
 
 networks:
   diagnostic_can:
