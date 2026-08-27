@@ -1,0 +1,58 @@
+** Drc report for PCB2.kicad_pcb **
+** Created on 2026-08-10T23:23:39 **
+** Report includes: Errors, Warnings **
+
+** Found 13 DRC violations **
+[lib_footprint_issues]: Empreinte '10129381-920003BLF' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(97.2820 mm, 122.1740 mm): Empreinte J3
+[lib_footprint_issues]: Empreinte 'SAMTEC_TW-10-X-X-T-X-X' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(96.6820 mm, 144.1740 mm): Empreinte J9
+[lib_footprint_issues]: Empreinte 'SAMTEC_TW-10-X-X-T-X-X' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(96.6820 mm, 104.1740 mm): Empreinte J8
+[lib_footprint_issues]: Empreinte '10129381-920003BLF' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(105.6820 mm, 122.1740 mm): Empreinte J2
+[lib_footprint_mismatch]: L’empreinte 'SOT-363_SC-70-6' ne correspond pas à la copie en librairie 'Package_TO_SOT_SMD'
+    Local override; warning
+    @(108.7425 mm, 95.2800 mm): Empreinte D1
+[lib_footprint_issues]: Empreinte '10129381-920003BLF' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(114.0820 mm, 122.1740 mm): Empreinte J1
+[lib_footprint_mismatch]: L’empreinte 'SOT-363_SC-70-6' ne correspond pas à la copie en librairie 'Package_TO_SOT_SMD'
+    Local override; warning
+    @(103.5000 mm, 95.2900 mm): Empreinte D2
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(113.7200 mm, 96.8200 mm): Empreinte R4
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(113.7200 mm, 93.3700 mm): Empreinte R3
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(108.7025 mm, 96.8325 mm): Empreinte R1
+[lib_footprint_mismatch]: L’empreinte 'MSOP-8_3x3mm_P0.65mm' ne correspond pas à la copie en librairie 'Package_SO'
+    Local override; warning
+    @(98.4900 mm, 95.3200 mm): Empreinte U1
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(108.7025 mm, 93.3825 mm): Empreinte R2
+[lib_footprint_mismatch]: L’empreinte 'MSOP-8_3x3mm_P0.65mm' ne correspond pas à la copie en librairie 'Package_SO'
+    Local override; warning
+    @(103.4900 mm, 95.3200 mm): Empreinte U2
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - PTH inside courtyard
+    - NPTH inside courtyard
+
+** End of Report **

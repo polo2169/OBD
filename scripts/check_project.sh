@@ -6,6 +6,9 @@ PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 FIRMWARE_DIR="${PROJECT_DIR}/firmware/esp32-gateway"
+OPENPILOT_LAB_DIR="${PROJECT_DIR}/openpilot"
+PSA_BRIDGE_DIR="${OPENPILOT_LAB_DIR}/firmware/psa-obdc-bridge"
+SENSOR_FIRMWARE_DIR="${OPENPILOT_LAB_DIR}/firmware/sensor-logger"
 CHECK_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opendiag-check.XXXXXX")"
 
 cleanup() {
@@ -33,6 +36,31 @@ echo "== Backend : tests =="
 )
 
 echo
+echo "== Laboratoire OpenPilot : tests Python =="
+(
+  cd "${OPENPILOT_LAB_DIR}"
+  PYTHONDONTWRITEBYTECODE=1 "${BACKEND_DIR}/.venv/bin/pytest" -p no:cacheprovider -q
+)
+
+echo
+echo "== Laboratoire OpenPilot : barrières de sécurité natives =="
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"${PSA_BRIDGE_DIR}/include" \
+  "${PSA_BRIDGE_DIR}/test/mads_state_test.cpp" \
+  -o "${CHECK_TMP_DIR}/mads-state-test"
+"${CHECK_TMP_DIR}/mads-state-test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"${PSA_BRIDGE_DIR}/test/stubs" -I"${PSA_BRIDGE_DIR}/include" \
+  "${PSA_BRIDGE_DIR}/test/lka_mads_safety_test.cpp" \
+  -o "${CHECK_TMP_DIR}/lka-mads-test"
+"${CHECK_TMP_DIR}/lka-mads-test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"${PSA_BRIDGE_DIR}/include" \
+  "${PSA_BRIDGE_DIR}/test/rvv_safety_test.cpp" \
+  -o "${CHECK_TMP_DIR}/rvv-safety-test"
+"${CHECK_TMP_DIR}/rvv-safety-test"
+
+echo
 echo "== Frontend : TypeScript strict et build =="
 (
   cd "${FRONTEND_DIR}"
@@ -44,10 +72,20 @@ echo "== Frontend : TypeScript strict et build =="
 
 echo
 if command -v pio >/dev/null 2>&1; then
-  echo "== Firmware : profil passif par défaut =="
+  echo "== Firmware OBD : profil passif par défaut =="
   (
     cd "${FIRMWARE_DIR}"
     pio run -e esp32-waveshare-wifi-readonly
+  )
+  echo
+  echo "== Firmware OpenPilot : profils sûrs et capteurs =="
+  (
+    cd "${PSA_BRIDGE_DIR}"
+    pio run -e psa-obdc-master-zero-torque -e psa-obdc-satellite
+  )
+  (
+    cd "${SENSOR_FIRMWARE_DIR}"
+    pio run -e esp32-sensor-logger
   )
 else
   echo "== Firmware : ignoré (commande pio absente) =="

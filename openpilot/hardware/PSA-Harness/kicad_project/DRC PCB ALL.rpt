@@ -1,0 +1,887 @@
+** Drc report for PSA-Harness.kicad_pcb **
+** Created on 2026-08-10T23:31:06 **
+** Report includes: Errors, Warnings **
+
+** Found 8 DRC violations **
+[lib_footprint_mismatch]: L’empreinte 'SOT-363_SC-70-6' ne correspond pas à la copie en librairie 'Package_TO_SOT_SMD'
+    Local override; warning
+    @(108.7425 mm, 95.2800 mm): Empreinte D1
+[lib_footprint_mismatch]: L’empreinte 'SOT-363_SC-70-6' ne correspond pas à la copie en librairie 'Package_TO_SOT_SMD'
+    Local override; warning
+    @(103.5000 mm, 95.2900 mm): Empreinte D2
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(113.7200 mm, 96.8200 mm): Empreinte R4
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(113.7200 mm, 93.3700 mm): Empreinte R3
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(108.7025 mm, 96.8325 mm): Empreinte R1
+[lib_footprint_mismatch]: L’empreinte 'MSOP-8_3x3mm_P0.65mm' ne correspond pas à la copie en librairie 'Package_SO'
+    Local override; warning
+    @(98.4900 mm, 95.3200 mm): Empreinte U1
+[lib_footprint_mismatch]: L’empreinte 'R_1206_3216Metric' ne correspond pas à la copie en librairie 'Resistor_SMD'
+    Local override; warning
+    @(108.7025 mm, 93.3825 mm): Empreinte R2
+[lib_footprint_mismatch]: L’empreinte 'MSOP-8_3x3mm_P0.65mm' ne correspond pas à la copie en librairie 'Package_SO'
+    Local override; warning
+    @(103.4900 mm, 95.3200 mm): Empreinte U2
+
+** Found 211 unconnected pads **
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 104.1740 mm): Pad métallisé 1 [GND] de J10
+    @(87.0000 mm, 89.0000 mm): Zone [GND] sur F.Cu, B.Cu et 2 en plus, priorité 0
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.8150 mm, 97.4325 mm): Pad 2 [CAN0_H] de U2 sur B.Cu
+    @(92.7800 mm, 96.3200 mm): Pad A2 [CAN0_H] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(108.0925 mm, 94.3300 mm): Pad 3 [CAN0_H] de D1 sur F.Cu
+    @(103.8150 mm, 97.4325 mm): Pad 2 [CAN0_H] de U2 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.1650 mm, 93.3825 mm): Pad 2 [CAN0_H] de R2 sur B.Cu
+    @(108.0925 mm, 94.3300 mm): Pad 3 [CAN0_H] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 123.4440 mm): Pad métallisé 5 [CAN0_H] de J1
+    @(103.8150 mm, 97.4325 mm): Pad 2 [CAN0_H] de U2 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(99.4650 mm, 97.4325 mm): Pad 1 [CAN0_L] de U1 sur B.Cu
+    @(92.7800 mm, 96.8200 mm): Pad A3 [CAN0_L] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(99.4650 mm, 97.4325 mm): Pad 1 [CAN0_L] de U1 sur B.Cu
+    @(109.3925 mm, 96.2300 mm): Pad 6 [CAN0_L] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 128.5240 mm): Pad métallisé 3 [CAN0_L] de J1
+    @(109.3925 mm, 96.2300 mm): Pad 6 [CAN0_L] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(91.1100 mm, 99.8200 mm): Pad B4 [+12V] de J7 sur F.Cu
+    @(92.7800 mm, 99.8200 mm): Pad A9 [+12V] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(92.7800 mm, 97.3200 mm): Pad A4 [+12V] de J7 sur F.Cu
+    @(91.1100 mm, 97.3200 mm): Pad B9 [+12V] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(92.7800 mm, 99.8200 mm): Pad A9 [+12V] de J7 sur F.Cu
+    @(92.7800 mm, 97.3200 mm): Pad A4 [+12V] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(92.7800 mm, 99.8200 mm): Pad A9 [+12V] de J7 sur F.Cu
+    @(96.6820 mm, 100.1740 mm): Pad métallisé 3 [+12V] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(97.5150 mm, 93.2075 mm): Pad 5 [+12V] de U1 sur B.Cu
+    @(98.5800 mm, 96.9475 mm): Pad 1 [+12V] de D3 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(97.5150 mm, 97.4325 mm): Pad 4 [+12V] de U1 sur B.Cu
+    @(98.5800 mm, 96.9475 mm): Pad 1 [+12V] de D3 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(97.5150 mm, 97.4325 mm): Pad 4 [+12V] de U1 sur B.Cu
+    @(96.6820 mm, 100.1740 mm): Pad métallisé 3 [+12V] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.5150 mm, 97.4325 mm): Pad 4 [+12V] de U2 sur B.Cu
+    @(98.5800 mm, 96.9475 mm): Pad 1 [+12V] de D3 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.5000 mm, 94.3400 mm): Pad 2 [+12V] de D2 sur F.Cu
+    @(102.5150 mm, 93.2075 mm): Pad 5 [+12V] de U2 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.5000 mm, 96.2400 mm): Pad 5 [+12V] de D2 sur F.Cu
+    @(102.5150 mm, 97.4325 mm): Pad 4 [+12V] de U2 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.5000 mm, 96.2400 mm): Pad 5 [+12V] de D2 sur F.Cu
+    @(103.5000 mm, 94.3400 mm): Pad 2 [+12V] de D2 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.5000 mm, 96.2400 mm): Pad 5 [+12V] de D2 sur F.Cu
+    @(108.7425 mm, 96.2300 mm): Pad 5 [+12V] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 131.0640 mm): Pad métallisé 12 [+12V] de J2
+    @(134.4120 mm, 131.0640 mm): Pad métallisé 12 [+12V] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 131.0640 mm): Pad métallisé 12 [+12V] de J2
+    @(96.6820 mm, 100.1740 mm): Pad métallisé 3 [+12V] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(108.7425 mm, 96.2300 mm): Pad 5 [+12V] de D1 sur F.Cu
+    @(108.7425 mm, 94.3300 mm): Pad 2 [+12V] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 100.1740 mm): Pad métallisé 3 [+12V] de J10
+    @(108.7425 mm, 96.2300 mm): Pad 5 [+12V] de D1 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.1650 mm, 93.2075 mm): Pad 6 [SBU1] de U1 sur B.Cu
+    @(92.7800 mm, 99.3200 mm): Pad A8 [SBU1] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(103.1650 mm, 93.2075 mm): Pad 6 [SBU1] de U2 sur B.Cu
+    @(98.1650 mm, 93.2075 mm): Pad 6 [SBU1] de U1 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.2575 mm, 93.3700 mm): Pad 1 [SBU1] de R3 sur B.Cu
+    @(103.1650 mm, 93.2075 mm): Pad 6 [SBU1] de U2 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 125.9840 mm): Pad métallisé 4 [CAN1_L] de J3
+    @(98.6820 mm, 102.1740 mm): Pad métallisé 5 [CAN1_L] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 125.9840 mm): Pad métallisé 4 [CAN1_L] de J3
+    @(128.5520 mm, 125.9840 mm): Pad métallisé 4 [CAN1_L] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.6820 mm, 102.1740 mm): Pad métallisé 5 [CAN1_L] de J8
+    @(92.7800 mm, 100.3200 mm): Pad A10 [CAN1_L] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 125.9840 mm): Pad métallisé 4 [CAN1_L] de J6
+    @(128.6820 mm, 102.1740 mm): Pad métallisé 5 [CAN1_L] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 120.9040 mm): Pad métallisé 6 [CAN1_H] de J3
+    @(100.6820 mm, 104.1740 mm): Pad métallisé 7 [CAN1_H] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 120.9040 mm): Pad métallisé 6 [CAN1_H] de J3
+    @(128.5520 mm, 120.9040 mm): Pad métallisé 6 [CAN1_H] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(100.6820 mm, 104.1740 mm): Pad métallisé 7 [CAN1_H] de J8
+    @(92.7800 mm, 100.8200 mm): Pad A11 [CAN1_H] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 120.9040 mm): Pad métallisé 6 [CAN1_H] de J6
+    @(130.6820 mm, 104.1740 mm): Pad métallisé 7 [CAN1_H] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 102.1740 mm): Pad métallisé 11 [CAN2_H] de J8
+    @(91.1100 mm, 100.8200 mm): Pad B2 [CAN2_H] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4650 mm, 97.4325 mm): Pad 1 [CAN2_H] de U2 sur B.Cu
+    @(102.8500 mm, 94.3400 mm): Pad 3 [CAN2_H] de D2 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4650 mm, 97.4325 mm): Pad 1 [CAN2_H] de U2 sur B.Cu
+    @(102.6820 mm, 102.1740 mm): Pad métallisé 11 [CAN2_H] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4650 mm, 97.4325 mm): Pad 1 [CAN2_H] de U2 sur B.Cu
+    @(132.6820 mm, 102.1740 mm): Pad métallisé 11 [CAN2_H] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 123.4440 mm): Pad métallisé 5 [CAN2_H] de J4
+    @(132.6820 mm, 102.1740 mm): Pad métallisé 11 [CAN2_H] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.8150 mm, 97.4325 mm): Pad 2 [CAN2_L] de U1 sur B.Cu
+    @(91.1100 mm, 100.3200 mm): Pad B3 [CAN2_L] de J7 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(100.6820 mm, 100.1740 mm): Pad métallisé 9 [CAN2_L] de J8
+    @(98.8150 mm, 97.4325 mm): Pad 2 [CAN2_L] de U1 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(100.6820 mm, 100.1740 mm): Pad métallisé 9 [CAN2_L] de J8
+    @(104.1500 mm, 96.2400 mm): Pad 6 [CAN2_L] de D2 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.1650 mm, 96.8325 mm): Pad 1 [CAN2_L] de R1 sur B.Cu
+    @(104.1500 mm, 96.2400 mm): Pad 6 [CAN2_L] de D2 sur F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 100.1740 mm): Pad métallisé 9 [CAN2_L] de J10
+    @(110.1650 mm, 96.8325 mm): Pad 1 [CAN2_L] de R1 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 128.5240 mm): Pad métallisé 3 [CAN2_L] de J4
+    @(130.6820 mm, 100.1740 mm): Pad métallisé 9 [CAN2_L] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 133.6040 mm): Pad métallisé 1 [41] de J3
+    @(112.6820 mm, 144.1740 mm): Pad métallisé 25 [41] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 144.1740 mm): Pad métallisé 25 [41] de J9
+    @(128.5520 mm, 133.6040 mm): Pad métallisé 1 [41] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.6820 mm, 144.1740 mm): Pad métallisé 25 [41] de J11
+    @(128.5520 mm, 133.6040 mm): Pad métallisé 1 [41] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 131.0640 mm): Pad métallisé 2 [42] de J3
+    @(112.6820 mm, 140.1740 mm): Pad métallisé 27 [42] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 140.1740 mm): Pad métallisé 27 [42] de J9
+    @(128.5520 mm, 131.0640 mm): Pad métallisé 2 [42] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.6820 mm, 140.1740 mm): Pad métallisé 27 [42] de J11
+    @(128.5520 mm, 131.0640 mm): Pad métallisé 2 [42] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 128.5240 mm): Pad métallisé 3 [43] de J3
+    @(114.6820 mm, 142.1740 mm): Pad métallisé 29 [43] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(114.6820 mm, 142.1740 mm): Pad métallisé 29 [43] de J9
+    @(128.5520 mm, 128.5240 mm): Pad métallisé 3 [43] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(144.6820 mm, 142.1740 mm): Pad métallisé 29 [43] de J11
+    @(128.5520 mm, 128.5240 mm): Pad métallisé 3 [43] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.6820 mm, 142.1740 mm): Pad métallisé 2 [45] de J9
+    @(126.6820 mm, 142.1740 mm): Pad métallisé 2 [45] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 123.4440 mm): Pad métallisé 5 [45] de J3
+    @(96.6820 mm, 142.1740 mm): Pad métallisé 2 [45] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 142.1740 mm): Pad métallisé 2 [45] de J11
+    @(128.5520 mm, 123.4440 mm): Pad métallisé 5 [45] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 118.3640 mm): Pad métallisé 7 [47] de J3
+    @(98.6820 mm, 144.1740 mm): Pad métallisé 4 [47] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 118.3640 mm): Pad métallisé 7 [47] de J6
+    @(98.5520 mm, 118.3640 mm): Pad métallisé 7 [47] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.6820 mm, 144.1740 mm): Pad métallisé 4 [47] de J11
+    @(128.5520 mm, 118.3640 mm): Pad métallisé 7 [47] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 115.8240 mm): Pad métallisé 8 [48] de J3
+    @(98.6820 mm, 140.1740 mm): Pad métallisé 6 [48] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 115.8240 mm): Pad métallisé 8 [48] de J6
+    @(98.5520 mm, 115.8240 mm): Pad métallisé 8 [48] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.6820 mm, 140.1740 mm): Pad métallisé 6 [48] de J11
+    @(128.5520 mm, 115.8240 mm): Pad métallisé 8 [48] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.5520 mm, 113.2840 mm): Pad métallisé 9 [49] de J3
+    @(100.6820 mm, 142.1740 mm): Pad métallisé 8 [49] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 113.2840 mm): Pad métallisé 9 [49] de J6
+    @(98.5520 mm, 113.2840 mm): Pad métallisé 9 [49] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 142.1740 mm): Pad métallisé 8 [49] de J11
+    @(128.5520 mm, 113.2840 mm): Pad métallisé 9 [49] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 144.1740 mm): Pad métallisé 10 [50] de J9
+    @(132.6820 mm, 144.1740 mm): Pad métallisé 10 [50] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.5520 mm, 110.7440 mm): Pad métallisé 10 [50] de J6
+    @(98.5520 mm, 110.7440 mm): Pad métallisé 10 [50] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(132.6820 mm, 144.1740 mm): Pad métallisé 10 [50] de J11
+    @(128.5520 mm, 110.7440 mm): Pad métallisé 10 [50] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 133.6040 mm): Pad métallisé 11 [51] de J3
+    @(102.6820 mm, 140.1740 mm): Pad métallisé 12 [51] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 140.1740 mm): Pad métallisé 12 [51] de J9
+    @(126.0120 mm, 133.6040 mm): Pad métallisé 11 [51] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(132.6820 mm, 140.1740 mm): Pad métallisé 12 [51] de J11
+    @(126.0120 mm, 133.6040 mm): Pad métallisé 11 [51] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 131.0640 mm): Pad métallisé 12 [52] de J3
+    @(104.6820 mm, 142.1740 mm): Pad métallisé 14 [52] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.6820 mm, 142.1740 mm): Pad métallisé 14 [52] de J9
+    @(126.0120 mm, 131.0640 mm): Pad métallisé 12 [52] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.6820 mm, 142.1740 mm): Pad métallisé 14 [52] de J11
+    @(126.0120 mm, 131.0640 mm): Pad métallisé 12 [52] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 128.5240 mm): Pad métallisé 13 [53] de J3
+    @(106.6820 mm, 144.1740 mm): Pad métallisé 16 [53] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.6820 mm, 144.1740 mm): Pad métallisé 16 [53] de J9
+    @(126.0120 mm, 128.5240 mm): Pad métallisé 13 [53] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.6820 mm, 144.1740 mm): Pad métallisé 16 [53] de J11
+    @(126.0120 mm, 128.5240 mm): Pad métallisé 13 [53] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 125.9840 mm): Pad métallisé 14 [54] de J3
+    @(106.6820 mm, 140.1740 mm): Pad métallisé 18 [54] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.6820 mm, 140.1740 mm): Pad métallisé 18 [54] de J9
+    @(126.0120 mm, 125.9840 mm): Pad métallisé 14 [54] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.6820 mm, 140.1740 mm): Pad métallisé 18 [54] de J11
+    @(126.0120 mm, 125.9840 mm): Pad métallisé 14 [54] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 123.4440 mm): Pad métallisé 15 [55] de J3
+    @(108.6820 mm, 142.1740 mm): Pad métallisé 20 [55] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(108.6820 mm, 142.1740 mm): Pad métallisé 20 [55] de J9
+    @(126.0120 mm, 123.4440 mm): Pad métallisé 15 [55] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(138.6820 mm, 142.1740 mm): Pad métallisé 20 [55] de J11
+    @(126.0120 mm, 123.4440 mm): Pad métallisé 15 [55] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 120.9040 mm): Pad métallisé 16 [56] de J3
+    @(110.6820 mm, 144.1740 mm): Pad métallisé 22 [56] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 144.1740 mm): Pad métallisé 22 [56] de J9
+    @(126.0120 mm, 120.9040 mm): Pad métallisé 16 [56] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(140.6820 mm, 144.1740 mm): Pad métallisé 22 [56] de J11
+    @(126.0120 mm, 120.9040 mm): Pad métallisé 16 [56] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.0120 mm, 118.3640 mm): Pad métallisé 17 [57] de J3
+    @(110.6820 mm, 140.1740 mm): Pad métallisé 24 [57] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 140.1740 mm): Pad métallisé 24 [57] de J9
+    @(126.0120 mm, 118.3640 mm): Pad métallisé 17 [57] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(140.6820 mm, 140.1740 mm): Pad métallisé 24 [57] de J11
+    @(126.0120 mm, 118.3640 mm): Pad métallisé 17 [57] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 142.1740 mm): Pad métallisé 26 [58] de J9
+    @(126.0120 mm, 115.8240 mm): Pad métallisé 18 [58] de J6
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 142.1740 mm): Pad métallisé 26 [58] de J9
+    @(142.6820 mm, 142.1740 mm): Pad métallisé 26 [58] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.0120 mm, 115.8240 mm): Pad métallisé 18 [58] de J6
+    @(96.0120 mm, 115.8240 mm): Pad métallisé 18 [58] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(114.6820 mm, 144.1740 mm): Pad métallisé 28 [59] de J9
+    @(144.6820 mm, 144.1740 mm): Pad métallisé 28 [59] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.0120 mm, 113.2840 mm): Pad métallisé 19 [59] de J6
+    @(96.0120 mm, 113.2840 mm): Pad métallisé 19 [59] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.0120 mm, 113.2840 mm): Pad métallisé 19 [59] de J6
+    @(114.6820 mm, 144.1740 mm): Pad métallisé 28 [59] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(114.6820 mm, 140.1740 mm): Pad métallisé 30 [60] de J9
+    @(144.6820 mm, 140.1740 mm): Pad métallisé 30 [60] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.0120 mm, 110.7440 mm): Pad métallisé 20 [60] de J6
+    @(96.0120 mm, 110.7440 mm): Pad métallisé 20 [60] de J3
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.0120 mm, 110.7440 mm): Pad métallisé 20 [60] de J6
+    @(114.6820 mm, 140.1740 mm): Pad métallisé 30 [60] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.6820 mm, 144.1740 mm): Pad métallisé 1 [28] de J9
+    @(126.6820 mm, 144.1740 mm): Pad métallisé 1 [28] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 144.1740 mm): Pad métallisé 1 [28] de J11
+    @(136.9520 mm, 115.8240 mm): Pad métallisé 8 [28] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 115.8240 mm): Pad métallisé 8 [28] de J5
+    @(106.9520 mm, 115.8240 mm): Pad métallisé 8 [28] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(96.6820 mm, 140.1740 mm): Pad métallisé 3 [29] de J9
+    @(126.6820 mm, 140.1740 mm): Pad métallisé 3 [29] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.9520 mm, 113.2840 mm): Pad métallisé 9 [29] de J2
+    @(96.6820 mm, 140.1740 mm): Pad métallisé 3 [29] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 140.1740 mm): Pad métallisé 3 [29] de J11
+    @(136.9520 mm, 113.2840 mm): Pad métallisé 9 [29] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.6820 mm, 142.1740 mm): Pad métallisé 5 [30] de J9
+    @(128.6820 mm, 142.1740 mm): Pad métallisé 5 [30] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.6820 mm, 142.1740 mm): Pad métallisé 5 [30] de J11
+    @(136.9520 mm, 110.7440 mm): Pad métallisé 10 [30] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 110.7440 mm): Pad métallisé 10 [30] de J5
+    @(106.9520 mm, 110.7440 mm): Pad métallisé 10 [30] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 133.6040 mm): Pad métallisé 11 [31] de J2
+    @(100.6820 mm, 144.1740 mm): Pad métallisé 7 [31] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 144.1740 mm): Pad métallisé 7 [31] de J11
+    @(134.4120 mm, 133.6040 mm): Pad métallisé 11 [31] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 144.1740 mm): Pad métallisé 7 [31] de J11
+    @(104.4120 mm, 133.6040 mm): Pad métallisé 11 [31] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 128.5240 mm): Pad métallisé 13 [33] de J2
+    @(100.6820 mm, 140.1740 mm): Pad métallisé 9 [33] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 140.1740 mm): Pad métallisé 9 [33] de J11
+    @(134.4120 mm, 128.5240 mm): Pad métallisé 13 [33] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(130.6820 mm, 140.1740 mm): Pad métallisé 9 [33] de J11
+    @(104.4120 mm, 128.5240 mm): Pad métallisé 13 [33] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 142.1740 mm): Pad métallisé 11 [34] de J9
+    @(132.6820 mm, 142.1740 mm): Pad métallisé 11 [34] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 125.9840 mm): Pad métallisé 14 [34] de J2
+    @(102.6820 mm, 142.1740 mm): Pad métallisé 11 [34] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(132.6820 mm, 142.1740 mm): Pad métallisé 11 [34] de J11
+    @(134.4120 mm, 125.9840 mm): Pad métallisé 14 [34] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 123.4440 mm): Pad métallisé 15 [35] de J2
+    @(104.6820 mm, 144.1740 mm): Pad métallisé 13 [35] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 123.4440 mm): Pad métallisé 15 [35] de J5
+    @(104.4120 mm, 123.4440 mm): Pad métallisé 15 [35] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.6820 mm, 144.1740 mm): Pad métallisé 13 [35] de J11
+    @(134.4120 mm, 123.4440 mm): Pad métallisé 15 [35] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 120.9040 mm): Pad métallisé 16 [36] de J2
+    @(104.6820 mm, 140.1740 mm): Pad métallisé 15 [36] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 120.9040 mm): Pad métallisé 16 [36] de J5
+    @(104.4120 mm, 120.9040 mm): Pad métallisé 16 [36] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.6820 mm, 140.1740 mm): Pad métallisé 15 [36] de J11
+    @(134.4120 mm, 120.9040 mm): Pad métallisé 16 [36] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 118.3640 mm): Pad métallisé 17 [37] de J2
+    @(106.6820 mm, 142.1740 mm): Pad métallisé 17 [37] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 118.3640 mm): Pad métallisé 17 [37] de J5
+    @(104.4120 mm, 118.3640 mm): Pad métallisé 17 [37] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.6820 mm, 142.1740 mm): Pad métallisé 17 [37] de J11
+    @(134.4120 mm, 118.3640 mm): Pad métallisé 17 [37] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 115.8240 mm): Pad métallisé 18 [38] de J2
+    @(108.6820 mm, 144.1740 mm): Pad métallisé 19 [38] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 115.8240 mm): Pad métallisé 18 [38] de J5
+    @(104.4120 mm, 115.8240 mm): Pad métallisé 18 [38] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(138.6820 mm, 144.1740 mm): Pad métallisé 19 [38] de J11
+    @(134.4120 mm, 115.8240 mm): Pad métallisé 18 [38] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4120 mm, 113.2840 mm): Pad métallisé 19 [39] de J2
+    @(108.6820 mm, 140.1740 mm): Pad métallisé 21 [39] de J9
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 113.2840 mm): Pad métallisé 19 [39] de J5
+    @(104.4120 mm, 113.2840 mm): Pad métallisé 19 [39] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(138.6820 mm, 140.1740 mm): Pad métallisé 21 [39] de J11
+    @(134.4120 mm, 113.2840 mm): Pad métallisé 19 [39] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 142.1740 mm): Pad métallisé 23 [40] de J9
+    @(140.6820 mm, 142.1740 mm): Pad métallisé 23 [40] de J11
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.4120 mm, 110.7440 mm): Pad métallisé 20 [40] de J5
+    @(104.4120 mm, 110.7440 mm): Pad métallisé 20 [40] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(140.6820 mm, 142.1740 mm): Pad métallisé 23 [40] de J11
+    @(134.4120 mm, 110.7440 mm): Pad métallisé 20 [40] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 131.0640 mm): Pad métallisé 12 [12] de J1
+    @(142.8120 mm, 131.0640 mm): Pad métallisé 12 [12] de J4
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 102.1740 mm): Pad métallisé 2 [12] de J10
+    @(96.6820 mm, 102.1740 mm): Pad métallisé 2 [12] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(126.6820 mm, 102.1740 mm): Pad métallisé 2 [12] de J10
+    @(112.8120 mm, 131.0640 mm): Pad métallisé 12 [12] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.6820 mm, 104.1740 mm): Pad métallisé 4 [13] de J8
+    @(112.8120 mm, 128.5240 mm): Pad métallisé 13 [13] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 128.5240 mm): Pad métallisé 13 [13] de J1
+    @(128.6820 mm, 104.1740 mm): Pad métallisé 4 [13] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 128.5240 mm): Pad métallisé 13 [13] de J4
+    @(128.6820 mm, 104.1740 mm): Pad métallisé 4 [13] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(98.6820 mm, 100.1740 mm): Pad métallisé 6 [14] de J8
+    @(112.8120 mm, 125.9840 mm): Pad métallisé 14 [14] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(128.6820 mm, 100.1740 mm): Pad métallisé 6 [14] de J10
+    @(98.6820 mm, 100.1740 mm): Pad métallisé 6 [14] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 125.9840 mm): Pad métallisé 14 [14] de J4
+    @(128.6820 mm, 100.1740 mm): Pad métallisé 6 [14] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(100.6820 mm, 102.1740 mm): Pad métallisé 8 [15] de J8
+    @(112.8120 mm, 123.4440 mm): Pad métallisé 15 [15] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 123.4440 mm): Pad métallisé 15 [15] de J1
+    @(130.6820 mm, 102.1740 mm): Pad métallisé 8 [15] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 123.4440 mm): Pad métallisé 15 [15] de J4
+    @(130.6820 mm, 102.1740 mm): Pad métallisé 8 [15] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 104.1740 mm): Pad métallisé 10 [16] de J8
+    @(112.8120 mm, 120.9040 mm): Pad métallisé 16 [16] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 120.9040 mm): Pad métallisé 16 [16] de J1
+    @(132.6820 mm, 104.1740 mm): Pad métallisé 10 [16] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 120.9040 mm): Pad métallisé 16 [16] de J4
+    @(132.6820 mm, 104.1740 mm): Pad métallisé 10 [16] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(102.6820 mm, 100.1740 mm): Pad métallisé 12 [17] de J8
+    @(112.8120 mm, 118.3640 mm): Pad métallisé 17 [17] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 118.3640 mm): Pad métallisé 17 [17] de J1
+    @(132.6820 mm, 100.1740 mm): Pad métallisé 12 [17] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 118.3640 mm): Pad métallisé 17 [17] de J4
+    @(132.6820 mm, 100.1740 mm): Pad métallisé 12 [17] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 133.6040 mm): Pad métallisé 1 [1] de J1
+    @(145.3520 mm, 133.6040 mm): Pad métallisé 1 [1] de J4
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.6820 mm, 104.1740 mm): Pad métallisé 13 [1] de J10
+    @(104.6820 mm, 104.1740 mm): Pad métallisé 13 [1] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 133.6040 mm): Pad métallisé 1 [1] de J4
+    @(134.6820 mm, 104.1740 mm): Pad métallisé 13 [1] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.6820 mm, 102.1740 mm): Pad métallisé 14 [18] de J8
+    @(112.8120 mm, 115.8240 mm): Pad métallisé 18 [18] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 115.8240 mm): Pad métallisé 18 [18] de J1
+    @(134.6820 mm, 102.1740 mm): Pad métallisé 14 [18] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 115.8240 mm): Pad métallisé 18 [18] de J4
+    @(134.6820 mm, 102.1740 mm): Pad métallisé 14 [18] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 131.0640 mm): Pad métallisé 2 [2] de J1
+    @(145.3520 mm, 131.0640 mm): Pad métallisé 2 [2] de J4
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(134.6820 mm, 100.1740 mm): Pad métallisé 15 [2] de J10
+    @(104.6820 mm, 100.1740 mm): Pad métallisé 15 [2] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 131.0640 mm): Pad métallisé 2 [2] de J4
+    @(134.6820 mm, 100.1740 mm): Pad métallisé 15 [2] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.6820 mm, 104.1740 mm): Pad métallisé 16 [19] de J8
+    @(112.8120 mm, 113.2840 mm): Pad métallisé 19 [19] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 113.2840 mm): Pad métallisé 19 [19] de J1
+    @(136.6820 mm, 104.1740 mm): Pad métallisé 16 [19] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 113.2840 mm): Pad métallisé 19 [19] de J4
+    @(136.6820 mm, 104.1740 mm): Pad métallisé 16 [19] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.6820 mm, 102.1740 mm): Pad métallisé 17 [4] de J8
+    @(115.3520 mm, 125.9840 mm): Pad métallisé 4 [4] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.6820 mm, 102.1740 mm): Pad métallisé 17 [4] de J10
+    @(106.6820 mm, 102.1740 mm): Pad métallisé 17 [4] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 125.9840 mm): Pad métallisé 4 [4] de J4
+    @(136.6820 mm, 102.1740 mm): Pad métallisé 17 [4] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.6820 mm, 100.1740 mm): Pad métallisé 18 [20] de J8
+    @(112.8120 mm, 110.7440 mm): Pad métallisé 20 [20] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 110.7440 mm): Pad métallisé 20 [20] de J1
+    @(136.6820 mm, 100.1740 mm): Pad métallisé 18 [20] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 110.7440 mm): Pad métallisé 20 [20] de J4
+    @(136.6820 mm, 100.1740 mm): Pad métallisé 18 [20] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(108.6820 mm, 104.1740 mm): Pad métallisé 19 [6] de J8
+    @(115.3520 mm, 120.9040 mm): Pad métallisé 6 [6] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 120.9040 mm): Pad métallisé 6 [6] de J1
+    @(138.6820 mm, 104.1740 mm): Pad métallisé 19 [6] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 120.9040 mm): Pad métallisé 6 [6] de J4
+    @(138.6820 mm, 104.1740 mm): Pad métallisé 19 [6] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.9520 mm, 133.6040 mm): Pad métallisé 1 [21] de J2
+    @(136.9520 mm, 133.6040 mm): Pad métallisé 1 [21] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 133.6040 mm): Pad métallisé 1 [21] de J5
+    @(138.6820 mm, 102.1740 mm): Pad métallisé 20 [21] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(138.6820 mm, 102.1740 mm): Pad métallisé 20 [21] de J10
+    @(108.6820 mm, 102.1740 mm): Pad métallisé 20 [21] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(108.6820 mm, 100.1740 mm): Pad métallisé 21 [7] de J8
+    @(115.3520 mm, 118.3640 mm): Pad métallisé 7 [7] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 118.3640 mm): Pad métallisé 7 [7] de J1
+    @(138.6820 mm, 100.1740 mm): Pad métallisé 21 [7] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 118.3640 mm): Pad métallisé 7 [7] de J4
+    @(138.6820 mm, 100.1740 mm): Pad métallisé 21 [7] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.9520 mm, 131.0640 mm): Pad métallisé 2 [22] de J2
+    @(136.9520 mm, 131.0640 mm): Pad métallisé 2 [22] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 104.1740 mm): Pad métallisé 22 [22] de J8
+    @(106.9520 mm, 131.0640 mm): Pad métallisé 2 [22] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 131.0640 mm): Pad métallisé 2 [22] de J5
+    @(140.6820 mm, 104.1740 mm): Pad métallisé 22 [22] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 102.1740 mm): Pad métallisé 23 [8] de J8
+    @(115.3520 mm, 115.8240 mm): Pad métallisé 8 [8] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 115.8240 mm): Pad métallisé 8 [8] de J1
+    @(140.6820 mm, 102.1740 mm): Pad métallisé 23 [8] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 115.8240 mm): Pad métallisé 8 [8] de J4
+    @(140.6820 mm, 102.1740 mm): Pad métallisé 23 [8] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.9520 mm, 128.5240 mm): Pad métallisé 3 [23] de J2
+    @(136.9520 mm, 128.5240 mm): Pad métallisé 3 [23] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(110.6820 mm, 100.1740 mm): Pad métallisé 24 [23] de J8
+    @(106.9520 mm, 128.5240 mm): Pad métallisé 3 [23] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 128.5240 mm): Pad métallisé 3 [23] de J5
+    @(140.6820 mm, 100.1740 mm): Pad métallisé 24 [23] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 104.1740 mm): Pad métallisé 25 [9] de J8
+    @(115.3520 mm, 113.2840 mm): Pad métallisé 9 [9] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 113.2840 mm): Pad métallisé 9 [9] de J1
+    @(142.6820 mm, 104.1740 mm): Pad métallisé 25 [9] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 113.2840 mm): Pad métallisé 9 [9] de J4
+    @(142.6820 mm, 104.1740 mm): Pad métallisé 25 [9] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(106.9520 mm, 123.4440 mm): Pad métallisé 5 [25] de J2
+    @(136.9520 mm, 123.4440 mm): Pad métallisé 5 [25] de J5
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 102.1740 mm): Pad métallisé 26 [25] de J8
+    @(106.9520 mm, 123.4440 mm): Pad métallisé 5 [25] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 123.4440 mm): Pad métallisé 5 [25] de J5
+    @(142.6820 mm, 102.1740 mm): Pad métallisé 26 [25] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.6820 mm, 100.1740 mm): Pad métallisé 27 [10] de J8
+    @(115.3520 mm, 110.7440 mm): Pad métallisé 10 [10] de J1
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.3520 mm, 110.7440 mm): Pad métallisé 10 [10] de J1
+    @(142.6820 mm, 100.1740 mm): Pad métallisé 27 [10] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(145.3520 mm, 110.7440 mm): Pad métallisé 10 [10] de J4
+    @(142.6820 mm, 100.1740 mm): Pad métallisé 27 [10] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(114.6820 mm, 104.1740 mm): Pad métallisé 28 [26] de J8
+    @(106.9520 mm, 120.9040 mm): Pad métallisé 6 [26] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 120.9040 mm): Pad métallisé 6 [26] de J5
+    @(144.6820 mm, 104.1740 mm): Pad métallisé 28 [26] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 120.9040 mm): Pad métallisé 6 [26] de J5
+    @(114.6820 mm, 104.1740 mm): Pad métallisé 28 [26] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(112.8120 mm, 133.6040 mm): Pad métallisé 11 [11] de J1
+    @(142.8120 mm, 133.6040 mm): Pad métallisé 11 [11] de J4
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(142.8120 mm, 133.6040 mm): Pad métallisé 11 [11] de J4
+    @(144.6820 mm, 102.1740 mm): Pad métallisé 29 [11] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(144.6820 mm, 102.1740 mm): Pad métallisé 29 [11] de J10
+    @(114.6820 mm, 102.1740 mm): Pad métallisé 29 [11] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(114.6820 mm, 100.1740 mm): Pad métallisé 30 [27] de J8
+    @(106.9520 mm, 118.3640 mm): Pad métallisé 7 [27] de J2
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 118.3640 mm): Pad métallisé 7 [27] de J5
+    @(144.6820 mm, 100.1740 mm): Pad métallisé 30 [27] de J10
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(136.9520 mm, 118.3640 mm): Pad métallisé 7 [27] de J5
+    @(114.6820 mm, 100.1740 mm): Pad métallisé 30 [27] de J8
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(115.1825 mm, 93.3700 mm): Pad 2 [Net-(R3-Pad2)] de R3 sur B.Cu
+    @(115.1825 mm, 96.8200 mm): Pad 1 [Net-(R3-Pad2)] de R4 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(104.4650 mm, 93.2075 mm): Pad 8 [Net-(R1-Pad2)] de U2 sur B.Cu
+    @(107.2400 mm, 96.8325 mm): Pad 2 [Net-(R1-Pad2)] de R1 sur B.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(99.4650 mm, 93.2075 mm): Pad 8 [Net-(R2-Pad1)] de U1 sur B.Cu
+    @(107.2400 mm, 93.3825 mm): Pad 1 [Net-(R2-Pad1)] de R2 sur B.Cu
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - PTH inside courtyard
+    - NPTH inside courtyard
+
+** End of Report **

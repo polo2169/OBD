@@ -98,7 +98,7 @@ Pour le montage Waveshare Wi-Fi retenu :
 
 ```bash
 cd firmware/esp32-gateway
-/Users/paul/.platformio/penv/bin/pio run -e esp32-waveshare-wifi-readonly -t upload
+pio run -e esp32-waveshare-wifi-readonly -t upload
 ```
 
 Après le flash, le moniteur série doit annoncer `firmware=0.7.2-framed-diagnostic-lock`,
@@ -114,7 +114,7 @@ Avec un MCP2515, choisir selon le quartz :
 
 ```bash
 # Exemple pour un quartz marqué 8.000
-/Users/paul/.platformio/penv/bin/pio run -e esp32-mcp2515-8mhz-readonly -t upload
+pio run -e esp32-mcp2515-8mhz-readonly -t upload
 ```
 
 Pour le montage recommandé à deux ESP32, flasher chaque carte séparément :
@@ -122,11 +122,11 @@ Pour le montage recommandé à deux ESP32, flasher chaque carte séparément :
 ```bash
 cd firmware/esp32-gateway
 # Carte principale, reliée ensuite au PC
-/Users/paul/.platformio/penv/bin/pio run \
+pio run \
   -e esp32-dual-uart-main-diagnostic -t upload
 
 # Seconde carte, satellite OBD 3/8
-/Users/paul/.platformio/penv/bin/pio run \
+pio run \
   -e esp32-dual-uart-satellite-diagnostic -t upload
 ```
 
@@ -134,7 +134,7 @@ Pour une séance de maintenance DTC explicitement armée, seule la satellite 3/8
 doit être remplacée temporairement par le profil PSA lab :
 
 ```bash
-/Users/paul/.platformio/penv/bin/pio run \
+pio run \
   -e esp32-dual-uart-satellite-psa-lab -t upload
 ```
 
@@ -160,7 +160,7 @@ disponible :
 
 ```bash
 cd firmware/esp32-gateway
-/Users/paul/.platformio/penv/bin/pio run \
+pio run \
   -e esp32-dual-can-16mhz-serial-diagnostic -t upload
 ```
 
@@ -187,14 +187,14 @@ en filtre applicatif lecture seule :
 
 ```bash
 cd firmware/esp32-gateway
-/Users/paul/.platformio/penv/bin/pio run -e esp32-active -t upload
+pio run -e esp32-active -t upload
 ```
 
 Pour le montage TJA1050 série sur GPIO 5/4, utiliser de préférence le profil
 verrouillé testé sur l'ESP32 classique :
 
 ```bash
-/Users/paul/.platformio/penv/bin/pio run -e esp32-tja1050-serial-diagnostic -t upload
+pio run -e esp32-tja1050-serial-diagnostic -t upload
 ```
 
 Le `hello` doit alors annoncer `diagnostic_read_only=true`,

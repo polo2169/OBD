@@ -1,0 +1,26 @@
+### Footprint positions - created on 2026-08-07T18:28:30 ###
+### Printed by KiCad version 10.0.5
+## Unit = mm, Angle = deg.
+## Side : All
+# Ref     Val               Package                           PosX       PosY       Rot  Side
+J4        to_car_1          SAMTEC_ESW-110-44-F-D         144.0820  -122.1740  -90.0000  bottom
+J5        to_car_2          SAMTEC_ESW-110-44-F-D         135.6820  -122.1740  -90.0000  bottom
+J6        to_car_3          SAMTEC_ESW-110-44-F-D         127.2820  -122.1740  -90.0000  bottom
+R1        120R              R_1206_3216Metric             108.7025   -96.8325  180.0000  bottom
+R2        120R              R_1206_3216Metric             108.7025   -93.3825    0.0000  bottom
+R3        120R              R_1206_3216Metric             113.7200   -93.3700    0.0000  bottom
+R4        120R              R_1206_3216Metric             113.7200   -96.8200  180.0000  bottom
+U1        DG419LEDQ-T1-GE3  MSOP-8_3x3mm_P0.65mm           98.4900   -95.3200   90.0000  bottom
+U2        DG419LEDQ-T1-GE3  MSOP-8_3x3mm_P0.65mm          103.4900   -95.3200   90.0000  bottom
+D1        BAS40SDW          SOT-363_SC-70-6               108.7425   -95.2800  -90.0000  top
+D2        BAS40SDW          SOT-363_SC-70-6               103.5000   -95.2900  -90.0000  top
+D3        SMF16A            D_SOD-123                      98.5800   -95.2975   90.0000  top
+J1        to_EPS_1          Amphenol_10129381-920003BLF   114.0820  -122.1740   90.0000  top
+J2        to_EPS_2          Amphenol_10129381-920003BLF   105.6820  -122.1740   90.0000  top
+J3        to_ESP_3          Amphenol_10129381-920003BLF    97.2820  -122.1740   90.0000  top
+J7        USB_C_Receptacle  GCT_USB4115-03-C_REVB4         91.9450   -98.5700  -90.0000  top
+J8        B2B_1             SAMTEC_TW-10-03-T-T-320-100    96.6820  -104.1740    0.0000  top
+J9        B2B_2             SAMTEC_TW-10-03-T-T-320-100    96.6820  -144.1740    0.0000  top
+J10       B2B_1             SAMTEC_TW-10-03-T-T-320-100   126.6820  -104.1740    0.0000  top
+J11       B2B_2             SAMTEC_TW-10-03-T-T-320-100   126.6820  -144.1740    0.0000  top
+## End

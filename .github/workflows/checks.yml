@@ -26,6 +26,33 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
         run: pytest -p no:cacheprovider -q
 
+  openpilot-lab:
+    name: OpenPilot lab
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: openpilot/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r openpilot/requirements.txt
+      - name: Run Python tests
+        working-directory: openpilot
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: pytest -p no:cacheprovider -q
+      - name: Test native MADS and RVV safety barriers
+        working-directory: openpilot/firmware/psa-obdc-bridge
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iinclude test/mads_state_test.cpp -o /tmp/mads-state-test
+          /tmp/mads-state-test
+          c++ -std=c++17 -Wall -Wextra -Werror -Itest/stubs -Iinclude test/lka_mads_safety_test.cpp -o /tmp/lka-mads-test
+          /tmp/lka-mads-test
+          c++ -std=c++17 -Wall -Wextra -Werror -Iinclude test/rvv_safety_test.cpp -o /tmp/rvv-safety-test
+          /tmp/rvv-safety-test
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
@@ -44,16 +71,30 @@ jobs:
         run: npm run check
 
   firmware:
-    name: Firmware (${{ matrix.environment }})
+    name: Firmware (${{ matrix.project }} / ${{ matrix.environment }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        environment:
-          - esp32-waveshare-wifi-readonly
-          - esp32-tja1050-serial-diagnostic
-          - esp32-tja1050-serial-psa-lab
-          - esp32-dual-can-16mhz-serial-diagnostic
+        include:
+          - project: firmware/esp32-gateway
+            environment: esp32-waveshare-wifi-readonly
+          - project: firmware/esp32-gateway
+            environment: esp32-tja1050-serial-diagnostic
+          - project: firmware/esp32-gateway
+            environment: esp32-tja1050-serial-psa-lab
+          - project: firmware/esp32-gateway
+            environment: esp32-dual-can-16mhz-serial-diagnostic
+          - project: openpilot/firmware/psa-obdc-bridge
+            environment: psa-obdc-master-zero-torque
+          - project: openpilot/firmware/psa-obdc-bridge
+            environment: psa-obdc-satellite
+          - project: openpilot/firmware/psa-obdc-bridge
+            environment: psa-obdc-master-bench-torque
+          - project: openpilot/firmware/psa-obdc-bridge
+            environment: psa-obdc-master-bench-rvv
+          - project: openpilot/firmware/sensor-logger
+            environment: esp32-sensor-logger
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -63,5 +104,5 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install platformio==6.1.19
       - name: Compile firmware
-        working-directory: firmware/esp32-gateway
+        working-directory: ${{ matrix.project }}
         run: pio run -e "${{ matrix.environment }}"

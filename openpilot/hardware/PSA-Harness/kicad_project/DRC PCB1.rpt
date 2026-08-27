@@ -1,0 +1,46 @@
+** Drc report for PCB1.kicad_pcb **
+** Created on 2026-08-10T23:24:11 **
+** Report includes: Errors, Warnings **
+
+** Found 8 DRC violations **
+[starved_thermal]: Connexion de frein thermique à la zone incomplète (couche F.Cu ; zone nbre min de rayons 2 ; réel 1)
+    Local override; error
+    @(87.0000 mm, 89.0000 mm): Zone [GND] sur F.Cu, B.Cu et 2 en plus, priorité 0
+    @(126.6820 mm, 104.1740 mm): Pad métallisé 1 [GND] de J10
+[starved_thermal]: Connexion de frein thermique à la zone incomplète (couche B.Cu ; zone nbre min de rayons 2 ; réel 1)
+    Local override; error
+    @(87.0000 mm, 89.0000 mm): Zone [GND] sur F.Cu, B.Cu et 2 en plus, priorité 0
+    @(136.9520 mm, 125.9840 mm): Pad métallisé 4 [GND] de J5
+[starved_thermal]: Connexion de frein thermique à la zone incomplète (couche In1.Cu ; 1 rayons connectés à des ilots isolés)
+    Local override; error
+    @(87.0000 mm, 89.0000 mm): Zone [GND] sur F.Cu, B.Cu et 2 en plus, priorité 0
+    @(136.9520 mm, 125.9840 mm): Pad métallisé 4 [GND] de J5
+[lib_footprint_issues]: Empreinte 'SAMTEC_TW-10-X-X-T-X-X' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(126.6820 mm, 104.1740 mm): Empreinte J10
+[lib_footprint_issues]: Empreinte 'SAMTEC_TW-10-X-X-T-X-X' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(126.6820 mm, 144.1740 mm): Empreinte J11
+[lib_footprint_issues]: Empreinte 'ESW-110-44-F-D' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(127.2820 mm, 122.1740 mm): Empreinte J6
+[lib_footprint_issues]: Empreinte 'ESW-110-44-F-D' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(144.0820 mm, 122.1740 mm): Empreinte J4
+[lib_footprint_issues]: Empreinte 'ESW-110-44-F-D' introuvable dans la librairie 'PSA'
+    Local override; warning
+    @(135.6820 mm, 122.1740 mm): Empreinte J5
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - PTH inside courtyard
+    - NPTH inside courtyard
+
+** End of Report **

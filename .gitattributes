@@ -1,0 +1,6 @@
+# Generated hardware and media assets are intentionally opaque in diffs.
+*.step binary
+*.stl binary
+*.pdf binary
+*.png binary
+*.zip binary

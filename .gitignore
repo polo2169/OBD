@@ -1,4 +1,5 @@
 .DS_Store
+.claude/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -12,8 +13,14 @@ backend/.env
 backend/.venv/
 frontend/node_modules/
 frontend/dist/
-firmware/esp32-gateway/.pio/
+**/.pio/
 firmware/esp32-gateway/include/secrets.hpp
+
+# KiCad local state and embedded history (not project sources)
+**/*.kicad_prl
+**/~*.lck
+openpilot/hardware/PSA-Harness/kicad_project/.history/
+openpilot/hardware/PSA-Harness/kicad_project/gerber.zip
 
 data/sessions/*.jsonl
 data/sessions/*.json

@@ -1,0 +1,26 @@
+quantite,niveau,reference,description,remarque
+2,obligatoire,ESP32-DevKitC V4 ESP32-WROOM-32E,Carte ESP32 avec TWAI et USB-UART,Inutile de racheter si les deux ESP32 actuels sont compatibles avec GPIO 4/5/16/17/32
+1,obligatoire,comma OBD-C cable 3/3X ou USB-C 3.2 Gen 2 full-featured,Cable transmettant toutes les lignes,Verifier la continuite et marquer l'orientation avant alimentation
+1,obligatoire,GCT USB4115-03-C,Receptacle 24 contacts pour le PCB adaptateur OBD-C,Un breakout USB2 6/16 broches ne convient pas
+1,obligatoire,PCB adaptateur OBD-C sur mesure,Sorties CAN0 CAN2 SBU1 +12 GND,Ne jamais connecter ce PCB a un equipement USB standard
+2,finale,TCAN3403-Q1 SOIC-8,Transceiver CAN 3.3 V automobile AEC-Q100 avec standby et tenue bus +/-58 V,Sans resistance de terminaison externe
+2,finale,100 nF X7R 0603,Decouplage local TCAN3403-Q1,Un par transceiver au plus pres du VCC
+2,finale,4.7 uF X7R,Reservoir local des interfaces CAN,Un par carte
+2,finale,10 kOhm 0603,Polarisation STB en mode normal,Confirmer le schema avec la variante exacte TCAN3403-Q1
+2,banc,Waveshare SN65HVD230 CAN Board SKU 3945,Interface CAN 3.3 V facile a cabler,Pour le banc seulement et retirer/desactiver toute terminaison 120 Ohm
+1,prototype,Pololu D36V28F5 item 3782,Convertisseur 5 V 3.2 A entree 5.3 a 50 V avec protection inversion,Maquette uniquement pas qualifie automobile
+2,finale,LM5164-Q1 + passifs calcules,Convertisseur 6 a 100 V 1 A AEC-Q100,Un etage par ESP32 ou concevoir une alimentation centrale plus puissante
+1,obligatoire,TPS22919QDCKRQ1,Interrupteur high-side 5 V automobile pour SBU1,IN=5 V VOUT=SBU1 ON=GPIO32 QOD ouvert
+1,obligatoire,100 kOhm 0603,Pull-down externe de ON TPS22919-Q1,Maintient le bypass pendant reset/debranchement ESP32
+1,obligatoire,Interrupteur a verrouillage DPST automobile,Autorisation et coupure physique MADS,Un pole en serie GPIO32 vers ON du TPS22919-Q1 et un pole GPIO33 vers GND
+1,obligatoire,10 kOhm 0603,Pull-up externe GPIO33 vers 3.3 V,Une ouverture ou rupture de fil desactive l'autorisation MADS
+1,obligatoire,100 nF X7R 0603,Decouplage TPS22919-Q1,Au plus pres de IN/GND
+1,obligatoire,Fusible temporise 1 A automobile + porte-fusible,Protection du +12 V avant convertisseur,A placer au plus pres de l'entree du PCB adaptateur
+2,recommande,PESD2CANFD24V-Q ou protection CAN AEC-Q101,Protection ESD/transitoires locale,Au plus pres du connecteur et avant le transceiver
+2,recommande,Self de mode commun CAN automobile,Reduction EMI sur CAN0 et CAN2,Selectionner apres mesure a l'oscilloscope
+2,obligatoire,Paire torsadee 0.35 mm2,CANH/CANL entre adaptateur et transceivers,Conserver les derivations tres courtes
+1,obligatoire,Cable 3 conducteurs verrouillable,UART TX RX et GND entre les deux ESP32,Pas de fils Dupont dans le vehicule
+1,obligatoire,Boitier isolant + entretoises,Fixation des deux cartes et de l'adaptateur,Aucune breadboard pour les essais vehicule
+1,validation,Alimentation de laboratoire 12 V limitee en courant,Premier test hors vehicule,Limiter initialement a 0.5 A
+1,validation,Multimetre avec mesure ohm/continuite,Validation pinout tension et terminaisons,Mesurer hors tension 60 Ohm bypass et 120 Ohm par segment isole
+1,recommande,Oscilloscope 2 voies + sonde differentielle CAN,Validation des niveaux fronts et erreurs CAN,Indispensable avant d'augmenter la duree ou le couple
