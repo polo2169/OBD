@@ -31,7 +31,7 @@ class TestCombinedInterface(unittest.TestCase):
     self.assertEqual(self.cp.lateralTuning.to_dict(), lateral.lateralTuning.to_dict())
     for ms in range(0, 4001, 10):
       self.h.step(ms)
-    self.assertEqual(self.h.output[-1][1], 10)
+    self.assertEqual(self.h.output[-1][1], 15)
     self.assertTrue(self.h.safety.get_controls_allowed())
     self.h.step(4001, driver=16)
     self.assertTrue(self.h.ci.CS.out.steeringDisengage)
@@ -45,7 +45,7 @@ class TestCombinedInterface(unittest.TestCase):
           self.h.step(ms)
         for ms in range(4010, 4251, 10):
           applied, _ = self.h.step(ms, driver=sign * 15)
-          self.assertEqual(applied.torqueOutputCan, 10)
+          self.assertEqual(applied.torqueOutputCan, 15)
           self.assertFalse(self.h.ci.CS.out.steeringPressed)
           self.assertFalse(self.h.ci.CS.out.steeringDisengage)
           self.assertTrue(self.h.safety.get_controls_allowed())
@@ -58,7 +58,7 @@ class TestCombinedInterface(unittest.TestCase):
   def test_combined_controller_and_panda_agree_at_140(self):
     for ms in range(0, 4001, 10):
       self.h.step(ms, speed=140, stock_setpoint=140)
-    self.assertEqual(self.h.output[-1][1], 10)
+    self.assertEqual(self.h.output[-1][1], 15)
     self.assertTrue(self.h.safety.get_controls_allowed())
     applied, sends = self.h.step(4001, speed=140.01, stock_setpoint=140)
     self.assertEqual(applied.torqueOutputCan, 0)

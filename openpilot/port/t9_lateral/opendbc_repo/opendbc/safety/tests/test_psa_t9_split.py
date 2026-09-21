@@ -4,7 +4,7 @@ from opendbc.safety.tests import test_psa_t9 as lateral_tests
 
 
 class TestT9SplitSafety(unittest.TestCase):
-  """The real C hooks, independent permissions and unchanged actuator limits."""
+  """The real C hooks, independent permissions and shared actuator limits."""
   # The T9 variants share a frame identity; their allowlists are tested here.
   TX_MSGS = lateral_tests.TestT9LateralSafety.TX_MSGS
   raw = lateral_tests.TestT9LateralSafety.raw
@@ -385,15 +385,15 @@ class TestT9SplitSafety(unittest.TestCase):
       self.safety.set_controls_allowed(True)
       self.assertEqual(self.safety.test_t9_rvv_permission_bits(), 1)
 
-  def test_torque_rate_and_speed_limits_are_not_relaxed(self):
+  def test_torque_rate_and_speed_limits_remain_bounded(self):
     self.feed(speed=140, setpoint=140)
     self.engage()
     self.assertEqual(self.request(140), 0)
-    for torque in range(1, 11):
+    for torque in range(1, 16):
       self.assertTrue(self.tx(torque))
       self.feed()
       self.assertEqual(self.request(140), 0)
-    self.assertFalse(self.tx(11))
+    self.assertFalse(self.tx(16))
     self.assertTrue(self.tx(0, 2, 0))
     self.feed(speed=140.01)
     self.assert_axes(False, False)

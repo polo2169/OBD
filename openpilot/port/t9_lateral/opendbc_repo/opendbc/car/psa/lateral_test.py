@@ -10,12 +10,12 @@ import math
 
 from opendbc.car import structs
 from opendbc.car.carlog import carlog
-from opendbc.car.psa.lka import LkaInputs, LkaPhase, T9LkaLifecycle, fresh
+from opendbc.car.psa.lka import ACTIVE_TORQUE_LIMIT, LkaInputs, LkaPhase, T9LkaLifecycle, fresh
 from opendbc.car.psa.lka_feedback import T9LkaCanObserver
 from opendbc.car.psa.rvv_wire import COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM
 
 SAFETY_PARAM = 0x1308
-TORQUE_SCALE = 10
+TORQUE_SCALE = ACTIVE_TORQUE_LIMIT
 PERIOD_NS = 50_000_000
 MIN_PERIOD_NS = 45_000_000
 
@@ -27,7 +27,7 @@ def enabled(CP):
 
 
 def steering_frame(template, state, factor, torque):
-  if len(template) != 8 or not 2 <= state <= 4 or not 0 <= factor <= 100 or not -10 <= torque <= 10:
+  if len(template) != 8 or not 2 <= state <= 4 or not 0 <= factor <= 100 or not -TORQUE_SCALE <= torque <= TORQUE_SCALE:
     raise ValueError('Invalid T9 steering request')
   if template[5] & 1 or template[6] or template[7] & 0xFC:
     raise ValueError('Factory stream is not the recorded torque API')
@@ -48,7 +48,7 @@ class T9LateralTestController:
     self.pause_supported = pause_supported
     self.cycle_supported = cycle_supported
     self.observer = T9LkaCanObserver()
-    self.lateral = T9LkaLifecycle(torque_limit=10, cycle_supported=cycle_supported)
+    self.lateral = T9LkaLifecycle(torque_limit=TORQUE_SCALE, cycle_supported=cycle_supported)
     self.template = None
     self.last_wrong_side = 0
     self.first_observation = None

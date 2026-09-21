@@ -83,7 +83,7 @@ class TestSplitInterfaceIntegration(unittest.TestCase):
           applied, _ = self.step(ms, resume=True)
           self.assertLessEqual(abs(applied.torqueOutputCan - previous_torque), 1)
           previous_torque = applied.torqueOutputCan
-        self.assertEqual(applied.torqueOutputCan, 10)
+        self.assertEqual(applied.torqueOutputCan, 15)
         self.assertFalse(self.h.ci.CS.out.psaLateralPaused)
 
   def test_eps_withdrawal_during_pause_requires_manual_rearm(self):

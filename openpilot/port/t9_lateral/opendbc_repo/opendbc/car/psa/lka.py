@@ -20,8 +20,9 @@ EPS_RELEASE_TIMEOUT_NS = 1_500_000_000
 MIN_SPEED_KPH = 67.1
 MAX_SPEED_KPH = 140.0
 DRIVER_TORQUE_LIMIT = 15
-TORQUE_LIMIT = 1  # Initial Panda shadow envelope; never the observed factory maximum.
-NORMALIZED_TORQUE_SCALE = 10  # Existing T9 CarControllerParams / isolated HIL conversion.
+TORQUE_LIMIT = 1  # Initial passive shadow envelope; never the observed factory maximum.
+ACTIVE_TORQUE_LIMIT = 15  # Experimental command envelope requested after the +/-10 road capture.
+NORMALIZED_TORQUE_SCALE = ACTIVE_TORQUE_LIMIT
 EPS_CYCLE_PERIOD_NS = 12_000_000_000
 EPS_CYCLE_TIMEOUT_NS = 2_000_000_000
 
@@ -101,8 +102,8 @@ class T9LkaLifecycle:
   """
 
   def __init__(self, torque_limit: int = TORQUE_LIMIT, *, cycle_supported: bool = False):
-    if not isinstance(torque_limit, int) or not 1 <= torque_limit <= 10:
-      raise ValueError("Candidate torque limit must be 1..10 raw")
+    if not isinstance(torque_limit, int) or not 1 <= torque_limit <= ACTIVE_TORQUE_LIMIT:
+      raise ValueError(f"Candidate torque limit must be 1..{ACTIVE_TORQUE_LIMIT} raw")
     self.torque_limit = torque_limit
     self.phase = LkaPhase.DISABLED
     self.reason = "not_requested"

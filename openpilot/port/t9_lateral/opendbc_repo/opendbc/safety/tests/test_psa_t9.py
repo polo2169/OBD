@@ -135,11 +135,11 @@ class TestT9LateralSafety(unittest.TestCase):
 
   def test_bounded_signed_torque_can_continue_after_first_ack_window(self):
     self.engage()
-    for torque in range(1, 11):
+    for torque in range(1, 16):
       self.assertTrue(self.tx(torque)); self.feed()
     for _ in range(20):
-      self.assertTrue(self.tx(10)); self.feed()
-    self.assertFalse(self.tx(11))
+      self.assertTrue(self.tx(15)); self.feed()
+    self.assertFalse(self.tx(16))
     self.assertTrue(self.tx(0, 2, 0))
 
   def test_negative_torque_and_slew(self):
@@ -154,13 +154,13 @@ class TestT9LateralSafety(unittest.TestCase):
         self.setUp(); self.engage()
         # Hold the boundary beyond the driver-sample window, including
         # opposing maximum torque: admission and TX limits must agree.
-        for torque in range(1, 11):
+        for torque in range(1, 16):
           self.feed(driver=sign * 15)
           self.assertTrue(self.safety.get_controls_allowed())
           self.assertTrue(self.tx(-sign * torque))
         self.feed(driver=sign * 16)
         self.assertFalse(self.safety.get_controls_allowed())
-        self.assertFalse(self.tx(-sign * 10))
+        self.assertFalse(self.tx(-sign * 15))
         self.assertTrue(self.tx(0, 2, 0))
         self.feed(driver=0, eps=1)
         self.assertFalse(self.safety.get_controls_allowed())

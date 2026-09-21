@@ -88,7 +88,7 @@ def main():
                                 and MAX_SPEED_KPH == 140. and ENGINE_BRAKE_PRIOR_MS2 == .30)
   checks['panda_driver_threshold_15'] = bool(re.search(r'^#define T9_DRIVER_OVERRIDE_LIMIT 15$',
     (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text(), re.MULTILINE))
-  checks['panda_command_torque_limit_10'] = bool(re.search(r'^#define T9_MAX_TORQUE 10$',
+  checks['panda_command_torque_limit_15'] = bool(re.search(r'^#define T9_MAX_TORQUE 15$',
     (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text(), re.MULTILINE))
   # Evaluate the recorded refusal in memory only, without a wire publication.
   now = 2404232601773

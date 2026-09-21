@@ -16,7 +16,7 @@ Current behavior:
 - RVV availability from 40 km/h and lateral availability from 67.1 km/h;
 - T9 feedback gains reduced progressively above 90 km/h, with a half-count
   yaw-rate deadzone and 0.7 raw friction compensation;
-- requested curvature bounded by the validated 0.42 m/s² / ±10 raw envelope,
+- requested curvature bounded by the experimental 0.63 m/s² / ±15 raw envelope,
   so the minimum commanded radius grows with the square of vehicle speed;
 - RVV setpoint anticipation for a closing lead, without a two-second target
   deadline and without brake control;

@@ -43,8 +43,8 @@ class TestT9TorqueCoordinates(unittest.TestCase):
 
   def test_equal_can_response_and_target_need_matching_feedforward(self):
     # Native curvature is opposite factory CAN yaw/torque convention.
-    self.assertAlmostEqual(self.run_control(.01, -.0005), .2/.42, delta=.02)
-    self.assertAlmostEqual(self.run_control(-.01, .0005), -.2/.42, delta=.02)
+    self.assertAlmostEqual(self.run_control(.01, -.0005), .2/.63, delta=.02)
+    self.assertAlmostEqual(self.run_control(-.01, .0005), -.2/.63, delta=.02)
 
   def test_measured_can_gain_does_not_receive_a_second_unidentified_roll_correction(self):
     a = self.run_control(.005, -.0004)
@@ -75,15 +75,15 @@ class TestT9TorqueCoordinates(unittest.TestCase):
     self.assertGreater(abs(above.error), 0.)
 
   def test_curvature_envelope_scales_with_speed_squared(self):
-    low, low_limited = clip_t9_curvature_to_torque_envelope(20., .01, .42)
-    high, high_limited = clip_t9_curvature_to_torque_envelope(36., .01, .42)
+    low, low_limited = clip_t9_curvature_to_torque_envelope(20., .01, .63)
+    high, high_limited = clip_t9_curvature_to_torque_envelope(36., .01, .63)
     self.assertTrue(low_limited and high_limited)
-    self.assertAlmostEqual(low, .42 / 20. ** 2)
-    self.assertAlmostEqual(high, .42 / 36. ** 2)
+    self.assertAlmostEqual(low, .63 / 20. ** 2)
+    self.assertAlmostEqual(high, .63 / 36. ** 2)
     self.assertAlmostEqual(low / high, (36. / 20.) ** 2)
 
   def test_curvature_inside_torque_envelope_is_unchanged(self):
-    value, limited = clip_t9_curvature_to_torque_envelope(36., -.0002, .42)
+    value, limited = clip_t9_curvature_to_torque_envelope(36., -.0002, .63)
     self.assertEqual(value, -.0002)
     self.assertFalse(limited)
 

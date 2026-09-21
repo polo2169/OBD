@@ -32,7 +32,7 @@ KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
 # show a 0.6-0.7 Hz correction cycle while the requested path remains close
 # to straight. Preserve the stock schedule through 90 km/h, then reduce the
 # feedback terms as speed and one yaw-rate count's lateral acceleration grow.
-# Feedforward and the validated +/-10 raw command envelope remain unchanged.
+# Feedforward remains unchanged; the experimental command envelope is +/-15 raw.
 T9_INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 25, 30, 33, 36, 40]
 T9_KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, 1.2, .7, .6, .5, .5]
 T9_KI_INTERP = [.15, .15, .15, .15, .15, .15, .15, .15, .12, .10, .08, .06, .06]
@@ -46,7 +46,7 @@ VERSION = 1
 
 
 def clip_t9_curvature_to_torque_envelope(v_ego, desired_curvature, max_lateral_accel):
-  """Keep T9 curvature inside the lateral acceleration validated at +/-10 raw."""
+  """Keep T9 curvature inside the configured lateral acceleration envelope."""
   max_curvature = max_lateral_accel / max(v_ego, 1.) ** 2
   clipped = float(np.clip(desired_curvature, -max_curvature, max_curvature))
   return clipped, clipped != desired_curvature

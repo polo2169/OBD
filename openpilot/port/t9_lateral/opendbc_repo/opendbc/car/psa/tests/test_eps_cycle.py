@@ -15,7 +15,7 @@ from opendbc.safety.tests import test_psa_t9_split as split_tests
 
 class TestCycleLifecycle(unittest.TestCase):
   def start(self, enabled=True, activity=True, ready=True):
-    self.lka = T9LkaLifecycle(10, cycle_supported=enabled)
+    self.lka = T9LkaLifecycle(15, cycle_supported=enabled)
     self.now = 1_000_000_000
     for i in range(249):
       d = self.step(eps=1 if i < 4 else 3, activity=activity, ready=ready)
@@ -53,7 +53,7 @@ class TestCycleLifecycle(unittest.TestCase):
       d = self.step()
       self.assertLessEqual(abs(d.torque_raw - previous), 1)
       previous = d.torque_raw
-    self.assertEqual(d.torque_raw, 10)
+    self.assertEqual(d.torque_raw, 15)
 
   def test_entry_needs_ready_and_actual_eps_activity(self):
     for activity, ready in ((False, True), (True, False), (False, False)):
@@ -223,7 +223,7 @@ class TestCycleIntegration(unittest.TestCase):
     self.assertIn(LkaPhase.CYCLE_ARMING, phases)
     self.assertIn(LkaPhase.CYCLE_RELEASING, phases)
     self.assertEqual(lifecycle.cycle_count, 1)
-    self.assertEqual(applied.torqueOutputCan, 10)
+    self.assertEqual(applied.torqueOutputCan, 15)
 
   def test_toggle_off_and_non_split_profiles_cannot_enable_cycle(self):
     for split, mode, expected in (('1', '0', 0x1314), ('0', '1', 0x1312), ('1', 'invalid', 0x1314)):

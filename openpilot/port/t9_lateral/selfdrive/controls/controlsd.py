@@ -217,7 +217,7 @@ class Controls:
     if CC.latActive and isinstance(self.LaC, LatControlTorque) and self.LaC.t9_can_response:
       # A fixed lateral-acceleration envelope naturally increases minimum
       # turn radius with v^2. Do not feed the controller a curvature that the
-      # validated +/-10 raw torque range cannot produce at the current speed.
+      # experimental +/-15 raw torque range cannot produce at the current speed.
       new_desired_curvature, t9_torque_envelope_limited = clip_t9_curvature_to_torque_envelope(
         CS.vEgo, new_desired_curvature, self.CP.maxLateralAccel)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)

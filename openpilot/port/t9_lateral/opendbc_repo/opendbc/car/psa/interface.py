@@ -193,9 +193,9 @@ class CarInterface(CarInterfaceBase):
         ret.steerLimitTimer = 0.4
         ret.minSteerSpeed = 67.1 / 3.6
         ret.minEnableSpeed = (40. if profile in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM) else 67.1) / 3.6
-        ret.maxLateralAccel = 0.42
+        ret.maxLateralAccel = 0.63
         ret.lateralTuning.init('torque')
-        ret.lateralTuning.torque.latAccelFactor = 0.42
+        ret.lateralTuning.torque.latAccelFactor = 0.63
         ret.lateralTuning.torque.latAccelOffset = 0.0
         # Active high-speed logs show the 1.4 raw friction prior reinforcing
         # the 0.6-0.7 Hz correction cycle. Keep 0.7 raw to cross rack friction

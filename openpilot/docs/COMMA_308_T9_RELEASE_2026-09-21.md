@@ -12,7 +12,7 @@ la base openpilot `6c928b70b499fae53c3791384e44886f4c352842`. Les 73 chemins rem
 sont listés avec l'empreinte attendue de leur version d'origine dans
 `base-sha256.json`. Le manifeste de la version installée sur le comma porte
 l'empreinte SHA-256
-`7282a222fb4e3898979f6a04870b7466da060920bee75063c6fbf60939257962`.
+`08bec966acc1f6ab7f14674f0df5d95295f5d200b88f8e83620f375b2daf9818`.
 
 Le profil courant sépare le latéral et le RVV :
 
@@ -26,7 +26,8 @@ Le profil courant sépare le latéral et le RVV :
   à 140 km/h ;
 - gains latéraux réduits progressivement au-dessus de 90 km/h, compensation
   de frottement ramenée à 0,7 raw et zone morte d'un demi-compte de lacet ;
-- courbure demandée bornée par l'enveloppe validée de 0,42 m/s² et ±10 raw,
+- courbure demandée bornée par l'enveloppe expérimentale de 0,63 m/s² et
+  ±15 raw,
   ce qui fait croître le rayon minimal commandé avec le carré de la vitesse ;
 - anticipation de quatre secondes de la distance de rapprochement, baisse de
   consigne bornée à 1 km/h par 100 ms, sans exigence d'atteindre la cible en
@@ -50,7 +51,7 @@ sources, les artefacts, les paramètres, les services et les 30 invariants de
 sécurité. Le réglage du cycle EPS déjà choisi par l'utilisateur a été conservé
 sur **ON** ; sa valeur par défaut dans le code reste **OFF**. La sauvegarde
 préinstallation se trouve dans
-`/data/openpilot-before-t9-lateral-20260921T184818Z`.
+`/data/openpilot-before-t9-lateral-20260921T195508Z`.
 
 Ces contrôles valident les sources, les artefacts, le chargement des profils,
 l'interface, le collecteur et les protections logicielles, avec le harnais
