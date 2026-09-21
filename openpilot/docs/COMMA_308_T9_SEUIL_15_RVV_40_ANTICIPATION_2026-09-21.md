@@ -87,7 +87,9 @@ version, soit **3,70 secondes plus tôt**. Son minimum avant la perte de
 cible est de 97 km/h, contre 124. Il s'agit de consignes, pas d'une vitesse
 réelle prédite.
 
-![Comparaison des consignes et de la confiance cible](../../data/diagnostics/comma/truck-rvv-20260921/truck-command-comparison.png)
+Un [extrait CSV partageable](../examples/t9_dataset/truck_approach.sample.csv)
+conserve huit points de cette comparaison sans publier l'image, le trajet brut
+ou les identifiants de route.
 
 Le rejeu conserve la trajectoire et la perception enregistrées ; il ne
 simule pas leur modification sous l'effet d'une autre commande. Il modélise

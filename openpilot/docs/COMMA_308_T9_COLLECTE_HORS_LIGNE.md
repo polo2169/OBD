@@ -2,13 +2,12 @@
 
 Version installée et vérifiée après redémarrage le 16 septembre 2026 :
 `6c928b70b` sur `peugeot-308-t9-dashcam-mici`. Le collecteur reste actif hors
-contact. La détection T15 dans `pandad` a passé les replays, puis les
-[deux routes réelles du 17 septembre](COMMA_308_T9_ROUTES_2026-09-17.md). Voir
-[l'installation et les sauvegardes](COMMA_308_T9_T15_INSTALLATION_2026-09-16.md).
+contact. La détection T15 dans `pandad` a passé les replays, puis deux routes
+réelles enregistrées le 17 septembre. Les rapports détaillés d'installation,
+les sauvegardes et les routes restent dans les données locales du projet.
 
-Le [premier relevé du 15 septembre](COMMA_308_T9_RELEVE_2026-09-15.md) ne
-contenait aucun CAN. Les [essais suivants](COMMA_308_T9_RELEVE_2026-09-16.md)
-contiennent 3,89 millions de trames, avec le harnais reconnu.
+Le premier relevé du 15 septembre ne contenait aucun CAN. Les essais suivants,
+le 16 septembre, contiennent 3,89 millions de trames avec le harnais reconnu.
 
 ## Pourquoi cette collecte
 
@@ -117,11 +116,11 @@ La comparaison des démarrages et du Stop & Start dans quatre captures ESP32
 identifie désormais **`P372_T15_st` sur 0x348** comme candidat prioritaire.
 Il reste à 1 pendant neuf arrêts moteur intermédiaires, alors qu'une séquence
 montre son activation avant démarrage et son extinction avant l'arrêt final.
-Les mesures, limites et graphiques sont dans
-[Contact CAN et Stop & Start](COMMA_308_T9_CONTACT_CAN.md).
+Les mesures locales distinguent ce signal du Stop & Start ; elles ne sont pas
+incluses dans le petit dataset partageable.
 
-La [collecte comma du 16 septembre](COMMA_308_T9_RELEVE_2026-09-16.md) confirme
-la réception de ce signal sur le bus logique 0, trois démarrages après cycles
+La collecte comma du 16 septembre confirme la réception de ce signal sur le
+bus logique 0, trois démarrages après cycles
 de contact et son maintien à 1 pendant vingt cycles compatibles avec le Stop & Start.
 Depuis la mise à jour du 16 septembre, le processus natif `pandad` utilise
 ce bit pour publier `ignitionCan`. Le firmware Panda lui-même reste identique.

@@ -6,7 +6,8 @@ valeur de seuil ou une fonction qui n'était pas encore installée.
 
 ## Version courante
 
-L'overlay se trouve dans [`../port/t9_lateral`](../port/t9_lateral). Il cible
+L'overlay est présenté dans
+[`../port/t9_lateral/README.md`](../port/t9_lateral/README.md). Il cible
 la base openpilot `6c928b70b499fae53c3791384e44886f4c352842`. Les 73 chemins remplacés
 sont listés avec l'empreinte attendue de leur version d'origine dans
 `base-sha256.json`. Le manifeste de la version installée sur le comma porte
