@@ -1,12 +1,20 @@
-from opendbc.car import structs, get_safety_config
+import os
+
+from opendbc.car import get_safety_config, structs
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.psa.carcontroller import CarController
 from opendbc.car.psa.carstate import CarState
-from opendbc.car.psa.values import CAR
 from opendbc.car.psa.lateral_test import SAFETY_PARAM
-from opendbc.car.psa.rvv_wire import only as rvv_only, SAFETY_PARAM as RVV_SAFETY_PARAM, COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM, split as split_axes
 from opendbc.car.psa.lka import DRIVER_TORQUE_LIMIT, MIN_SPEED_KPH, LkaPhase, fresh
-import os
+from opendbc.car.psa.rvv_wire import (
+  COMBINED_SAFETY_PARAM,
+  EPS_CYCLE_SAFETY_PARAM,
+  SPLIT_SAFETY_PARAM,
+)
+from opendbc.car.psa.rvv_wire import SAFETY_PARAM as RVV_SAFETY_PARAM
+from opendbc.car.psa.rvv_wire import only as rvv_only
+from opendbc.car.psa.rvv_wire import split as split_axes
+from opendbc.car.psa.values import CAR
 
 TransmissionType = structs.CarParams.TransmissionType
 
@@ -189,7 +197,10 @@ class CarInterface(CarInterfaceBase):
         ret.lateralTuning.init('torque')
         ret.lateralTuning.torque.latAccelFactor = 0.42
         ret.lateralTuning.torque.latAccelOffset = 0.0
-        ret.lateralTuning.torque.friction = 0.14
+        # Active high-speed logs show the 1.4 raw friction prior reinforcing
+        # the 0.6-0.7 Hz correction cycle. Keep 0.7 raw to cross rack friction
+        # without dominating the quantized CAN yaw feedback near center.
+        ret.lateralTuning.torque.friction = 0.07
         ret.lateralTuning.torque.steeringAngleDeadzoneDeg = 0.0
 
     return ret

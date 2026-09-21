@@ -1,32 +1,41 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 import time
-from numbers import Number
 from dataclasses import replace
+from numbers import Number
 
-from cereal import car, log
-import cereal.messaging as messaging
+from cereal import car, log, messaging
+from opendbc.car.car_helpers import interfaces
+from opendbc.car.psa import rvv_wire
+from opendbc.car.psa.eps_cycle import T9EpsCycleGate
+from opendbc.car.psa.lateral_pause import T9LateralPause
+from opendbc.car.psa.rvv_following import T9RvvFollowingObserver
+from opendbc.car.psa.values import CAR as PSA_CAR
+from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
-from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority, Ratekeeper
+from openpilot.common.realtime import (
+  DT_CTRL,
+  Priority,
+  Ratekeeper,
+  config_realtime_process,
+)
 from openpilot.common.swaglog import cloudlog
-
-from opendbc.car.car_helpers import interfaces
-from opendbc.car.vehicle_model import VehicleModel
-from opendbc.car.psa.values import CAR as PSA_CAR
-from opendbc.car.psa.rvv_following import T9RvvFollowingObserver
-from opendbc.car.psa.lateral_pause import T9LateralPause
-from opendbc.car.psa.eps_cycle import T9EpsCycleGate
-from opendbc.car.psa import rvv_wire
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
+from openpilot.selfdrive.controls.lib.latcontrol_angle import (
+  STEER_ANGLE_SATURATION_THRESHOLD,
+  LatControlAngle,
+)
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
-from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
-from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
+from openpilot.selfdrive.controls.lib.latcontrol_torque import (
+  LatControlTorque,
+  clip_t9_curvature_to_torque_envelope,
+)
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.locationd.helpers import Pose, PoseCalibrator
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
-from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
 State = log.SelfdriveState.OpenpilotState
 LaneChangeState = log.LaneChangeState
@@ -204,7 +213,15 @@ class Controls:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    t9_torque_envelope_limited = False
+    if CC.latActive and isinstance(self.LaC, LatControlTorque) and self.LaC.t9_can_response:
+      # A fixed lateral-acceleration envelope naturally increases minimum
+      # turn radius with v^2. Do not feed the controller a curvature that the
+      # validated +/-10 raw torque range cannot produce at the current speed.
+      new_desired_curvature, t9_torque_envelope_limited = clip_t9_curvature_to_torque_envelope(
+        CS.vEgo, new_desired_curvature, self.CP.maxLateralAccel)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    curvature_limited |= t9_torque_envelope_limited
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
     if isinstance(self.LaC, LatControlTorque) and self.LaC.t9_can_response:
       lat_delay = self.CP.steerActuatorDelay + LAT_SMOOTH_SECONDS

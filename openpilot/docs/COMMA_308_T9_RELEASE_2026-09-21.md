@@ -12,7 +12,7 @@ la base openpilot `6c928b70b499fae53c3791384e44886f4c352842`. Les 73 chemins rem
 sont listés avec l'empreinte attendue de leur version d'origine dans
 `base-sha256.json`. Le manifeste de la version installée sur le comma porte
 l'empreinte SHA-256
-`822e3ccf66069f184604e8d67ff70ab92d45cbe68230f47a33e5dcc0bc5e1edf`.
+`7282a222fb4e3898979f6a04870b7466da060920bee75063c6fbf60939257962`.
 
 Le profil courant sépare le latéral et le RVV :
 
@@ -24,6 +24,10 @@ Le profil courant sépare le latéral et le RVV :
 - reprise à couple nul suivie de la rampe existante ;
 - RVV disponible à partir de 40 km/h, latéral à partir de 67,1 km/h et plafond
   à 140 km/h ;
+- gains latéraux réduits progressivement au-dessus de 90 km/h, compensation
+  de frottement ramenée à 0,7 raw et zone morte d'un demi-compte de lacet ;
+- courbure demandée bornée par l'enveloppe validée de 0,42 m/s² et ±10 raw,
+  ce qui fait croître le rayon minimal commandé avec le carré de la vitesse ;
 - anticipation de quatre secondes de la distance de rapprochement, baisse de
   consigne bornée à 1 km/h par 100 ms, sans exigence d'atteindre la cible en
   deux secondes et sans commande des freins ;
@@ -38,17 +42,23 @@ un arrêt mémorisé qui demande un OFF/ON physique du RVV.
 
 ## Validation connue
 
-La copie exacte installée a passé 383 tests : 377 réussis et 6 ignorés, plus
+La copie exacte installée a passé 387 tests : 381 réussis et 6 ignorés, plus
 deux bancs C++. Le programme natif, le firmware Panda H7 signé, son bootstub
-et le module des paramètres ont été compilés sur le comma. Trois démarrages
-USB successifs ont validé OFF → ON → OFF, avec 30 contrôles à chaque fois.
-Le réglage final laissé sur l'appareil est OFF.
+et le module des paramètres ont été compilés sur le comma. Après installation
+atomique et redémarrage USB, le contrôle du profil complet a validé les
+sources, les artefacts, les paramètres, les services et les 30 invariants de
+sécurité. Le réglage du cycle EPS déjà choisi par l'utilisateur a été conservé
+sur **ON** ; sa valeur par défaut dans le code reste **OFF**. La sauvegarde
+préinstallation se trouve dans
+`/data/openpilot-before-t9-lateral-20260921T184818Z`.
 
 Ces contrôles valident les sources, les artefacts, le chargement des profils,
 l'interface, le collecteur et les protections logicielles, avec le harnais
-débranché et Panda en `noOutput`. Ils ne valident pas le cycle EPS ni la reprise
-latérale en conduite. Les trajets utilisés pour étudier le camion et le RVV
-précèdent cette version finale.
+débranché et Panda en `noOutput`. Ils ne valident pas le cycle EPS, la reprise
+latérale ni le nouveau réglage latéral en conduite. Les trajets utilisés pour
+étudier le camion, le RVV et l'oscillation précèdent cette version finale. Les
+mesures et le protocole de comparaison sont détaillés dans
+[`COMMA_308_T9_OPTIMISATION_LATERALE_2026-09-21.md`](COMMA_308_T9_OPTIMISATION_LATERALE_2026-09-21.md).
 
 ## Enregistrement
 
