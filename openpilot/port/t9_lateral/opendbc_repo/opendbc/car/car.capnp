@@ -192,6 +192,7 @@ struct CarState {
   steeringPressed @9 :Bool;        # is the user overring the steering wheel?
   psaLateralPaused @61 :Bool;
   psaEpsCycling @62 :Bool;  # Explicit test handshake; zero torque until EPS ACK
+  psaEpsCyclePending @63 :Bool; # Upcoming periodic release: driver takeover warning
   steeringDisengage @58 :Bool;     # more force than steeringPressed, disengages for applicable brands
   steerFaultTemporary @35 :Bool;
   steerFaultPermanent @36 :Bool;
@@ -346,7 +347,7 @@ struct CarControl {
   enabled @0 :Bool;
   psaLateralPause @18 :Bool;  # T9: keep an existing session at zero torque
   psaLateralResume @19 :Bool;
-  psaEpsCycleReady @20 :Bool; # Fresh straight-road/model gate for a planned EPS cycle
+  psaEpsCycleReady @20 :Bool; # Fresh straight-before-curve opportunity; 12 s deadline is separate
   latActive @11: Bool;
   longActive @12: Bool;
 

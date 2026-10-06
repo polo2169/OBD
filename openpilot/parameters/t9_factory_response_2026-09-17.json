@@ -1,0 +1,20 @@
+{
+  "schema": "t9_factory_response_v1",
+  "scope": "offline_factory_response_candidate",
+  "plant_gain_ms2_per_raw": 0.042,
+  "plant_time_constant_s": 0.14,
+  "lateral_delay_s": 0.15,
+  "friction_equivalent_raw": 1.4,
+  "friction_sensitivity_raw": [
+    0.0,
+    1.4,
+    3.2
+  ],
+  "torque_factor_raw": 100,
+  "command_units": "signed raw 0x3F2; not N.m",
+  "response_units": "speed times CAN yaw in m/s2; CAN sign convention",
+  "normalization_note": "150 raw is a reference coordinate only. Friction compensation divides equivalent raw by the simulator's configured max_torque_raw.",
+  "hardware_output_enabled": false,
+  "vehicle_torque_limit_raw": null,
+  "vehicle_profile_validated": false
+}

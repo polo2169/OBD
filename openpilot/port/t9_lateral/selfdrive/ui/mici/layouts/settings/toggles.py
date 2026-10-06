@@ -12,8 +12,8 @@ PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
 class T9EpsCycleToggle(BigParamControl):
   def __init__(self):
-    super().__init__("cycle EPS (essai)", "PsaT9EpsCycleTest")
-    self.set_value("redémarre le comma")
+    super().__init__("cycle EPS cristianku (essai)", "PsaT9EpsCycleTest")
+    self.set_value("12 s / anticipation 3 s — redémarre le comma")
     self.set_enabled(lambda: not ui_state.started and not ui_state.engaged)
 
   def _handle_mouse_release(self, mouse_pos):

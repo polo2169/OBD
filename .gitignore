@@ -39,3 +39,6 @@ database/psa/proposals/*.yaml
 *.auto-backup
 *.cors-backup
 diagbox_can_reverse_v4_6/
+
+# Local driving logs and diagnostic reports
+/logs/

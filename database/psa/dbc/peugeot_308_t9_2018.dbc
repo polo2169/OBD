@@ -221,7 +221,7 @@ CM_ "ABS/ESP identification recorded 2026-08-11 on 0x6AD->0x68D: Bosch ESP 9.0 /
 CM_ BO_ 520 "Validated engine speed, pedal position and torque. CruiseStateCandidate was correlated across several vehicle tests: raw 0 inactive, 2 active, 3 transient.";
 CM_ SG_ 520 EngineRPM "Validated against idle setpoint and vehicle captures.";
 CM_ SG_ 520 EngineTorqueNm "Validated by correlation with accelerator position while the engine was running.";
-CM_ SG_ 520 AcceleratorPositionPct "Validated against the independent 0x228 accelerator channel.";
+CM_ SG_ 520 AcceleratorPositionPct "Calculated engine accelerator demand; can remain positive under RVV with the physical pedal released. Use 0x228 P334 for driver pedal presence.";
 CM_ SG_ 520 CruiseStateCandidate "Vehicle-observed state. Active is derived as raw value 2; it is not an official PSA enum.";
 
 CM_ BO_ 552 "Independent redundant accelerator channel used to validate 0x208. CHECKSUM/COUNTER were validated over 942978 local DLC-8 frames: CHK_INI=0x3, zero mismatches.";

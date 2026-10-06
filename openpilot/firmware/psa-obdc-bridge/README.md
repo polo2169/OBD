@@ -6,7 +6,7 @@ La couche d'engagement latéral indépendante est détaillée dans
 [`docs/PSA_MADS_T9.md`](../../docs/PSA_MADS_T9.md).
 
 Cette passerelle correspond au harnais présent dans
-[`hardware/PSA-Harness`](../../hardware/PSA-Harness/) :
+[`hardware/PSA-Harness`](../../hardware/PSA-Harness) :
 
 ```text
 BSI / voiture ── CAN2 ── ESP32 satellite ══ UART CRC ══ ESP32 maître ── CAN0 ── EPS/CMM

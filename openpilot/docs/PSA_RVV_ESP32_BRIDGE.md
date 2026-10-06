@@ -8,9 +8,8 @@ ESP32 afin de séparer les deux segments CAN, conserver le trafic d'origine et,
 sur banc uniquement, remplacer la consigne du RVV dans `0x50E`.
 
 Le projet firmware se trouve dans
-[`firmware/esp32-psa-obdc-bridge`](../firmware/esp32-psa-obdc-bridge/README.md).
-L'analyse électrique détaillée du PCB est disponible dans
-[`PSA_HARNESS_OBDC_AUDIT.md`](PSA_HARNESS_OBDC_AUDIT.md).
+[`firmware/esp32-psa-obdc-bridge`](../firmware/psa-obdc-bridge/README.md).
+Le [brochage du harnais](PSA_HARNESS_CONTROLE_BROCHES.md) décrit les connexions.
 
 ## Statut
 
@@ -24,12 +23,17 @@ L'analyse électrique détaillée du PCB est disponible dans
 | MADS-T9 latéral indépendant | Implémenté | Logique et banc ; couple routier toujours verrouillé |
 | Commande de frein | Absente | Non disponible |
 | ACC / Stop & Go | Absent | Non disponible |
+| Shadow RVV / frein moteur hors ligne | Implémenté | Rejeu de captures uniquement |
 | Intégration `CarController` openpilot | À réaliser | Le protocole JSON MADS/RVV est défini |
 
 Le profil RVV n'est pas un firmware routier. Une coupure électrique totale des
 ESP32 remet le harnais en bypass et restitue la consigne RVV d'origine. Il faut une
 annulation physique indépendante et fail-safe avant d'envisager une activation
 longitudinale dans le véhicule.
+
+Le simulateur [T9_RVV_SHADOW.md](T9_RVV_SHADOW.md) permet désormais de comparer
+les décisions adaptatives aux actions PSA enregistrées. Il n'est relié à aucun
+chemin de commande du firmware.
 
 ## RVV et LVV
 
@@ -108,10 +112,8 @@ XVVChecksum.bit1 = parité binaire du demi-octet haut de la consigne
 XVVChecksum.bit0 = parité binaire du demi-octet bas de la consigne
 ```
 
-La parité vaut le nombre de bits à 1 modulo 2. Cette formule reproduit les
-104 190 trames `0x50E` observées dans 55 sessions locales, sans aucun écart. Le
-compteur progresse normalement de deux entre deux émissions à 10 Hz et reste
-toujours fourni par le BSI.
+La parité vaut le nombre de bits à 1 modulo 2. Le compteur reste fourni
+par le BSI ; la passerelle ne le synthétise pas.
 
 ## Limites de commande
 
@@ -234,7 +236,7 @@ Le retour `stats` expose notamment `rvv_stock_mode`, `rvv_stock_active`,
 
 ## Fichiers de référence
 
-- [Firmware et câblage détaillé](../firmware/esp32-psa-obdc-bridge/README.md)
-- [Audit du harnais PSA OBD-C](PSA_HARNESS_OBDC_AUDIT.md)
-- [DBC Peugeot 308 T9](../database/psa/dbc/peugeot_308_t9_2018.dbc)
-- [Extrait technique PSA](../database/psa/community/comma/peugeot_technical_extract.md)
+- [Firmware et câblage détaillé](../firmware/psa-obdc-bridge/README.md)
+- [Brochage du harnais PSA OBD-C](PSA_HARNESS_CONTROLE_BROCHES.md)
+- [DBC Peugeot 308 T9](../../database/psa/dbc/peugeot_308_t9_2018.dbc)
+- [Extrait technique PSA](../../database/psa/community/comma/peugeot_technical_extract.md)

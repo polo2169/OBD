@@ -44,9 +44,10 @@ def steering_frame(template, state, factor, torque):
 
 
 class T9LateralTestController:
-  def __init__(self, *, pause_supported=False, cycle_supported=False):
+  def __init__(self, *, pause_supported=False, cycle_supported=False, safety_param=SAFETY_PARAM):
     self.pause_supported = pause_supported
     self.cycle_supported = cycle_supported
+    self.safety_param = safety_param
     self.observer = T9LkaCanObserver()
     self.lateral = T9LkaLifecycle(torque_limit=TORQUE_SCALE, cycle_supported=cycle_supported)
     self.template = None
@@ -105,6 +106,8 @@ class T9LateralTestController:
       'eps_age_ns': age(feedback.eps_nanos), 'stock_age_ns': age(feedback.stock_nanos),
       'safety_rx_age_ns': age(inputs.safety_rx_nanos),
       'eps_driver_activity_candidate': self.driver_activity(now),
+      'eps_cycle_ready': inputs.cycle_ready,
+      'eps_active_elapsed_ns': age(self.lateral._active_since),
       'eps_feedback_hex': self.eps_feedback_hex if fresh(now, self.eps_activity_nanos) else None,
       'last_tx_rejection_ns': self.last_tx_rejection_ns,
     }
@@ -174,10 +177,12 @@ class T9LateralTestController:
              and state.cruiseState.enabled and not state.steerFaultTemporary and not state.steerFaultPermanent)
     pause_requested = bool(self.pause_supported and CC.psaLateralPause)
     # The EPS ACK and carState/controlsd return travel through separate
-    # processes. Allow one bounded fresh-control window for latActive to
-    # return after ACK, only while the explicit cycle gate remains true.
-    cycle_continuation = (self.cycle_supported and CC.psaEpsCycleReady
-      and (self.lateral.cycling or 0 < now <= self.lateral.cycle_resume_until))
+    # processes. The readiness gate admits a cycle, but cannot interrupt one:
+    # curvature, blinker or driver effort may change during the intentional
+    # zero-torque release. Keep the request alive until the EPS handshake has
+    # completed, plus one bounded window for latActive to return after ACK.
+    cycle_continuation = (self.cycle_supported and
+      (self.lateral.cycling or 0 < now <= self.lateral.cycle_resume_until))
     requested = bool(CC.enabled and (CC.latActive or pause_requested or cycle_continuation)
                      and state.cruiseState.enabled and not CC.cruiseControl.cancel)
     inputs = LkaInputs(requested=requested, torque=float(CC.actuators.torque),
@@ -185,7 +190,8 @@ class T9LateralTestController:
       cycle_ready=bool(self.cycle_supported and CC.psaEpsCycleReady),
       driver_activity=self.driver_activity(now) is True,
       resume_allowed=bool(self.pause_supported and CC.psaLateralResume and CC.latActive),
-      pause_requested=pause_requested or (self.pause_supported and (state.leftBlinker or state.rightBlinker)),
+      pause_requested=pause_requested,
+      blinker_pause_requested=bool(self.pause_supported and (state.leftBlinker or state.rightBlinker)),
       # Remove float32 m/s conversion noise, below the wheel CAN resolution.
       speed_kph=round(float(state.vEgoRaw)*3.6, 4), driver_torque_raw=float(state.steeringTorque),
       driver_override=bool(state.steeringPressed), brake_pressed=bool(state.brakePressed),
@@ -239,7 +245,7 @@ class T9LateralTestController:
     self.status = asdict(self.lateral._decision()) | {'mode': 'lateral_test', 'topology_ready': topology,
       'replacement_queued': self.replacement_queued,
       'queued_steering_frames': len(messages), 'longitudinal_enabled': False,
-      'torque_raw_queued': self.last_applied_raw, 'expected_safety_param': SAFETY_PARAM}
+      'torque_raw_queued': self.last_applied_raw, 'expected_safety_param': self.safety_param}
     self.status.update(eps_cycle_enabled=self.cycle_supported, eps_cycling=self.lateral.cycling,
                        eps_cycle_count=self.lateral.cycle_count, physical_rearm_count=self.physical_rearm_count,
                        last_rearm_ns=self.last_rearm_ns, previous_stop_reason=self.previous_stop_reason)

@@ -11,6 +11,7 @@ class TestT9SplitSafety(unittest.TestCase):
   packed = lateral_tests.TestT9LateralSafety.packed
   feed = lateral_tests.TestT9LateralSafety.feed
   stock_rvv = lateral_tests.TestT9LateralSafety.stock_rvv
+  pedal = lateral_tests.TestT9LateralSafety.pedal
   command = lateral_tests.TestT9LateralSafety.command
   tx = lateral_tests.TestT9LateralSafety.tx
   engage = lateral_tests.TestT9LateralSafety.engage
@@ -58,8 +59,8 @@ class TestT9SplitSafety(unittest.TestCase):
     self.assertEqual(self.request(74), 0)
     self.assertTrue(self.forwarded()[0])
 
-  def test_driver_and_blinker_pause_require_zero_within_existing_session(self):
-    for change in ({'driver': -16}, {'driver': 16}, {'blinker': 1}, {'blinker': 2}, {'blinker': 3}):
+  def test_driver_pause_requires_zero_within_existing_session(self):
+    for change in ({'driver': -16}, {'driver': 16}):
       with self.subTest(change=change):
         self.setUp(); self.start_both()
         self.feed(**change)
@@ -84,6 +85,47 @@ class TestT9SplitSafety(unittest.TestCase):
       self.assertTrue(self.tx(0, 2, 0))
       self.feed(eps=1)
       self.assertFalse(self.tx(0, 3, 0))
+
+  def test_recorded_stock_state_drop_precedes_blinker_and_can_rearm_after_release(self):
+    self.start_both()
+    self.template = bytes.fromhex('0000120008000000')
+    self.feed(blinker=1)
+    self.assert_axes(True, True)
+    self.assertTrue(self.tx(0, 2, 0))
+    self.assertEqual(self.request(74), 0)
+    self.feed(blinker=1, eps=2)
+    self.assertEqual(self.request(74), 0)
+    self.feed(blinker=1, eps=0)
+    self.assert_axes(True, True)
+    self.assertEqual(self.request(74), 0)
+    self.template = bytes.fromhex('000012000c000000')
+    self.feed(blinker=0, eps=1)
+    self.assertEqual(self.request(74), 0)
+    self.assertTrue(self.tx(0, 3, 0))
+    self.feed(eps=1)
+    self.assertEqual(self.request(74), 0)
+    self.assertTrue(self.tx(0, 3, 0))
+    self.feed(eps=1)
+    self.assertEqual(self.request(74), 0)
+    self.assertTrue(self.tx(0, 4, 1))
+    self.feed(eps=3)
+    self.assertEqual(self.request(74), 0)
+    self.assertTrue(self.tx(1))
+    self.assert_axes(True, True)
+
+  def test_stock_state_drop_without_timely_physical_blinker_latches_lateral(self):
+    self.start_both()
+    self.template = bytes.fromhex('0000120008000000')
+    self.feed(blinker=0)
+    self.assertTrue(self.tx(0, 2, 0))
+    self.assertEqual(self.request(74), 0)
+    for _ in range(3):
+      self.feed(blinker=0, eps=2)
+      self.assertEqual(self.request(74), 0)
+    self.assert_axes(False, True)
+    self.template = bytes.fromhex('000012000c000000')
+    self.feed(blinker=0, eps=1)
+    self.assertFalse(self.tx(0, 3, 0))
 
   def test_admission_survives_native_engagement_delay_but_not_a_later_disable(self):
     self.engage()
@@ -319,15 +361,37 @@ class TestT9SplitSafety(unittest.TestCase):
     self.assert_axes(False, False)
     self.assertFalse(self.forwarded()[0])
 
-  def test_lateral_lease_expiry_is_common_even_while_rvv_is_renewed(self):
+  def test_lateral_lease_expiry_is_local_while_rvv_is_renewed(self):
     self.start_both()
     for _ in range(5):
       self.feed()
       self.assertEqual(self.request(74), 0)
     self.feed()
-    self.assertNotEqual(self.request(74), 0)
-    self.assert_axes(False, False)
-    self.assertFalse(self.forwarded()[0])
+    self.assertEqual(self.request(74), 0)
+    self.assert_axes(False, True)
+    self.assertTrue(self.forwarded()[0])
+
+  def test_local_rvv_stop_returns_gradually_to_stock_ceiling(self):
+    self.start_both()
+    values = []
+    for _ in range(14):
+      self.feed(); self.assertTrue(self.tx(1)); self.assertEqual(self.request(70), 0)
+      rewritten, data = self.forwarded(); self.assertTrue(rewritten); values.append(data[6])
+    self.assertLess(values[-1], 75)
+    released = values[-1]
+    self.assertEqual(self.request(0), 0)
+    self.assert_axes(True, False)
+    returned = []
+    for _ in range(80):
+      self.feed(); self.assertTrue(self.tx(1))
+      rewritten, data = self.forwarded()
+      returned.append(data[6])
+      if not rewritten:
+        break
+    self.assertEqual(returned[0], released)
+    self.assertEqual(returned[-1], 75)
+    self.assertTrue(all(b >= a and b-a <= 1 for a, b in zip(returned, returned[1:])))
+    self.assertGreater(len(returned), 10)
 
   def test_invalid_can_and_wiring_faults_are_common(self):
     for kind in ('checksum', 'wrong_eps_side', 'both_sides'):
@@ -389,11 +453,11 @@ class TestT9SplitSafety(unittest.TestCase):
     self.feed(speed=140, setpoint=140)
     self.engage()
     self.assertEqual(self.request(140), 0)
-    for torque in range(1, 16):
+    for torque in range(1, 21):
       self.assertTrue(self.tx(torque))
       self.feed()
       self.assertEqual(self.request(140), 0)
-    self.assertFalse(self.tx(16))
+    self.assertFalse(self.tx(21))
     self.assertTrue(self.tx(0, 2, 0))
     self.feed(speed=140.01)
     self.assert_axes(False, False)

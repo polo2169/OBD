@@ -58,6 +58,18 @@ def test_decode_inav_imu_uses_normalized_acceleration_scale() -> None:
     assert record["yaw_rate_right_deg_s"] == -15.0
 
 
+def test_confirmed_180_degree_mount_flips_vehicle_xy_but_keeps_yaw_sign() -> None:
+    payload = struct.pack("<9h", 100, -200, 512, 10, -20, 30, 0, 0, 0)
+
+    record = decode_raw_imu(payload, fc_variant="INAV", mounting_yaw_deg=180)
+
+    assert record["acceleration_forward_ms2"] < 0.0
+    assert record["acceleration_right_ms2"] > 0.0
+    assert record["roll_rate_deg_s"] == -10.0
+    assert record["pitch_rate_deg_s"] == 20.0
+    assert record["yaw_rate_right_deg_s"] == 30.0
+
+
 def test_decode_gps_preserves_signed_coordinates_and_physical_units() -> None:
     payload = struct.pack(
         "<BBiiHHHH",

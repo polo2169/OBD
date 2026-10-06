@@ -38,7 +38,9 @@ SUPPORT_FILES = (
   "openpilot/scripts/verify_t9_rvv_on_device.py",
   "openpilot/tools/build_t9_lateral_bundle.py",
   "openpilot/tools/export_t9_dataset.py",
-  "openpilot/docs/COMMA_308_T9_RELEASE_2026-09-21.md",
+  "openpilot/docs/ETAT_308_T9.md",
+  "openpilot/docs/DATASET_308_T9.md",
+  "openpilot/docs/ESSAIS_308_T9.md",
 )
 
 

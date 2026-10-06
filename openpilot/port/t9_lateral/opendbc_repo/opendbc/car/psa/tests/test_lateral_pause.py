@@ -41,11 +41,11 @@ class TestPauseGate(unittest.TestCase):
       for ms in range(0, 1001, 50):
         self.assertTrue(self.tick(ms))
 
-  def test_resume_requires_half_second_of_new_good_models(self):
+  def test_resume_requires_three_tenths_of_new_good_models(self):
     self.begin()
-    for ms in range(50, 550, 50):
+    for ms in range(50, 350, 50):
       self.assertTrue(self.tick(ms))
-    self.assertFalse(self.tick(550))
+    self.assertFalse(self.tick(350))
 
   def test_frozen_stale_future_or_invalid_models_never_resume(self):
     for changes in ({'model_ns': nanos(50)}, {'model_ns': 1}, {'model_ns': nanos(9999)}, {'model_valid': False}):
@@ -55,18 +55,18 @@ class TestPauseGate(unittest.TestCase):
 
   def test_low_confidence_and_repeated_driver_input_reset_stability(self):
     self.begin()
-    for ms in range(50, 401, 50):
+    for ms in range(50, 251, 50):
       self.assertTrue(self.tick(ms))
     self.model.laneLineProbs[1] = .74
-    self.assertTrue(self.tick(450))
+    self.assertTrue(self.tick(250))
     self.model.laneLineProbs[1] = .95
-    self.assertTrue(self.tick(500))
+    self.assertTrue(self.tick(300))
     self.car.steeringTorque = 16
-    self.assertTrue(self.tick(550))
+    self.assertTrue(self.tick(350))
     self.car.steeringTorque = 15
-    for ms in range(600, 1100, 50):
+    for ms in range(400, 700, 50):
       self.assertTrue(self.tick(ms))
-    self.assertFalse(self.tick(1100))
+    self.assertFalse(self.tick(700))
 
   def test_lane_geometry_lane_change_and_bad_values_are_not_ready(self):
     for left, right in ((1., 3.), (-.5, .5), (-3., 3.), (-.1, 3.9), (math.nan, 1.8)):
@@ -87,9 +87,9 @@ class TestPauseGate(unittest.TestCase):
 
   def test_restarted_observer_waits_again_for_a_reported_pause(self):
     self.car.psaLateralPaused = True
-    for ms in range(0, 500, 50):
+    for ms in range(0, 300, 50):
       self.assertTrue(self.tick(ms))
-    self.assertFalse(self.tick(500))
+    self.assertFalse(self.tick(300))
 
   def test_update_gap_and_clock_reversal_restart_stability(self):
     self.begin()
@@ -98,20 +98,20 @@ class TestPauseGate(unittest.TestCase):
     self.assertTrue(self.tick(700))
     self.assertTrue(self.tick(750))
     self.assertTrue(self.tick(740))
-    for ms in range(800, 1300, 50):
+    for ms in range(800, 1100, 50):
       self.assertTrue(self.tick(ms))
-    self.assertFalse(self.tick(1300))
+    self.assertFalse(self.tick(1100))
 
   def test_reported_pause_survives_missed_trigger_and_resume_waits_for_consumption(self):
     self.assertFalse(self.tick(0))
     self.car.psaLateralPaused = True  # A brief raw override was seen by card.
-    for ms in range(50, 550, 50):
+    for ms in range(50, 350, 50):
       self.assertTrue(self.tick(ms))
-    self.assertFalse(self.tick(550))
+    self.assertFalse(self.tick(350))
     self.assertTrue(self.gate.resume_requested)
-    self.assertFalse(self.tick(600))  # Old carState cannot restart the timer.
+    self.assertFalse(self.tick(400))  # Old carState cannot restart the timer.
     self.model.laneLineProbs[1] = .5
-    self.assertTrue(self.tick(650))  # Withdraw an unconsumed resume on new bad data.
+    self.assertTrue(self.tick(450))  # Withdraw an unconsumed resume on new bad data.
     self.assertFalse(self.gate.resume_requested)
 
 
@@ -144,6 +144,31 @@ class TestPauseLifecycle(unittest.TestCase):
       result = self.tick(machine, 870, pause_requested=True, eps=eps)
       self.assertEqual(result.phase, LkaPhase.BLOCKED)
       self.assertEqual(self.tick(machine, 880).phase, LkaPhase.BLOCKED)
+
+  def test_recorded_stock_drop_waits_for_blinker_then_reactivates_from_released_eps(self):
+    machine = active_machine()
+    result = self.tick(machine, 860, stock_state=2)
+    self.assertEqual((result.phase, result.state, result.torque_raw), (LkaPhase.BLINKER_PENDING, 2, 0))
+    result = self.tick(machine, 900, stock_state=2, eps=2, blinker_pause_requested=True,
+                       pause_requested=True)
+    self.assertEqual(result.phase, LkaPhase.BLINKER_PAUSED)
+    self.assertEqual(self.tick(machine, 950, stock_state=2, eps=0, blinker_pause_requested=True,
+                               pause_requested=True).phase, LkaPhase.BLINKER_PAUSED)
+    self.assertEqual(self.tick(machine, 1000, stock_state=3, eps=1).phase, LkaPhase.BLINKER_PAUSED)
+    result = self.tick(machine, 1050, stock_state=3, eps=1, resume_allowed=True)
+    self.assertEqual((result.phase, result.state), (LkaPhase.PREPARING, 3))
+    self.assertEqual(self.tick(machine, 1100, stock_state=3, eps=1, resume_allowed=True).phase, LkaPhase.PREPARING)
+    self.assertEqual(self.tick(machine, 1150, stock_state=3, eps=1, resume_allowed=True).phase, LkaPhase.WAITING_EPS)
+    result = self.tick(machine, 1200, stock_state=3, eps=3, resume_allowed=True)
+    self.assertEqual((result.phase, result.torque_raw), (LkaPhase.ACTIVE, 0))
+
+  def test_stock_drop_without_blinker_confirmation_stays_zero_and_latches(self):
+    machine = active_machine()
+    self.assertEqual(self.tick(machine, 860, stock_state=2).phase, LkaPhase.BLINKER_PENDING)
+    self.assertEqual(self.tick(machine, 1000, stock_state=2, eps=2).phase, LkaPhase.BLINKER_PENDING)
+    result = self.tick(machine, 1010, stock_state=2, eps=2)
+    self.assertEqual((result.phase, result.reason, result.torque_raw),
+                     (LkaPhase.BLOCKED, 'stock_lka_not_authorized', 0))
 
   def test_brake_vehicle_fault_or_timeout_during_pause_remain_stops(self):
     for changes in ({'brake_pressed': True}, {'can_valid': False}, {'vehicle_ready': False}, {'speed_kph': 66.}):

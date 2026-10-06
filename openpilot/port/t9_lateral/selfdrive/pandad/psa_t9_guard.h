@@ -58,20 +58,25 @@ public:
     if (now < started_) { fail("clock_regression"); return; }
     // Drain in-flight frames immediately after the relay command.
     if (now-started_ < 250000000ULL) return;
+    // PROBING sees physical source buses and proves isolation. Once ACTIVE,
+    // pandad also receives relay-forwarded echoes; they are not evidence of
+    // a wiring change. Refresh only canonical streams here. Panda's physical
+    // fwd hook still detects a real second source and raises relay malfunction.
+    const bool strict_side = stage == Stage::PROBING;
     if (address == (rvv_only_ ? 0x50EU : 0x3F2U) && (bus == 0U || bus == 2U)) {
-      if (bus != 2U || length != 8) wrong_ = true;
+      if (bus != 2U || length != 8) wrong_ |= strict_side;
       else { stock_ = now; ++stock_count_; }
     }
     if (address == (rvv_only_ ? 0x208U : 0x495U) && (bus == 0U || bus == 2U)) {
-      if (bus != 0U || length != (rvv_only_ ? 8U : 4U)) wrong_ = true;
+      if (bus != 0U || length != (rvv_only_ ? 8U : 4U)) wrong_ |= strict_side;
       else { eps_ = now; ++eps_count_; }
     }
     if (combined_ && address == 0x50EU && (bus == 0U || bus == 2U)) {
-      if (bus != 2U || length != 8U) wrong_ = true;
+      if (bus != 2U || length != 8U) wrong_ |= strict_side;
       else { rvv_stock_ = now; ++rvv_stock_count_; }
     }
     if (combined_ && address == 0x208U && (bus == 0U || bus == 2U)) {
-      if (bus != 0U || length != 8U) wrong_ = true;
+      if (bus != 0U || length != 8U) wrong_ |= strict_side;
       else { rvv_engine_ = now; ++rvv_engine_count_; }
     }
     if (wrong_) fail("stock_command_and_eps_not_isolated");

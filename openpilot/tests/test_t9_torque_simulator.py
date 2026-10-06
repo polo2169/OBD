@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import Path
 
 from tools.simulate_t9_torque import (
     ControllerParameters,
@@ -258,6 +259,21 @@ def test_controller_comparison_exports_exact_and_t9_shadow_openpilot_profiles() 
     assert profiles["sunnypilot_torque_v0_jerk_shadow"]["parameters"]["future_plan_status"] == (
         "recorded_path_time_series_surrogate_not_model_plan"
     )
+
+
+def test_factory_friction_preserves_raw_compensation_across_normalizations() -> None:
+    calibration = json.loads((Path(__file__).parents[1] / "parameters/t9_factory_response_2026-09-17.json").read_text())
+    samples = [sample(timestamp_us=1_000_000 + i*50_000, elapsed_s=i*.05) for i in range(40)]
+    selected = ControllerParameters(.042, .55/.042, .012/.042, 0.)
+    for limit in (10., 20.):
+        comparison, _ = compare_controller_profiles(
+            [samples], selected, SimulatorConfig(max_torque_raw=limit), factory_response=calibration,
+        )
+        candidate = next(p for p in comparison["profiles"] if p["profile_id"] == "t9_factory_20260917_friction_1.4")
+        parameters = candidate["parameters"]
+        assert math.isclose(parameters["friction"] * limit, 1.4)
+        assert math.isclose(parameters["friction"] * parameters["lat_accel_factor_ms2"], 1.4*.042)
+        assert comparison["vehicle_ready_profile"] is None
 
 
 def test_sunnypilot_jerk_shadow_uses_future_path_surrogate() -> None:

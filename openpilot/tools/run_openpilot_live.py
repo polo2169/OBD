@@ -1447,7 +1447,7 @@ def parse_args() -> argparse.Namespace:
         "--sensor-mount-yaw-deg",
         type=int,
         choices=(0, 90, 180, 270),
-        default=0,
+        default=180,
         help="Orientation horaire de la flèche Matek par rapport à l'avant du véhicule",
     )
     parser.add_argument("--lane-min-prob", type=float, default=0.20)

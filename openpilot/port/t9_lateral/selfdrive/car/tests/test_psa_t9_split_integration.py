@@ -64,7 +64,7 @@ class TestSplitInterfaceIntegration(unittest.TestCase):
       self.assertTrue(self.h.safety.get_t9_split_rvv_allowed())
 
   def test_driver_or_blinker_pause_keeps_session_and_can_resume_progressively(self):
-    for change in ({'driver': -16}, {'driver': 16}, {'blinker': 1}, {'blinker': 2}, {'blinker': 3}):
+    for change in ({'driver': -16}, {'driver': 16}):
       with self.subTest(change=change):
         self.setUp()
         previous = copy.deepcopy(self.h.ci.CS.out)
@@ -79,12 +79,37 @@ class TestSplitInterfaceIntegration(unittest.TestCase):
           self.assertEqual(applied.torqueOutputCan, 0)
           self.assertTrue(self.h.safety.get_t9_split_lateral_allowed())
         previous_torque = 0
-        for ms in range(4610, 5501, 10):
+        for ms in range(4610, 5701, 10):
           applied, _ = self.step(ms, resume=True)
           self.assertLessEqual(abs(applied.torqueOutputCan - previous_torque), 1)
           previous_torque = applied.torqueOutputCan
-        self.assertEqual(applied.torqueOutputCan, 15)
+        self.assertEqual(applied.torqueOutputCan, 20)
         self.assertFalse(self.h.ci.CS.out.psaLateralPaused)
+
+  def test_recorded_blinker_release_sequence_pauses_and_reactivates_progressively(self):
+    stock_released = bytes.fromhex('0000120008000000')
+    stock_ready = bytes.fromhex('000012000c000000')
+    applied, _ = self.step(4001, pause=True, lat_active=False, blinker=1,
+                           stock_lka=stock_released, eps=3)
+    self.assertEqual(applied.torqueOutputCan, 0)
+    self.assertEqual(self.h.ci.CC.t9_lateral.lateral.phase, 'blinker_paused')
+    for ms, eps in ((4010, 2), (4020, 0), (4100, 0), (4200, 0)):
+      applied, _ = self.step(ms, pause=True, lat_active=False, blinker=1,
+                             stock_lka=stock_released, eps=eps)
+      self.assertEqual(applied.torqueOutputCan, 0)
+      self.assertTrue(self.h.ci.CS.out.psaLateralPaused)
+      self.assertFalse(self.h.ci.CS.out.steerFaultTemporary)
+      self.assertTrue(self.h.safety.get_t9_split_lateral_allowed())
+      self.assertTrue(self.h.safety.get_t9_split_rvv_allowed())
+    previous_torque = 0
+    for ms in range(4310, 6101, 10):
+      eps = 3 if ms >= 4460 else 1
+      applied, _ = self.step(ms, resume=True, stock_lka=stock_ready, eps=eps)
+      self.assertLessEqual(abs(applied.torqueOutputCan - previous_torque), 1)
+      previous_torque = applied.torqueOutputCan
+    self.assertEqual(self.h.ci.CC.t9_lateral.lateral.phase, 'active')
+    self.assertEqual(applied.torqueOutputCan, 20)
+    self.assertFalse(self.h.ci.CS.out.psaLateralPaused)
 
   def test_eps_withdrawal_during_pause_requires_manual_rearm(self):
     self.step(4001, pause=True, lat_active=False, driver=16)

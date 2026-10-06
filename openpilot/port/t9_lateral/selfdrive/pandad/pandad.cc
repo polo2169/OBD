@@ -467,7 +467,7 @@ void pandad_run(Panda *panda) {
     // Prove new-profile support BEFORE selecting even the probe parameter.
     // An old firmware could route an unknown PSA parameter to generic hooks.
     auto protocol = panda->t9_rvv_request(0U, eps_cycle_test ? 4U : split_axes_test ? 2U : 0U);
-    if (!protocol || (*protocol)[1] != (eps_cycle_test ? 8U : split_axes_test ? 7U : 6U)) {
+    if (!protocol || (*protocol)[1] != (eps_cycle_test ? 9U : split_axes_test ? 7U : 6U)) {
       LOGE("T9 RVV mailbox capability check failed");
       return;
     }

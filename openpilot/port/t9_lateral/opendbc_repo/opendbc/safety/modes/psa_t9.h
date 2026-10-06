@@ -9,9 +9,10 @@
 #define PSA_T9_SPLIT_PROBE_PARAM 0x1315U
 #define PSA_T9_CYCLE_PARAM 0x1316U
 #define PSA_T9_CYCLE_PROBE_PARAM 0x1317U
-#define T9_CYCLE_PERIOD_US 12000000U
-#define T9_CYCLE_TIMEOUT_US 2000000U
-#define T9_MAX_TORQUE 15
+#define T9_CYCLE_EARLIEST_US 3000000U
+#define T9_CYCLE_TIMEOUT_US 3000000U
+#define T9_BLINKER_CONFIRM_US 150000U
+#define T9_MAX_TORQUE 20
 #define T9_DRIVER_OVERRIDE_LIMIT 15
 #define T9_FRESH_US 250000U
 
@@ -38,8 +39,13 @@ static bool t9_split_lateral_allowed, t9_split_rvv_allowed;
 static bool t9_split_lateral_stopped, t9_split_rvv_stopped;
 // 0 idle, 1 explicit zero-factor marker, 2 release, 3 prepare, 4 await ACK.
 static int t9_cycle_phase;
-static bool t9_cycle_release_seen, t9_active_seen, t9_activity_seen, t9_eps_activity;
-static uint32_t t9_cycle_ts, t9_cycle_prepare_ts, t9_active_ts, t9_activity_ts;
+static bool t9_cycle_release_seen, t9_active_seen;
+static uint32_t t9_cycle_ts, t9_cycle_prepare_ts, t9_active_ts;
+// 0 idle, 1 stock state-2 awaiting the physical blinker, 2 released pause,
+// 3 zero-factor prepare, 4 awaiting the new EPS acknowledgement.
+static int t9_blinker_pause_phase;
+static bool t9_cycle_zero_seen;
+static uint32_t t9_blinker_pause_ts, t9_blinker_prepare_ts;
 
 static bool t9_cycle_profile(void) {
   return (current_safety_mode == SAFETY_PSA) &&
@@ -52,7 +58,7 @@ static bool t9_split_profile(void) {
 }
 
 static void t9_split_common_stop(void) {
-  t9_cycle_phase = 0; t9_active_seen = false;
+  t9_cycle_phase = 0; t9_blinker_pause_phase = 0; t9_active_seen = false;
   t9_split_lateral_allowed = false;
   t9_split_rvv_allowed = false;
   t9_engage_pending = false;
@@ -68,7 +74,7 @@ static void t9_split_sync_common_stop(void) {
 static void t9_split_lateral_stop(void) {
   t9_split_sync_common_stop();
   t9_split_lateral_allowed = false;
-  t9_cycle_phase = 0; t9_active_seen = false;
+  t9_cycle_phase = 0; t9_blinker_pause_phase = 0; t9_active_seen = false;
   t9_split_lateral_stopped = true;
   controls_allowed = t9_split_rvv_allowed;
 }
@@ -80,7 +86,8 @@ static bool t9_lateral_allowed(void) {
 // A suspension keeps only an already acknowledged session. Initial refusal,
 // EPS withdrawal and all common faults still require physical RVV rearming.
 static bool t9_pause_session(void) {
-  return t9_split_profile() && t9_lateral_allowed() && t9_started_control && t9_eps_ack && (t9_cycle_phase == 0);
+  return t9_split_profile() && t9_lateral_allowed() && t9_started_control &&
+    (((t9_eps_ack) && (t9_cycle_phase == 0)) || (t9_cycle_phase != 0) || (t9_blinker_pause_phase != 0));
 }
 
 static bool t9_driver_pause(void) {
@@ -96,6 +103,22 @@ static bool t9_fresh(uint32_t now, uint32_t then, bool seen, uint32_t timeout) {
 // no host-command lease. The firmware tick reconnects an expired takeover.
 static bool t9_output_lease_expired(uint32_t now) {
   return t9_replacing_stock && (safety_get_ts_elapsed(now, t9_last_tx_ts) > 250000U);
+}
+
+// A lost steering sender must restore the factory 0x3F2 stream immediately,
+// but it is an axis-local failure in the split profile. Keep a separately
+// healthy RVV adaptation alive and require a physical OFF/ON edge before
+// lateral can be admitted again.
+static void t9_expire_lateral_lease(uint32_t now) {
+  if (t9_split_profile() && t9_output_lease_expired(now)) {
+    t9_cycle_phase = 0; t9_blinker_pause_phase = 0; t9_active_seen = false;
+    t9_cycle_release_seen = false; t9_cycle_zero_seen = false;
+    t9_request_seen = false; t9_eps_ack = false; t9_started_control = false;
+    t9_tx_seen = false; t9_last_factor = 0; t9_replacing_stock = false;
+    t9_split_lateral_allowed = false;
+    t9_split_lateral_stopped = true;
+    controls_allowed = t9_split_rvv_allowed;
+  }
 }
 
 static bool t9_topology_ready(uint32_t now) {
@@ -115,15 +138,19 @@ static bool t9_common_ready(uint32_t now) {
 }
 
 static bool t9_ready(uint32_t now) {
-  return t9_common_ready(now) && (t9_speed_centi_kph >= 6710) &&
+  int stock_state = (t9_template[4] >> 2) & 7U;
+  bool released = (t9_cycle_phase != 0) || (t9_blinker_pause_phase != 0);
+  bool blinker_pause_valid = (t9_blinker_pause_phase != 1) ||
+    (safety_get_ts_elapsed(now, t9_blinker_pause_ts) < T9_BLINKER_CONFIRM_US);
+  return t9_common_ready(now) && (t9_speed_centi_kph >= 6710) && blinker_pause_valid &&
     ((t9_cycle_phase == 0) || (t9_cycle_profile() &&
       (safety_get_ts_elapsed(now, t9_cycle_ts) < T9_CYCLE_TIMEOUT_US) &&
-      t9_fresh(now, t9_activity_ts, t9_activity_seen, T9_CYCLE_TIMEOUT_US + T9_FRESH_US) &&
       ((t9_cycle_phase != 3) || (t9_eps_state != 3)))) &&
     (t9_pause_session() || (t9_split_profile() ? (!t9_driver_pause() && !t9_blinker) :
       ((t9_driver >= -T9_DRIVER_OVERRIDE_LIMIT) && (t9_driver <= T9_DRIVER_OVERRIDE_LIMIT)))) &&
-    (t9_eps_state >= 1) && (t9_eps_state <= 3) && (!t9_eps_ack || (t9_eps_state == 3)) &&
-    (((t9_template[4] >> 2) & 7U) >= 3U) && (((t9_template[4] >> 2) & 7U) <= 4U) &&
+    (t9_eps_state >= (released ? 0 : 1)) && (t9_eps_state <= 3) &&
+    (released || !t9_eps_ack || (t9_eps_state == 3)) &&
+    (stock_state >= (released ? 2 : 3)) && (stock_state <= 4) &&
     !(t9_request_seen && !t9_eps_ack && (safety_get_ts_elapsed(now, t9_request_ts) >= 500000U));
 }
 
@@ -151,8 +178,9 @@ static uint8_t t9_counter(const CANPacket_t *msg) {
 }
 
 static void t9_rx(const CANPacket_t *msg) {
-  t9_split_sync_common_stop();
   uint32_t now = microsecond_timer_get();
+  t9_expire_lateral_lease(now);
+  t9_split_sync_common_stop();
   int slot = -1;
   if (msg->addr == 0x3F2U) {
     if ((msg->bus != 2U) && (safety_get_ts_elapsed(now, t9_init_ts) >= 2000000U)) {
@@ -161,6 +189,13 @@ static void t9_rx(const CANPacket_t *msg) {
     } else if (msg->bus == 2U) {
       for (int i = 0; i < 8; i++) { t9_template[i] = msg->data[i]; }
       t9_stock_ts = now; t9_stock_seen = true;
+      int stock_state = (msg->data[4] >> 2) & 7U;
+      if (t9_split_profile() && (t9_cycle_phase == 0) && (t9_blinker_pause_phase == 0) &&
+          t9_replacing_stock && t9_started_control && t9_eps_ack && (stock_state == 2)) {
+        // The recorded BSI state-2 edge precedes 0x452 by about 60 ms.
+        // Release torque immediately, then require the physical blinker.
+        t9_blinker_pause_phase = 1; t9_blinker_pause_ts = now;
+      }
     }
   } else if (msg->addr == 0x495U) {
     // EPS must be on the destination side. No assumed echo/acknowledgement.
@@ -170,14 +205,16 @@ static void t9_rx(const CANPacket_t *msg) {
     } else if (msg->bus == 0U) {
       t9_eps_state = (msg->data[2] >> 2) & 7U;
       t9_eps_ts = now; t9_eps_seen = true;
-      t9_eps_activity = (msg->data[2] & 2U) != 0U;
-      if (t9_eps_activity && (t9_eps_state == 3)) { t9_activity_ts = now; t9_activity_seen = true; }
-      if ((t9_cycle_phase == 2) && ((t9_eps_state == 1) || (t9_eps_state == 2)) &&
+      if ((t9_cycle_phase == 2) && (t9_eps_state == 0) &&
+          (safety_get_ts_elapsed(now, t9_cycle_ts) > 0U)) { t9_cycle_zero_seen = true; }
+      if ((t9_cycle_phase == 2) && t9_cycle_zero_seen &&
+          ((t9_eps_state == 1) || (t9_eps_state == 2)) &&
           (safety_get_ts_elapsed(now, t9_cycle_ts) > 0U)) { t9_cycle_release_seen = true; }
       uint32_t delay = safety_get_ts_elapsed(now, t9_request_ts);
       if (t9_request_seen && !t9_eps_ack && (t9_eps_state == 3) && (delay > 0U) && (delay < 500000U)) {
         t9_eps_ack = true; t9_active_ts = now; t9_active_seen = true;
-        if (t9_cycle_phase == 4) { t9_cycle_phase = 0; }
+        if (t9_cycle_phase == 4) { t9_cycle_phase = 0; t9_cycle_zero_seen = false; }
+        if (t9_blinker_pause_phase == 4) { t9_blinker_pause_phase = 0; }
       }
     }
   } else if (msg->addr == 0x2F5U) {
@@ -187,6 +224,18 @@ static void t9_rx(const CANPacket_t *msg) {
       ((t9_driver < -T9_DRIVER_OVERRIDE_LIMIT) || (t9_driver > T9_DRIVER_OVERRIDE_LIMIT)));
   } else if (msg->addr == 0x452U) {
     slot = 9; t9_blinker = (msg->data[0] & 0x30U) != 0U;
+    if ((t9_blinker_pause_phase == 0) && (t9_cycle_phase == 0) && t9_blinker &&
+        t9_split_profile() && t9_replacing_stock && t9_started_control && t9_eps_ack) {
+      // Depending on CAN scheduling, either 0x452 or the factory state-2
+      // edge can arrive first. Both are physical evidence of the same turn
+      // signal pause; torque remains forbidden throughout this phase.
+      t9_blinker_pause_phase = 2; t9_blinker_pause_ts = now;
+    } else if ((t9_blinker_pause_phase == 1) && t9_blinker &&
+        (safety_get_ts_elapsed(now, t9_blinker_pause_ts) < T9_BLINKER_CONFIRM_US)) {
+      t9_blinker_pause_phase = 2;
+    } else if ((t9_blinker_pause_phase >= 3) && t9_blinker) {
+      t9_blinker_pause_phase = 2;
+    }
   } else if (msg->addr == 0x30DU) {
     slot = 1; int sum = 0; int low = 65535; int high = 0;
     for (int i = 0; i < 8; i += 2) {
@@ -230,7 +279,7 @@ static void t9_rx(const CANPacket_t *msg) {
     bool physical_off = t9_stock_cruise_off && ((t9_cruise_state == 0) || (t9_cruise_state == 3)) &&
       t9_fresh(now, t9_rx_ts[7], t9_seen[7], T9_FRESH_US) && t9_fresh(now, t9_rx_ts[8], t9_seen[8], T9_FRESH_US);
     if (physical_off) {
-      t9_cycle_phase = 0; t9_active_seen = false;
+      t9_cycle_phase = 0; t9_blinker_pause_phase = 0; t9_active_seen = false;
       t9_cruise_rearm = true;
       t9_request_seen = false; t9_eps_ack = false;
       t9_split_lateral_stopped = false; t9_split_rvv_stopped = false;
@@ -254,7 +303,7 @@ static void t9_rx(const CANPacket_t *msg) {
     t9_engage_pending = false;
   }
   if (t9_split_profile()) {
-    bool common_ready = t9_common_ready(now) && !t9_output_lease_expired(now);
+    bool common_ready = t9_common_ready(now);
     if (t9_engage_pending && common_ready && !t9_probe) {
       t9_split_lateral_allowed = ready && !t9_split_lateral_stopped;
       t9_split_rvv_allowed = !t9_split_rvv_stopped;
@@ -274,14 +323,15 @@ static void t9_rx(const CANPacket_t *msg) {
 }
 
 static bool t9_tx(const CANPacket_t *msg) {
+  uint32_t now = microsecond_timer_get();
+  t9_expire_lateral_lease(now);
   t9_split_sync_common_stop();
   const TorqueSteeringLimits limits = {
     // The shared RT helper includes both endpoints and rolls over after >250 ms.
     .max_torque = T9_MAX_TORQUE, .max_rate_up = 1, .max_rate_down = 1, .max_rt_delta = 6,
     .type = TorqueDriverLimited, .driver_torque_allowance = T9_DRIVER_OVERRIDE_LIMIT, .driver_torque_multiplier = 1,
   };
-  uint32_t now = microsecond_timer_get();
-  if (t9_split_profile() && (!t9_common_ready(now) || t9_output_lease_expired(now))) { t9_split_common_stop(); }
+  if (t9_split_profile() && !t9_common_ready(now)) { t9_split_common_stop(); }
   if (t9_probe || msg->extended || (msg->addr != 0x3F2U) || (msg->bus != 0U) ||
       (GET_LEN(msg) != 8) || !t9_topology_ready(now) || t9_output_lease_expired(now)) { return false; }
   static const uint8_t opaque_mask[8] = {255U, 255U, 255U, 0U, 3U, 1U, 255U, 255U};
@@ -296,7 +346,7 @@ static bool t9_tx(const CANPacket_t *msg) {
   if ((state < 2) || (state > 4) || (factor > 100) || (stock_state < 2) || (stock_state > 4)) { return false; }
   bool ready = t9_ready(now);
   if (t9_split_profile()) {
-    if (!t9_common_ready(now) || t9_output_lease_expired(now)) { t9_split_common_stop(); }
+    if (!t9_common_ready(now)) { t9_split_common_stop(); }
     else if (!ready) { t9_split_lateral_stop(); }
   } else if (!ready) { controls_allowed = false; }
   // Do not replace the healthy factory stream with an idle host stream.
@@ -311,14 +361,32 @@ static bool t9_tx(const CANPacket_t *msg) {
   // Physical turn signals and raw driver effort independently reject every
   // nonzero command. Zero keeps the EPS session; it cannot reset its watchdog.
   if (t9_split_profile() && (torque != 0) && (t9_blinker || t9_driver_pause())) { return false; }
-  bool cycle_marker = t9_cycle_profile() && (t9_cycle_phase == 0) && (state == 4) && (factor == 0);
+  bool cycle_marker = t9_cycle_profile() && (t9_cycle_phase == 0) &&
+    (t9_blinker_pause_phase == 0) && (state == 4) && (factor == 0);
   bool cycle_invalid = false;
   if (cycle_marker) {
     cycle_invalid = !t9_lateral_allowed() || !t9_started_control || !t9_eps_ack || (t9_eps_state != 3) ||
-      !t9_active_seen || (safety_get_ts_elapsed(now, t9_active_ts) < T9_CYCLE_PERIOD_US) ||
-      !t9_eps_activity || !t9_fresh(now, t9_activity_ts, t9_activity_seen, T9_FRESH_US) ||
+      !t9_active_seen || (safety_get_ts_elapsed(now, t9_active_ts) < T9_CYCLE_EARLIEST_US) ||
       t9_driver_pause() || t9_blinker || (t9_last_factor != 100);
   }
+  bool blinker_pause_invalid = false;
+  if (t9_blinker_pause_phase != 0) {
+    blinker_pause_invalid = torque != 0;
+    if (t9_blinker_pause_phase <= 2) {
+      bool prepare = (t9_blinker_pause_phase == 2) && !t9_blinker &&
+        (stock_state >= 3) && ((t9_eps_state == 1) || (t9_eps_state == 2)) &&
+        (state == 3) && (factor == 0);
+      blinker_pause_invalid |= !prepare && ((state != 2) || (factor != 0));
+    }
+    if (t9_blinker_pause_phase == 3) {
+      blinker_pause_invalid |= ((state != 3) && (state != 4)) ||
+        ((state == 3) && (factor != 0)) ||
+        ((state == 4) && ((factor == 0) ||
+          (safety_get_ts_elapsed(now, t9_blinker_prepare_ts) < 90000U)));
+    }
+    if (t9_blinker_pause_phase == 4) { blinker_pause_invalid |= state != 4; }
+  }
+  if (blinker_pause_invalid) { t9_split_lateral_stop(); return false; }
   if (t9_cycle_phase != 0) {
     cycle_invalid = torque != 0;
     if (t9_cycle_phase == 1) { cycle_invalid |= ((state != 2) && (state != 4)) || (factor != 0); }
@@ -344,7 +412,7 @@ static bool t9_tx(const CANPacket_t *msg) {
   if (torque == 0) { desired_torque_last = 0; rt_torque_last = 0; }
   if (steer_torque_cmd_checks(torque, state == 4, limits)) { return false; }
   if (cycle_marker) {
-    t9_cycle_phase = 1; t9_cycle_ts = now; t9_cycle_release_seen = false;
+    t9_cycle_phase = 1; t9_cycle_ts = now; t9_cycle_release_seen = false; t9_cycle_zero_seen = false;
   } else if ((t9_cycle_phase == 1) && (state == 2)) {
     t9_cycle_phase = 2;
   } else if ((t9_cycle_phase == 2) && (state == 3)) {
@@ -354,8 +422,13 @@ static bool t9_tx(const CANPacket_t *msg) {
   } else if ((t9_cycle_phase >= 3) && (state == 2)) {
     t9_cycle_phase = 0;
   }
+  if ((t9_blinker_pause_phase == 2) && !t9_blinker && (state == 3)) {
+    t9_blinker_pause_phase = 3; t9_blinker_prepare_ts = now;
+  } else if ((t9_blinker_pause_phase == 3) && (state == 4)) {
+    t9_blinker_pause_phase = 4;
+  }
   if (state != 4) { t9_request_seen = false; t9_eps_ack = false; }
-  if ((state == 2) && t9_started_control && (t9_cycle_phase == 0)) {
+  if ((state == 2) && t9_started_control && (t9_cycle_phase == 0) && (t9_blinker_pause_phase == 0)) {
     if (t9_split_profile()) { t9_split_lateral_stop(); }
     else { controls_allowed = false; }
     t9_started_control = false;
@@ -374,9 +447,10 @@ static bool t9_tx(const CANPacket_t *msg) {
            {addr_, 2, len_, hz_, .max_counter = 15, .ignore_quality_flag = true}, {0}}}
 
 static safety_config t9_init(uint16_t param) {
-  t9_cycle_phase = 0; t9_cycle_release_seen = false; t9_active_seen = false;
-  t9_activity_seen = false; t9_eps_activity = false;
-  t9_cycle_ts = 0U; t9_cycle_prepare_ts = 0U; t9_active_ts = 0U; t9_activity_ts = 0U;
+  t9_cycle_phase = 0; t9_blinker_pause_phase = 0; t9_cycle_release_seen = false;
+  t9_cycle_zero_seen = false; t9_active_seen = false;
+  t9_cycle_ts = 0U; t9_cycle_prepare_ts = 0U; t9_active_ts = 0U;
+  t9_blinker_pause_ts = 0U; t9_blinker_prepare_ts = 0U;
   t9_split_lateral_allowed = false; t9_split_rvv_allowed = false;
   t9_split_lateral_stopped = false; t9_split_rvv_stopped = false;
   t9_probe = param == PSA_T9_PROBE_PARAM;

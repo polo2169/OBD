@@ -40,9 +40,11 @@ par rapport à l’avant du véhicule :
 | `180` | arrière |
 | `270` | gauche |
 
-La transformation suppose la carte à plat. Les fichiers gardent à la fois les
-axes FC et les axes véhicule `forward/right`; une erreur de montage sera visible
-dans la comparaison de signe avec le lacet CAN.
+La transformation suppose la carte à plat. Sur le montage de la Peugeot 308 T9,
+la flèche de la Matek pointe vers l'arrière : la valeur par défaut du projet est
+donc `180`. Les fichiers gardent à la fois les axes FC et les axes véhicule
+`forward/right`; une erreur de montage sera visible dans la comparaison de signe
+avec le lacet CAN.
 
 ## Essai autonome
 
@@ -59,7 +61,7 @@ Lancer un enregistrement et l’arrêter avec `Ctrl+C` :
 backend/.venv/bin/python openpilot/tools/record_matek_sensors.py \
   --port /dev/cu.usbmodemXXXX \
   --baud 115200 \
-  --mount-yaw-deg 0 \
+  --mount-yaw-deg 180 \
   --output /tmp/matek-sensors.jsonl
 ```
 
@@ -77,7 +79,7 @@ Avec la webcam :
   --port "$LKA_CAN_PORT" \
   --sensor-port /dev/cu.usbmodemXXXX \
   --sensor-protocol matek-msp \
-  --sensor-mount-yaw 0 \
+  --sensor-mount-yaw 180 \
   --until-stop \
   --overlay
 ```
@@ -89,7 +91,7 @@ Avec la GoPro, ajouter les mêmes trois options capteur :
   --with-can --port "$LKA_CAN_PORT" \
   --sensor-port /dev/cu.usbmodemXXXX \
   --sensor-protocol matek-msp \
-  --sensor-mount-yaw 0 \
+  --sensor-mount-yaw 180 \
   --record --overlay
 ```
 

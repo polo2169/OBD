@@ -3,4 +3,4 @@ The device is in development
 
 If you have any questions contact me on Discord: elkoled
 
-![](./docs/PSA-Harness-rendering.png)
+![](docs/PSA-Harness-rendering.png)

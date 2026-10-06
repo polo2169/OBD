@@ -1,0 +1,6 @@
+# Vehicle reports stay local; technical guides remain versioned.
+/ANALYSE_308_*.md
+/DIAGNOSTIC_308_*.md
+/CR_*.md
+/reports/
+/diagnostics/

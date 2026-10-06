@@ -16,7 +16,8 @@ class CarController(CarControllerBase):
     self.packer = CANPacker(dbc_names[Bus.main])
     self.apply_angle_last = 0
     self.status = 2
-    self.t9_lateral = T9LateralTestController(pause_supported=split_axes(CP), cycle_supported=eps_cycle(CP)) if CP.carFingerprint == CAR.PSA_PEUGEOT_308_T9 and enabled(CP) else None
+    self.t9_lateral = T9LateralTestController(pause_supported=split_axes(CP), cycle_supported=eps_cycle(CP),
+      safety_param=CP.safetyConfigs[0].safetyParam) if CP.carFingerprint == CAR.PSA_PEUGEOT_308_T9 and enabled(CP) else None
     self.read_only = CP.carFingerprint == CAR.PSA_PEUGEOT_308_T9 and self.t9_lateral is None
     self.t9_shadow = T9ShadowController() if self.read_only else None
     self.t9_rvv_active_profile = rvv_enabled(CP)

@@ -39,7 +39,7 @@ class TestT9LateralSafety(unittest.TestCase):
       self.packed('T9_BODY_STATUS_412', {'BrakePedalActive': s['brake'], 'DriverDoorOpen': s['doors'], 'ReverseGearActive': s['reverse']}, 2),
       self.packed('T9_EASY_MOVE_3AD', {'ParkingBrakeState': s['park']}),
       self.packed('T9_RESTRAINTS_572', {'DriverSeatbeltState': s['belt']}, 2),
-      self.packed('T9_ACCELERATOR_PEDAL_228', {'AcceleratorPedalPct': s['pedal']}),
+      self.pedal(s['pedal']),
       self.packed('T9_DRIVER_CRUISE_COMMAND_452', {'TurnSignalStatus': s['blinker']}, 2),
       self.stock_rvv(s['cruise'], s['mode'], s['setpoint']),
       self.packed('T9_ENGINE_DYNAMICS_208', {'CruiseStateCandidate': 2 if s['cruise'] else 0}),
@@ -51,6 +51,18 @@ class TestT9LateralSafety(unittest.TestCase):
     setpoint = setpoint if active else 255
     parity = (((setpoint >> 4).bit_count() % 2) << 1) | ((setpoint & 15).bit_count() % 2)
     return self.raw(0x50E, [parity << 4, 0, 0, 0, 0, 0, setpoint, (int(active) << 7) | (mode << 5)], 2)
+
+  def pedal(self, percent):
+    # 0x228 uses PSA's nibble checksum (seed 3), which the generic DBC
+    # packer cannot synthesize. Build the receive-only frame exactly as the
+    # vehicle does so the safety test also exercises its counter/checksum.
+    data = bytearray(8)
+    data[2] = round(percent * 2)
+    counter = (self.now // 50000) & 0xF
+    data[3] = counter << 4
+    nibble_sum = sum((value >> 4) + (value & 0xF) for value in data)
+    data[3] |= (3 - nibble_sum) & 0xF
+    return self.raw(0x228, data)
 
   def command(self, torque=0, state=4, factor=100, bus=0):
     data = bytearray(self.template); raw = torque & 0x7FF
@@ -135,11 +147,11 @@ class TestT9LateralSafety(unittest.TestCase):
 
   def test_bounded_signed_torque_can_continue_after_first_ack_window(self):
     self.engage()
-    for torque in range(1, 16):
+    for torque in range(1, 21):
       self.assertTrue(self.tx(torque)); self.feed()
     for _ in range(20):
-      self.assertTrue(self.tx(15)); self.feed()
-    self.assertFalse(self.tx(16))
+      self.assertTrue(self.tx(20)); self.feed()
+    self.assertFalse(self.tx(21))
     self.assertTrue(self.tx(0, 2, 0))
 
   def test_negative_torque_and_slew(self):
@@ -154,13 +166,13 @@ class TestT9LateralSafety(unittest.TestCase):
         self.setUp(); self.engage()
         # Hold the boundary beyond the driver-sample window, including
         # opposing maximum torque: admission and TX limits must agree.
-        for torque in range(1, 16):
+        for torque in range(1, 21):
           self.feed(driver=sign * 15)
           self.assertTrue(self.safety.get_controls_allowed())
           self.assertTrue(self.tx(-sign * torque))
         self.feed(driver=sign * 16)
         self.assertFalse(self.safety.get_controls_allowed())
-        self.assertFalse(self.tx(-sign * 15))
+        self.assertFalse(self.tx(-sign * 20))
         self.assertTrue(self.tx(0, 2, 0))
         self.feed(driver=0, eps=1)
         self.assertFalse(self.safety.get_controls_allowed())

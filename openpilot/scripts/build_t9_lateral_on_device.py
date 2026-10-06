@@ -41,7 +41,7 @@ commands = [
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'discover', '-s', 'opendbc_repo/opendbc/car/psa/tests', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'selfdrive.controls.tests.test_psa_t9_torque', 'selfdrive.controls.tests.test_psa_t9_rvv_transport', 'selfdrive.controls.tests.test_psa_t9_split_transport', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'selfdrive.car.tests.test_psa_t9_events', 'selfdrive.car.tests.test_psa_t9_rvv_events', 'selfdrive.car.tests.test_psa_t9_split_events', 'selfdrive.car.tests.test_psa_t9_split_integration', '-q'],
-  ['/usr/local/venv/bin/python', '-m', 'unittest', 'system.tests.test_psa_recorder', '-q'],
+  ['/usr/local/venv/bin/python', '-m', 'unittest', 'system.tests.test_psa_recorder', 'system.tests.test_home_uploader', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'selfdrive.ui.mici.tests.test_lane_confidence',
    'selfdrive.ui.mici.tests.test_lead_indicator', 'selfdrive.ui.mici.tests.test_eps_cycle_toggle', '-q'],
 ]

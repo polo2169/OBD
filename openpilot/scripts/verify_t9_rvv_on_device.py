@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only post-boot checks; does not open Panda or send CAN frames."""
 import argparse
+from dataclasses import replace
 import hashlib
 import json
 import os
@@ -88,26 +89,33 @@ def main():
                                 and MAX_SPEED_KPH == 140. and ENGINE_BRAKE_PRIOR_MS2 == .30)
   checks['panda_driver_threshold_15'] = bool(re.search(r'^#define T9_DRIVER_OVERRIDE_LIMIT 15$',
     (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text(), re.MULTILINE))
-  checks['panda_command_torque_limit_15'] = bool(re.search(r'^#define T9_MAX_TORQUE 15$',
+  checks['panda_command_torque_limit_20'] = bool(re.search(r'^#define T9_MAX_TORQUE 20$',
     (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text(), re.MULTILINE))
   # Evaluate the recorded refusal in memory only, without a wire publication.
   now = 2404232601773
   lead = RvvLead(True, 62.40969467163086, 26.299819946289062, -1.0491962432861328,
                 .9936181902885437, 2404223442883, 2404211746675, True, False)
-  following = T9RvvFollowing().update(now, active=True, car_valid=True, car_ns=now,
-    speed_kph=98.49, stock_setpoint_kph=99., calibrated=True, calibration_ns=now, lead=lead)
+  supervisor = T9RvvFollowing()
+  for offset in (0, 100_000_000, 200_000_000):
+    sample_ns = now + offset
+    following = supervisor.update(sample_ns, active=True, car_valid=True, car_ns=sample_ns,
+      speed_kph=98.49, stock_setpoint_kph=99., calibrated=True, calibration_ns=sample_ns,
+      lead=replace(lead, rx_ns=sample_ns, model_ns=sample_ns))
   checks['recorded_target_without_two_second_deadline'] = (
     following.reason == 'vision_following_candidate' and following.target_kph == 93
     and following.requested_accel_ms2 is None and not following.rearm_required)
   if args.split_axes:
     from opendbc.car.psa.rvv import DOWN_STEP_NS, STEP_NS
-    from opendbc.car.psa.rvv_following import ANTICIPATION_SECONDS, RECOVERY_STABLE_NS, ANTICIPATION_ACQUIRE_NS
+    from opendbc.car.psa.rvv_following import (BASE_ANTICIPATION_SECONDS, HIGHWAY_ANTICIPATION_SECONDS,
+      BASE_TIME_GAP_SECONDS, HIGHWAY_TIME_GAP_SECONDS, RECOVERY_STABLE_NS, ANTICIPATION_ACQUIRE_NS)
     checks['rvv_40_lateral_67'] = (abs(cp.minEnableSpeed*3.6 - 40.) < .01
                                    and abs(cp.minSteerSpeed*3.6 - 67.1) < .01)
     checks['asymmetric_rvv_steps'] = (DOWN_STEP_NS == 100_000_000 and STEP_NS == 500_000_000
       and '#define RVV_DOWN_STEP_US 100000U' in (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9_rvv.h').read_text())
-    checks['anticipation_and_recovery'] = (ANTICIPATION_SECONDS == 4. and RECOVERY_STABLE_NS == 1_000_000_000
-                                          and ANTICIPATION_ACQUIRE_NS == 200_000_000)
+    checks['anticipation_and_recovery'] = (BASE_ANTICIPATION_SECONDS == 4.
+      and HIGHWAY_ANTICIPATION_SECONDS == 6. and BASE_TIME_GAP_SECONDS == 2.
+      and HIGHWAY_TIME_GAP_SECONDS == 2. and RECOVERY_STABLE_NS == 1_000_000_000
+      and ANTICIPATION_ACQUIRE_NS == 200_000_000)
     from openpilot.selfdrive.selfdrived.events import EVENTS, ET
     event_ids = {'psaLateralAxisUnavailable': 101, 'psaRvvAxisUnavailable': 102, 'psaAxesUnavailable': 103}
     checks['split_event_schema'] = all(getattr(log.OnroadEvent.EventName, name, None) == code
@@ -123,21 +131,24 @@ def main():
       and all(name in structs.CarControl.schema.fields for name in ('psaLateralPause', 'psaLateralResume')))
     checks['pause_alert'] = (getattr(log.OnroadEvent.EventName, 'psaLateralPaused', None) == 104
                              and set(EVENTS.get(104, {})) == {ET.WARNING})
-    checks['pause_parameters'] = (DRIVER_PAUSE_RAW == 15 and RESUME_STABLE_NS == 500_000_000
+    checks['pause_parameters'] = (DRIVER_PAUSE_RAW == 15 and RESUME_STABLE_NS == 300_000_000
                                   and LANE_PROBABILITY_MIN == .75)
   from opendbc.car import structs
   from openpilot.selfdrive.selfdrived.events import EVENTS, ET
-  from opendbc.car.psa.lka import EPS_CYCLE_PERIOD_NS, EPS_CYCLE_TIMEOUT_NS
-  from opendbc.car.psa.eps_cycle import MAX_LAT_ACCEL, STABLE_NS
+  from opendbc.car.psa.lka import EPS_CYCLE_PERIOD_NS, EPS_CYCLE_EARLIEST_NS, EPS_CYCLE_TIMEOUT_NS, EPS_CYCLE_WARNING_NS
+  from opendbc.car.psa.eps_cycle import STRAIGHT_LAT_ACCEL, CURVE_LAT_ACCEL, PREDICTION_SECONDS
   checks['eps_cycle_setting_matches_mode'] = params.get_bool('PsaT9EpsCycleTest') == args.eps_cycle
   checks['eps_cycle_default_off'] = params.get_default_value('PsaT9EpsCycleTest') is False
   checks['eps_cycle_schema_and_warning'] = ('psaEpsCycling' in structs.CarState.schema.fields
+    and 'psaEpsCyclePending' in structs.CarState.schema.fields
     and 'psaEpsCycleReady' in structs.CarControl.schema.fields
     and getattr(log.OnroadEvent.EventName, 'psaEpsCycling', None) == 105
-    and set(EVENTS.get(105, {})) == {ET.WARNING})
-  checks['eps_cycle_bounds'] = (EPS_CYCLE_PERIOD_NS == 12_000_000_000 and EPS_CYCLE_TIMEOUT_NS == 2_000_000_000
-    and MAX_LAT_ACCEL == .10 and STABLE_NS == 500_000_000
-    and '#define T9_CYCLE_PERIOD_US 12000000U' in (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text())
+    and getattr(log.OnroadEvent.EventName, 'psaEpsCyclePending', None) == 106
+    and all(set(EVENTS.get(key, {})) == {ET.WARNING} for key in (105, 106)))
+  checks['eps_cycle_bounds'] = (EPS_CYCLE_PERIOD_NS == 12_000_000_000 and EPS_CYCLE_TIMEOUT_NS == 3_000_000_000
+    and EPS_CYCLE_EARLIEST_NS == 3_000_000_000 and EPS_CYCLE_WARNING_NS == 2_000_000_000
+    and STRAIGHT_LAT_ACCEL == .30 and CURVE_LAT_ACCEL == .50 and PREDICTION_SECONDS == 5.
+    and '#define T9_CYCLE_EARLIEST_US 3000000U' in (ROOT/'opendbc_repo/opendbc/safety/modes/psa_t9.h').read_text())
   checks['eps_cycle_ui_and_boot_snapshot'] = ('class T9EpsCycleToggle' in (ROOT/'selfdrive/ui/mici/layouts/settings/toggles.py').read_text()
     and 'configure_eps_cycle(params)' in (ROOT/'system/manager/manager.py').read_text())
   checks['ui_running'] = any(p.name == 'ui' and p.running for p in sm['managerState'].processes)

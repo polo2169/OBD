@@ -8,7 +8,7 @@ from opendbc.car.interfaces import MAX_CTRL_SPEED
 from opendbc.car.toyota.values import ToyotaFlags
 from opendbc.car.psa.values import CAR as PSACar
 from opendbc.car.psa.lateral_test import enabled as t9_lateral_enabled
-from opendbc.car.psa.lka import MAX_SPEED_KPH
+from opendbc.car.psa.lka import MAX_SPEED_KPH, MIN_SPEED_KPH
 
 from openpilot.selfdrive.selfdrived.events import Events
 
@@ -231,12 +231,16 @@ class CarSpecificEvents:
     # Handle permanent and temporary steering faults
     self.steering_unpressed = 0 if CS.steeringPressed else self.steering_unpressed + 1
     if self.t9_split_axes:
-      if CS.cruiseState.enabled and (CS.steeringDisengage or (CS.steeringPressed and not CS.psaLateralPaused)
-                                    or CS.steerFaultTemporary or CS.steerFaultPermanent):
+      lateral_speed_available = round(CS.vEgoRaw * 3.6, 4) >= MIN_SPEED_KPH
+      if (CS.cruiseState.enabled and lateral_speed_available
+          and (CS.steeringDisengage or (CS.steeringPressed and not CS.psaLateralPaused)
+               or CS.steerFaultTemporary or CS.steerFaultPermanent)):
         events.add(EventName.psaLateralAxisUnavailable)
-      elif CS.cruiseState.enabled and CS.psaEpsCycling:
+      elif CS.cruiseState.enabled and lateral_speed_available and CS.psaEpsCycling:
         events.add(EventName.psaEpsCycling)
-      elif CS.cruiseState.enabled and CS.psaLateralPaused:
+      elif CS.cruiseState.enabled and lateral_speed_available and CS.psaEpsCyclePending:
+        events.add(EventName.psaEpsCyclePending)
+      elif CS.cruiseState.enabled and lateral_speed_available and CS.psaLateralPaused:
         events.add(EventName.psaLateralPaused)
     elif self.t9_rvv_only:
       pass

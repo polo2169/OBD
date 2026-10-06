@@ -1,0 +1,17 @@
+# Local reports and validation evidence
+/docs/archive/
+/docs/COMMA_308_T9_*.md
+/docs/PSA_HARNESS_OBDC_AUDIT.md
+/docs/T9_STATIONARY_STEERING_INVESTIGATION.md
+/releases/
+/port/t9_shadow/origins.json
+/examples/t9_dataset/truck_approach.sample.csv
+/reports/
+/diagnostics/
+/logs/
+/captures/
+*.rlog
+*.qlog
+*.rlog.*
+*.qlog.*
+*.can

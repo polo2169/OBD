@@ -57,6 +57,15 @@ int main() {
   }
   feed(guard, 5600, 2, 0, true);
   assert(guard.active_healthy(5600*MS)); assert(guard.tx_ready);
+  // Relay-forwarded copies are visible to pandad after activation. The
+  // startup probe already proved the physical sources; echoes must not turn
+  // a controlled factory-stream restore into noOutput/controlsMismatch.
+  Data echo{};
+  guard.update(0x3F2, 0, echo.data(), 8, 5625*MS);
+  guard.update(0x495, 2, echo.data(), 4, 5625*MS);
+  assert(guard.stage == PsaT9Guard::Stage::ACTIVE);
+  feed(guard, 5650, 2, 0, true);
+  assert(guard.active_healthy(5650*MS)); assert(guard.tx_ready);
   assert(!guard.active_healthy(5900*MS)); assert(!guard.tx_ready);
   assert(guard.stage == PsaT9Guard::Stage::FAILED);
 

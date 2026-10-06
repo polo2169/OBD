@@ -50,6 +50,14 @@ class TestT9LateralIntegration(unittest.TestCase):
     for name, signals in values.items():
       bus = 2 if name in ('T9_BODY_STATUS_412', 'T9_CRUISE_SETPOINT_50E', 'T9_RESTRAINTS_572', 'T9_DRIVER_CRUISE_COMMAND_452') else 0
       address, data, bus = self.packer.make_can_msg(name, bus, signals)
+      if address == 0x228:
+        data = bytearray(8)
+        data[2] = round(pedal * 2)
+        self.pedal_counter = (getattr(self, 'pedal_counter', -1) + 1) & 0xF
+        data[3] = self.pedal_counter << 4
+        nibble_sum = sum((value >> 4) + (value & 0xF) for value in data)
+        data[3] |= (3 - nibble_sum) & 0xF
+        data = bytes(data)
       if address == 0x348:
         data = bytearray(data); data[6] |= 64; data = bytes(data)
       if address == 0x50E:
@@ -87,11 +95,11 @@ class TestT9LateralIntegration(unittest.TestCase):
     self.assertFalse(self.cp.dashcamOnly)
     self.assertFalse(self.cp.openpilotLongitudinalControl)
     self.assertEqual(self.cp.safetyConfigs[0].safetyParam, 0x1308)
-    self.assertEqual(self.output[-1][1], 15)
+    self.assertEqual(self.output[-1][1], 20)
 
   def test_native_controller_frames_pass_compiled_panda_safety(self):
     self.active()
-    self.assertTrue(all(abs(value) <= 15 for _, value in self.output))
+    self.assertTrue(all(abs(value) <= 20 for _, value in self.output))
     self.assertTrue(all(value == 0 for ms, value in self.output if ms < 2350))
 
   def test_panda_rejection_releases_with_fresh_template_and_requires_manual_restart(self):
@@ -194,7 +202,7 @@ class TestT9LateralIntegration(unittest.TestCase):
   def test_host_and_panda_agree_at_140_kph(self):
     for ms in range(0, 4001, 10):
       self.step(ms, speed=140)
-    self.assertEqual(self.output[-1][1], 15)
+    self.assertEqual(self.output[-1][1], 20)
     self.assertTrue(self.safety.get_controls_allowed())
     applied, _ = self.step(4001, speed=140.01)
     self.assertEqual(applied.torqueOutputCan, 0)
@@ -266,7 +274,7 @@ class TestT9LateralIntegration(unittest.TestCase):
         for ms in range(4120, 6001, 10):
           self.step(ms, eps=3 if ms >= 4260 else 1)
         self.assertEqual(self.ci.CC.t9_lateral.status['phase'], 'active')
-        self.assertEqual(self.output[-1][1], 15)
+        self.assertEqual(self.output[-1][1], 20)
         self.assertTrue(self.safety.get_controls_allowed())
 
   def test_manual_restart_cannot_override_a_current_eps_fault(self):
@@ -355,7 +363,7 @@ class TestT9LateralIntegration(unittest.TestCase):
 
   def test_packet_conserves_opaque_bits_and_signed_command(self):
     template = bytes.fromhex('125614000d000001')
-    for value in range(-15, 16):
+    for value in range(-20, 21):
       _, data, _ = steering_frame(template, 4, 100, value)
       raw = (data[3] << 3) | (data[4] >> 5)
       self.assertEqual(raw - 2048 if raw & 1024 else raw, value)
@@ -391,7 +399,7 @@ class TestT9LateralIntegration(unittest.TestCase):
   def test_eps_driver_activity_is_logged_without_changing_control(self):
     self.active()
     applied, _ = self.step(4010, driver_activity=True)
-    self.assertEqual(applied.torqueOutputCan, 15)
+    self.assertEqual(applied.torqueOutputCan, 20)
     self.assertTrue(self.safety.get_controls_allowed())
     snapshots = [json.loads(call.args[0].removeprefix('psa_t9_lateral ')) for call in self.debug_log.call_args_list
                  if call.args[0].startswith('psa_t9_lateral ')]

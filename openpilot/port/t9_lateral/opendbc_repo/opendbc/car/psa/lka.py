@@ -21,10 +21,13 @@ MIN_SPEED_KPH = 67.1
 MAX_SPEED_KPH = 140.0
 DRIVER_TORQUE_LIMIT = 15
 TORQUE_LIMIT = 1  # Initial passive shadow envelope; never the observed factory maximum.
-ACTIVE_TORQUE_LIMIT = 15  # Experimental command envelope requested after the +/-10 road capture.
+ACTIVE_TORQUE_LIMIT = 20  # Experimental extension requested after the +/-17 envelope saturated in bends.
 NORMALIZED_TORQUE_SCALE = ACTIVE_TORQUE_LIMIT
 EPS_CYCLE_PERIOD_NS = 12_000_000_000
-EPS_CYCLE_TIMEOUT_NS = 2_000_000_000
+EPS_CYCLE_EARLIEST_NS = 3_000_000_000
+EPS_CYCLE_WARNING_NS = 2_000_000_000
+EPS_CYCLE_TIMEOUT_NS = 3_000_000_000
+BLINKER_CONFIRM_NS = 150_000_000
 
 # One recorded activation, NOT a universal PSA requirement. Used only for
 # this candidate's diagnostics; no fabricated EPS response follows this ramp.
@@ -37,6 +40,8 @@ class LkaPhase(StrEnum):
   WAITING_EPS = "waiting_eps"
   ACTIVE = "active"
   PAUSED = "paused"
+  BLINKER_PENDING = "blinker_pending"
+  BLINKER_PAUSED = "blinker_paused"
   CYCLE_ARMING = "cycle_arming"
   CYCLE_RELEASING = "cycle_releasing"
   RELEASING = "releasing"
@@ -59,6 +64,7 @@ class LkaInputs:
   requested: bool = False
   pause_supported: bool = False
   pause_requested: bool = False
+  blinker_pause_requested: bool = False
   resume_allowed: bool = False
   cycle_ready: bool = False
   driver_activity: bool = False
@@ -121,17 +127,27 @@ class T9LkaLifecycle:
     self.cycle_count = 0
     self._active_since = 0
     self._cycle_started = 0
+    self._cycle_zero_seen = False
+    self._blinker_pending_started = 0
     self.cycle_resume_until = 0
 
   def _block(self, reason: str):
     self.cycle_resume_until = 0
     self.cycling = False
     self._active_since = 0
+    self._cycle_zero_seen = False
+    self._blinker_pending_started = 0
     self.phase = LkaPhase.BLOCKED
     self.reason = reason
     self.factor = 0
     self.torque_raw = 0
     self.rearm_required = True
+
+  @property
+  def cycle_pending(self) -> bool:
+    return bool(self.cycle_supported and self.phase == LkaPhase.ACTIVE and not self.cycling
+                and self._active_since and self._last_update is not None
+                and self._last_update - self._active_since >= EPS_CYCLE_PERIOD_NS - EPS_CYCLE_WARNING_NS)
 
   def rearm_on_physical_cruise_off(self, now: int) -> bool:
     """Clear an old episode after the caller validates physical RVV off.
@@ -153,6 +169,8 @@ class T9LkaLifecycle:
     self.cycling = False
     self.cycle_resume_until = 0
     self._active_since = 0
+    self._cycle_zero_seen = False
+    self._blinker_pending_started = 0
     return True
 
   @staticmethod
@@ -178,6 +196,42 @@ class T9LkaLifecycle:
       return "eps_fault"
     if feedback.eps_state not in (1, 2, 3):
       return "eps_feedback_invalid"
+    return None
+
+  @staticmethod
+  def _released_feedback_problem(now: int, inputs: LkaInputs) -> str | None:
+    """Validate feedback while an intentional zero-torque release is active."""
+    feedback = inputs.feedback
+    if not inputs.can_valid:
+      return "can_invalid"
+    if not fresh(now, inputs.safety_rx_nanos):
+      return "safety_rx_stale"
+    if not fresh(now, feedback.stock_nanos, STOCK_TIMEOUT_NS):
+      return "stock_lka_stale"
+    if feedback.stock_state not in (2, 3, 4):
+      return "stock_lka_unavailable"
+    if not 0 <= feedback.stock_factor <= 100 or feedback.stock_angle_raw != 0 or feedback.stock_lxa != 0:
+      return "stock_torque_api_invalid"
+    if not fresh(now, feedback.eps_nanos):
+      return "eps_feedback_stale"
+    if feedback.eps_state == 4:
+      return "eps_fault"
+    if feedback.eps_state not in (0, 1, 2, 3):
+      return "eps_feedback_invalid"
+    return None
+
+  @staticmethod
+  def _released_vehicle_problem(inputs: LkaInputs, *, allow_driver: bool) -> str | None:
+    if not all(math.isfinite(value) for value in (inputs.torque, inputs.speed_kph, inputs.driver_torque_raw)):
+      return "nonfinite_input"
+    if inputs.brake_pressed:
+      return "brake_pressed"
+    if not allow_driver and (inputs.driver_override or abs(inputs.driver_torque_raw) > DRIVER_TORQUE_LIMIT):
+      return "driver_override"
+    if not inputs.vehicle_ready:
+      return "vehicle_not_ready"
+    if not MIN_SPEED_KPH <= inputs.speed_kph <= MAX_SPEED_KPH:
+      return "speed_below_lateral_envelope" if inputs.speed_kph < MIN_SPEED_KPH else "speed_outside_candidate_envelope"
     return None
 
   @staticmethod
@@ -227,7 +281,9 @@ class T9LkaLifecycle:
     if tick:
       self._last_tick = now_nanos
 
-    if gap and (self.cycling or self.phase in (LkaPhase.PREPARING, LkaPhase.WAITING_EPS, LkaPhase.ACTIVE, LkaPhase.PAUSED, LkaPhase.RELEASING)):
+    if gap and (self.cycling or self.phase in (LkaPhase.PREPARING, LkaPhase.WAITING_EPS, LkaPhase.ACTIVE,
+                                               LkaPhase.PAUSED, LkaPhase.BLINKER_PENDING,
+                                               LkaPhase.BLINKER_PAUSED, LkaPhase.RELEASING)):
       self._block("control_update_timeout")
       return self._decision()
 
@@ -253,13 +309,39 @@ class T9LkaLifecycle:
         self.reason = "prepare_zero_torque"
       return self._decision()
 
-    if feedback_problem:
-      self._block(feedback_problem)
+    if self.phase in (LkaPhase.BLINKER_PENDING, LkaPhase.BLINKER_PAUSED):
+      problem = self._released_feedback_problem(now_nanos, inputs) or self._released_vehicle_problem(inputs, allow_driver=True)
+      if not inputs.requested:
+        problem = problem or "new_request_required"
+      if problem:
+        self._block(problem)
+        return self._decision()
+      self.factor = self.torque_raw = 0
+      if self.phase == LkaPhase.BLINKER_PENDING:
+        if inputs.blinker_pause_requested:
+          self.phase = LkaPhase.BLINKER_PAUSED
+          self.reason = "blinker_pause"
+        elif now_nanos - self._blinker_pending_started >= BLINKER_CONFIRM_NS:
+          self._block("stock_lka_not_authorized")
+        return self._decision()
+      if inputs.blinker_pause_requested or inputs.pause_requested or not inputs.resume_allowed:
+        self.reason = "blinker_pause"
+        return self._decision()
+      if inputs.feedback.stock_state not in (3, 4) or inputs.feedback.eps_state not in (1, 2):
+        self.reason = "blinker_resume_wait_release"
+        return self._decision()
+      self.phase = LkaPhase.PREPARING
+      self._phase_started = now_nanos
+      self._factor_index = 0
+      self.reason = "blinker_resume_prepare"
       return self._decision()
 
     if self.cycling:
-      problem = self._engagement_problem(inputs)
-      if not inputs.requested or not inputs.cycle_ready or inputs.pause_requested:
+      # A cycle is already a zero-torque manual interval. Driver effort and a
+      # turn signal may appear while it runs and must not tear down the EPS
+      # handshake; hard vehicle/CAN faults and physical cruise-off still do.
+      problem = self._released_feedback_problem(now_nanos, inputs) or self._released_vehicle_problem(inputs, allow_driver=True)
+      if not inputs.requested:
         problem = problem or 'eps_cycle_interrupted'
       if now_nanos - self._cycle_started >= EPS_CYCLE_TIMEOUT_NS:
         problem = problem or 'eps_cycle_timeout'
@@ -275,14 +357,20 @@ class T9LkaLifecycle:
           self.reason = 'eps_cycle_wait_release'
         return self._decision()
       if self.phase == LkaPhase.CYCLE_RELEASING:
-        if (tick and inputs.feedback.eps_state in (1, 2)
+        if inputs.feedback.eps_state == 0 and inputs.feedback.eps_nanos > self._phase_started:
+          self._cycle_zero_seen = True
+        if (tick and self._cycle_zero_seen and inputs.feedback.eps_state in (1, 2)
             and inputs.feedback.eps_nanos > self._phase_started):
           self.phase = LkaPhase.PREPARING
           self._phase_started = now_nanos
           self.reason = 'eps_cycle_prepare'
-        elif now_nanos - self._phase_started >= EPS_RELEASE_TIMEOUT_NS:
+        elif now_nanos - self._phase_started >= EPS_CYCLE_TIMEOUT_NS:
           self._block('eps_release_timeout')
         return self._decision()
+
+    elif feedback_problem:
+      self._block(feedback_problem)
+      return self._decision()
 
     if self.phase == LkaPhase.RELEASING:
       if inputs.feedback.stock_state == 2:
@@ -299,7 +387,16 @@ class T9LkaLifecycle:
       return self._decision()
 
     can_pause = inputs.pause_supported and self.phase in (LkaPhase.ACTIVE, LkaPhase.PAUSED)
-    problem = self._engagement_problem(inputs, allow_override=can_pause)
+    if can_pause and (inputs.blinker_pause_requested or inputs.feedback.stock_state == 2):
+      self.phase = LkaPhase.BLINKER_PAUSED if inputs.blinker_pause_requested else LkaPhase.BLINKER_PENDING
+      self._blinker_pending_started = now_nanos
+      self.factor = self.torque_raw = 0
+      self.reason = "blinker_pause" if inputs.blinker_pause_requested else "blinker_pending"
+      return self._decision()
+    # PREPARING/WAITING_EPS are also part of a latched cycle. Their released
+    # checks above already enforce every hard gate while intentionally
+    # allowing the driver to steer; do not re-apply the normal entry override.
+    problem = None if self.cycling else self._engagement_problem(inputs, allow_override=can_pause)
     if problem:
       self._block(problem)
       return self._decision()
@@ -330,13 +427,17 @@ class T9LkaLifecycle:
 
     # Explicit zero-factor marker precedes state 2. Only the dedicated MCU
     # profile recognizes it; an ordinary stop never becomes a cycle request.
-    # Physical EPS driver activity must be true at entry. A cycle cannot be
-    # used to recover a revoked authorization or a latched stop.
+    # Match cristianku's renewal schedule: anticipate a curve after 3 s, or
+    # renew at 12 s even without a straight-road opportunity or activity bit.
+    # Current EPS authorization, driver priority and every hard gate above
+    # still apply; a revoked authorization or latched stop cannot be rearmed.
     if (self.cycle_supported and self.phase == LkaPhase.ACTIVE and not self.cycling
-        and self._active_since and now_nanos - self._active_since >= EPS_CYCLE_PERIOD_NS
-        and inputs.cycle_ready and inputs.driver_activity and tick):
+        and self._active_since and tick
+        and (now_nanos - self._active_since >= EPS_CYCLE_PERIOD_NS
+             or (inputs.cycle_ready and now_nanos - self._active_since >= EPS_CYCLE_EARLIEST_NS))):
       self.cycling = True
       self._cycle_started = now_nanos
+      self._cycle_zero_seen = False
       self.phase = LkaPhase.CYCLE_ARMING
       self.factor = self.torque_raw = 0
       self.reason = 'eps_cycle_zero_marker'
@@ -345,6 +446,8 @@ class T9LkaLifecycle:
     if self.phase == LkaPhase.PREPARING:
       if inputs.feedback.eps_state == 3:
         self._block("eps_active_before_request")
+      elif self.cycling and inputs.feedback.eps_state not in (1, 2):
+        self._phase_started = now_nanos
       elif tick and now_nanos - self._phase_started >= PREPARE_NS:
         self.phase = LkaPhase.WAITING_EPS
         self._activation_started = now_nanos
@@ -364,6 +467,7 @@ class T9LkaLifecycle:
         if self.cycling:
           self.cycle_count += 1
           self.cycle_resume_until = now_nanos + CONTROL_TIMEOUT_NS
+          self._cycle_zero_seen = False
         self.cycling = False
         self.reason = "eps_active_observed"
         # Confirmation update still proposes zero torque.

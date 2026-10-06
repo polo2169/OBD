@@ -71,6 +71,7 @@ class Controls:
     self.t9_split_axes = rvv_wire.split(self.CP)
     self.t9_lateral_pause = T9LateralPause()
     self.t9_eps_cycle = T9EpsCycleGate()
+    self.t9_eps_gate_log_ns = 0
     self.t9_rvv_following = T9RvvFollowingObserver(split_axes=self.t9_split_axes) if self.CP.carFingerprint == PSA_CAR.PSA_PEUGEOT_308_T9 else None
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
@@ -169,9 +170,21 @@ class Controls:
       if CC.psaLateralPause:
         CC.latActive = False
       if rvv_wire.eps_cycle(self.CP):
-        CC.psaEpsCycleReady = self.t9_eps_cycle.update(time.monotonic_ns(), eligible=pause_eligible,
+        cycle_now = time.monotonic_ns()
+        CC.psaEpsCycleReady = self.t9_eps_cycle.update(cycle_now, eligible=pause_eligible,
           car=CS, model=model_v2, model_valid=self.sm.all_checks(['modelV2']),
           model_ns=self.sm.logMonoTime['modelV2'])
+        if cycle_now - self.t9_eps_gate_log_ns >= 1_000_000_000:
+          self.t9_eps_gate_log_ns = cycle_now
+          try:
+            cloudlog.info('psa_t9_eps_gate ' + json.dumps({
+              'mono_ns': cycle_now, 'ready': CC.psaEpsCycleReady, 'reason': self.t9_eps_cycle.reason,
+              'speed_kph': float(CS.vEgoRaw) * 3.6, 'driver_torque_raw': float(CS.steeringTorque),
+              'cycling': bool(CS.psaEpsCycling),
+              'model_age_ns': cycle_now - int(self.sm.logMonoTime['modelV2']),
+            }, separators=(',', ':'), allow_nan=False))
+          except Exception:
+            pass  # A diagnostic failure cannot change EPS readiness or control.
         if CS.psaEpsCycling:
           # Keep the explicit cycle request, but reset the lateral controller
           # throughout the zero-torque handshake to prevent integrator windup.

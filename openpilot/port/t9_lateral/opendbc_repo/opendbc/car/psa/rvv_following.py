@@ -12,10 +12,37 @@ from opendbc.car.psa.lka import fresh
 from opendbc.car.psa.rvv import MIN_SETPOINT_KPH, MAX_SETPOINT_KPH, normalize_stock_setpoint_kph
 from opendbc.car.psa import rvv_wire
 
-ANTICIPATION_SECONDS = 4.0
+BASE_TIME_GAP_SECONDS = 2.0
+HIGHWAY_TIME_GAP_SECONDS = 2.0
+BASE_ANTICIPATION_SECONDS = 4.0
+HIGHWAY_ANTICIPATION_SECONDS = 6.0
+HIGHWAY_PROFILE_START_KPH = 80.0
+HIGHWAY_PROFILE_FULL_KPH = 130.0
 RECOVERY_STABLE_NS = 1_000_000_000
 RECOVERY_MAX_CLOSING_MS = 0.5
 ANTICIPATION_ACQUIRE_NS = 200_000_000
+LEAD_ACQUIRE_PROBABILITY_MIN = 0.75
+LEAD_RETAIN_PROBABILITY_MIN = 0.65
+LEAD_DEGRADED_GRACE_NS = 500_000_000
+
+
+def _highway_blend(speed_kph):
+  return max(0., min(1., (speed_kph - HIGHWAY_PROFILE_START_KPH) /
+                         (HIGHWAY_PROFILE_FULL_KPH - HIGHWAY_PROFILE_START_KPH)))
+
+
+def following_profile(speed_kph):
+  """Return the two-second steady gap and speed-dependent closing lookahead.
+
+  The steady gap remains two seconds at every speed. Above 80 km/h, the
+  lookahead increases progressively so a large motorway closing speed
+  lowers the conventional-cruise setpoint earlier. This still only
+  requests engine/coast speed regulation; it does not provide braking.
+  """
+  blend = _highway_blend(speed_kph)
+  time_gap = BASE_TIME_GAP_SECONDS + blend * (HIGHWAY_TIME_GAP_SECONDS - BASE_TIME_GAP_SECONDS)
+  anticipation = BASE_ANTICIPATION_SECONDS + blend * (HIGHWAY_ANTICIPATION_SECONDS - BASE_ANTICIPATION_SECONDS)
+  return time_gap, anticipation
 
 
 @dataclass(frozen=True)
@@ -49,18 +76,52 @@ class FollowingDecision:
   anticipated_gap_m: float | None = None
   recovery_waiting: bool = False
   anticipation_only: bool = False
+  degraded_hold: bool = False
 
 
 class T9RvvFollowing:
-  def __init__(self):
+  def __init__(self, *, split_axes=False):
+    self.split_axes = split_axes
     self.last_clock = 0
     self.target = None
     self.blocked = None
     self.recovery_since = 0
+    self.degraded_since = 0
+    self.reacquire_since = self.reacquire_model_ns = self.reacquire_samples = 0
 
   def _block(self, reason):
     self.blocked = self.blocked or reason
+    self.degraded_since = 0
     return FollowingDecision(self.blocked, driver_intervention_required=True, rearm_required=True)
+
+  def _hold_degraded_lead(self, now, lead, failure_reason, stock_setpoint_kph):
+    """Keep the speed cap while fresh perception has no dependable target.
+
+    In the split profile this pauses perception without raising the cap or
+    requiring OFF/ON. Recovery needs a new stable, confident lead. Other
+    profiles retain their existing bounded grace and physical-rearm policy.
+    """
+    if not self.degraded_since:
+      self.degraded_since = now
+    self.recovery_since = 0
+    self.reacquire_since = self.reacquire_model_ns = self.reacquire_samples = 0
+    if not self.split_axes and now - self.degraded_since >= LEAD_DEGRADED_GRACE_NS:
+      return self._block(failure_reason)
+    self.target = min(self.target, math.floor(stock_setpoint_kph))
+    return FollowingDecision('vision_following_candidate', target_kph=self.target,
+      computed_ns=now, lead_rx_ns=lead.rx_ns, model_ns=lead.model_ns,
+      candidate_increase_permitted=True, recovery_waiting=True, degraded_hold=True)
+
+  def _reacquired(self, now, lead):
+    if not self.reacquire_since or lead.model_ns < self.reacquire_model_ns:
+      self.reacquire_since = now
+      self.reacquire_model_ns = self.reacquire_samples = 0
+    new_model = lead.model_ns > self.reacquire_model_ns
+    if new_model:
+      self.reacquire_model_ns = lead.model_ns
+      self.reacquire_samples += 1
+    return (new_model and self.reacquire_samples >= 3
+            and now - self.reacquire_since >= ANTICIPATION_ACQUIRE_NS)
 
   def update(self, now, *, active, car_valid, car_ns, speed_kph, stock_setpoint_kph,
              calibrated, calibration_ns, lead):
@@ -73,6 +134,8 @@ class T9RvvFollowing:
     if not active:
       self.blocked = self.target = None
       self.recovery_since = 0
+      self.degraded_since = 0
+      self.reacquire_since = self.reacquire_model_ns = self.reacquire_samples = 0
       return FollowingDecision('stock_rvv_inactive')
     if self.blocked:
       return self._block(self.blocked)
@@ -90,32 +153,54 @@ class T9RvvFollowing:
     if not lead.present:
       if self.target is None:
         return FollowingDecision('waiting_for_lead')
-      return self._block('lead_lost')
+      return self._hold_degraded_lead(now, lead, 'lead_lost', stock_setpoint_kph)
     if not all(math.isfinite(v) for v in (lead.distance_m, lead.speed_ms, lead.relative_speed_ms, lead.probability)):
       return self._block('nonfinite_lead')
     if not 0. <= lead.probability <= 1.0:
       return self._block('lead_probability_invalid')
-    if lead.probability < 0.75:
+    if lead.probability < LEAD_ACQUIRE_PROBABILITY_MIN:
       if self.target is None:
         return FollowingDecision('waiting_for_confident_lead')
-      return self._block('lead_low_confidence')
+      if lead.probability < LEAD_RETAIN_PROBABILITY_MIN:
+        return self._hold_degraded_lead(now, lead, 'lead_low_confidence', stock_setpoint_kph)
     if lead.distance_m <= 0 or lead.speed_ms < 0:
       return self._block('lead_geometry_invalid')
     ego_ms = speed_kph / 3.6
     if abs((lead.speed_ms - ego_ms) - lead.relative_speed_ms) > 3.0:
       return self._block('lead_speed_inconsistent')
-    gap_m = 5.0 + 2.0 * ego_ms
+    time_gap_s, anticipation_s = following_profile(speed_kph)
+    gap_m = 5.0 + time_gap_s * ego_ms
+    # Keep the intervention boundary on the established two-second base,
+    # independently of the speed-dependent closing-lead anticipation.
+    critical_gap_m = 5.0 + BASE_TIME_GAP_SECONDS * ego_ms
     closing_ms = max(-lead.relative_speed_ms, 0.)
     ttc = lead.distance_m / closing_ms if closing_ms > 0.1 else None
-    if (ttc is not None and ttc < 4.) or lead.distance_m < max(5., gap_m * 0.5):
+    short_gap = lead.distance_m < max(5., critical_gap_m * 0.5)
+    # The recorded motorway false stops had leads moving away at 1.3..4.3
+    # m/s. A reduced engine-cruise cap opens that gap; restoring the driver's
+    # higher ceiling does the opposite. Keep the TTC and absolute 5 m stops,
+    # and never relax this boundary for an approaching or uncertain lead.
+    receding = self.split_axes and lead.probability >= LEAD_ACQUIRE_PROBABILITY_MIN and lead.relative_speed_ms >= .5
+    if (ttc is not None and ttc < 4.) or (short_gap and (lead.distance_m < 5. or not receding)):
       return self._block('fixed_cruise_cannot_handle_critical_lead')
     base_target = math.floor(min(stock_setpoint_kph, (lead.speed_ms + 0.20 * (lead.distance_m - gap_m)) * 3.6))
     if base_target < MIN_SETPOINT_KPH:
       return self._block('lead_target_below_rvv_minimum')
+    if self.split_axes and self.degraded_since:
+      # Validate dangerous geometry before any reacquisition wait. The cap
+      # may decrease immediately, but cannot increase from one good frame.
+      if lead.probability < LEAD_ACQUIRE_PROBABILITY_MIN:
+        return self._hold_degraded_lead(now, lead, 'lead_low_confidence', stock_setpoint_kph)
+      if not self._reacquired(now, lead):
+        self.target = min(self.target, base_target, math.floor(stock_setpoint_kph))
+        return FollowingDecision('vision_following_candidate', target_kph=self.target,
+          computed_ns=now, lead_rx_ns=lead.rx_ns, model_ns=lead.model_ns,
+          candidate_increase_permitted=True, recovery_waiting=True, degraded_hold=True)
+    self.degraded_since = 0
     # Begin reducing the setpoint while the current gap is still comfortable
     # but closing. This distance projection is not a deadline for attaining
     # the target or a claim about available engine deceleration.
-    anticipated_gap = gap_m + ANTICIPATION_SECONDS * closing_ms
+    anticipated_gap = gap_m + anticipation_s * closing_ms
     target = max(MIN_SETPOINT_KPH, math.floor(min(stock_setpoint_kph,
       (lead.speed_ms + 0.20 * (lead.distance_m - anticipated_gap)) * 3.6)))
     recovery_waiting = False
@@ -156,7 +241,7 @@ class T9RvvFollowingObserver:
   """
   def __init__(self, *, split_axes=False):
     self.split_axes = split_axes
-    self.planner = T9RvvFollowing()
+    self.planner = T9RvvFollowing(split_axes=split_axes)
     self.pending_planner = None
     self.status = {}
     self.decision = FollowingDecision("initializing")
@@ -204,7 +289,7 @@ class T9RvvFollowingObserver:
     # Recompute prospective decisions from current inputs until a nonzero
     # request is actually published; retain every current inhibition on that
     # decision. An already requested episode retains its persistent planner.
-    planner = self.planner if self.request_episode_started else T9RvvFollowing()
+    planner = self.planner if self.request_episode_started else T9RvvFollowing(split_axes=self.split_axes)
     decision = planner.update(now, active=bool(car.cruiseState.enabled),
       car_valid=bool(sm.valid['carState'] and sm.alive['carState'] and car.canValid and not car.canTimeout),
       car_ns=int(sm.logMonoTime['carState']), speed_kph=round(float(car.vEgoRaw) * 3.6, 2),
@@ -221,11 +306,12 @@ class T9RvvFollowingObserver:
         and sm.valid['liveCalibration'] and sm.alive['liveCalibration']
         and str(calibration.calStatus) == 'calibrated' and fresh(now, sm.logMonoTime['liveCalibration'], 2_000_000_000))
       decision = replace(decision, common_fault=not shared_valid)
-    # An earlier takeover needs a stable series, not the isolated marginal
-    # detection seen before the recorded truck approach. This read-only
+    # Every split-profile acquisition needs a stable series, including the
+    # one-frame 132 km/h detection that requested 42 km/h then disappeared.
+    # This read-only
     # acquisition history cannot commit an actuation episode or clear a stop.
     early = (not self.request_episode_started and decision.reason == 'vision_following_candidate'
-             and decision.anticipation_only and not decision.common_fault)
+             and (self.split_axes or decision.anticipation_only) and not decision.common_fault)
     if (not early or not 0 < self.last_update <= now or now - self.last_update > 150_000_000
         or lead.model_ns < self.anticipation_model_ns):
       self.anticipation_since = self.anticipation_model_ns = self.anticipation_samples = 0

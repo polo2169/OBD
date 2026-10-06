@@ -110,6 +110,17 @@ class TestSplitAxisEvents(unittest.TestCase):
     self.assertNotIn(EventName.psaEpsCycling, events.names)
     self.assertIn(EventName.psaLateralAxisUnavailable, events.names)
 
+  def test_upcoming_cycle_warns_without_disengaging_either_axis(self):
+    self.cs.psaEpsCyclePending = True
+    events = self.events()
+    self.assertIn(EventName.psaEpsCyclePending, events.names)
+    self.assertEqual(self.machine.update(events), (True, True))
+    self.assertTrue(any('Prepare to steer manually' in a.alert_text_2 for a in events.create_alerts([ET.WARNING])))
+    self.cs.psaEpsCycling = True
+    events = self.events()
+    self.assertIn(EventName.psaEpsCycling, events.names)
+    self.assertNotIn(EventName.psaEpsCyclePending, events.names)
+
   def test_stale_malformed_or_common_failed_wire_stops_both(self):
     for payload in (b'',b'RVV1'+bytes(28),rvv_wire.command(self.decision,now=self.now-1_000_000_000,
                    engaged=True,split_axes=True)):
@@ -166,13 +177,23 @@ class TestSplitAxisEvents(unittest.TestCase):
     self.cs.steerFaultTemporary = True
     self.machine.state = log.SelfdriveState.OpenpilotState.disabled
     self.decision = FollowingDecision('waiting_for_lead')
-    self.assertEqual(self.machine.update(self.events(previous=structs.CarState())), (True, True))
+    low_speed_events = self.events(previous=structs.CarState())
+    self.assertNotIn(EventName.psaLateralAxisUnavailable, low_speed_events.names)
+    self.assertFalse(any('Steering Assist Stopped' in alert.alert_text_1
+                         for alert in low_speed_events.create_alerts([ET.WARNING])))
+    self.assertEqual(self.machine.update(low_speed_events), (True, True))
     self.now += 1_000_000_000
     self.sm.logMonoTime[rvv_wire.SERVICE] = self.now
     with patch('openpilot.selfdrive.car.car_specific.time.monotonic_ns',return_value=self.now):
       self.assertEqual(self.machine.update(self.events()), (True, True))
       self.cs.vEgo = self.cs.vEgoRaw = 39.99 / 3.6
       self.assertEqual(self.machine.update(self.events()), (False, False))
+
+  def test_lateral_warning_returns_at_the_steering_speed_floor(self):
+    self.cs.vEgo = self.cs.vEgoRaw = 67.1 / 3.6
+    self.cs.steerFaultTemporary = True
+    events = self.events()
+    self.assertIn(EventName.psaLateralAxisUnavailable, events.names)
 
   def test_admission_window_never_defers_common_or_local_rvv_failure(self):
     for decision in (FollowingDecision('lead_lost',rearm_required=True),

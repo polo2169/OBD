@@ -3,7 +3,7 @@ from collections import deque
 
 import numpy as np
 from cereal import log
-from opendbc.car.lateral import FRICTION_THRESHOLD, apply_center_deadzone, get_friction
+from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
 from opendbc.car.psa.lateral_test import enabled as t9_lateral_enabled
 from opendbc.car.psa.values import CAR
 from openpilot.common.constants import ACCELERATION_DUE_TO_GRAVITY
@@ -28,15 +28,16 @@ KI = 0.15
 INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 30]
 KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, KP]
 
-# The T9 CAN yaw signal has 0.1 deg/s resolution. Road logs at 110-132 km/h
-# show a 0.6-0.7 Hz correction cycle while the requested path remains close
+# The T9 CAN yaw signal has 0.1 deg/s resolution. Road logs at 86-132 km/h
+# show a 0.5-1.0 Hz correction cycle while the requested path remains close
 # to straight. Preserve the stock schedule through 90 km/h, then reduce the
 # feedback terms as speed and one yaw-rate count's lateral acceleration grow.
-# Feedforward remains unchanged; the experimental command envelope is +/-15 raw.
+# Feedforward remains unchanged; the experimental command envelope is +/-20 raw.
 T9_INTERP_SPEEDS = [1, 1.5, 2.0, 3.0, 5, 7.5, 10, 15, 25, 30, 33, 36, 40]
 T9_KP_INTERP = [250, 120, 65, 30, 11.5, 5.5, 3.5, 2.0, 1.2, .7, .6, .5, .5]
 T9_KI_INTERP = [.15, .15, .15, .15, .15, .15, .15, .15, .12, .10, .08, .06, .06]
 T9_YAW_RATE_RESOLUTION_RAD_S = math.radians(.1)
+T9_YAW_RATE_DEADZONE_COUNTS = 1.0
 
 LP_FILTER_CUTOFF_HZ = 1.2
 JERK_LOOKAHEAD_SECONDS = 0.19
@@ -50,6 +51,12 @@ def clip_t9_curvature_to_torque_envelope(v_ego, desired_curvature, max_lateral_a
   max_curvature = max_lateral_accel / max(v_ego, 1.) ** 2
   clipped = float(np.clip(desired_curvature, -max_curvature, max_curvature))
   return clipped, clipped != desired_curvature
+
+
+def apply_t9_yaw_deadzone(error, v_ego):
+  """Remove one quantized CAN-yaw count without a step at the boundary."""
+  deadzone = T9_YAW_RATE_DEADZONE_COUNTS * T9_YAW_RATE_RESOLUTION_RAD_S * max(v_ego, 0.)
+  return math.copysign(max(abs(error) - deadzone, 0.), error)
 
 
 class LatControlTorque(LatControl):
@@ -110,9 +117,9 @@ class LatControlTorque(LatControl):
     setpoint = expected_lateral_accel
     error = setpoint - measurement
     if self.t9_can_response:
-      # Ignore less than half a decoded yaw-rate count. Without this deadzone,
-      # the proportional and friction terms chase quantization at high speed.
-      error = apply_center_deadzone(error, .5 * T9_YAW_RATE_RESOLUTION_RAD_S * CS.vEgo)
+      # Remove one decoded yaw-rate count. Subtracting the deadzone above the
+      # boundary avoids the discontinuity that sustained the correction cycle.
+      error = apply_t9_yaw_deadzone(error, CS.vEgo)
 
     lookahead_idx = int(np.clip(-delay_frames + self.lookahead_frames, -self.lat_accel_request_buffer_len+1, -2))
     raw_lateral_jerk = (self.lat_accel_request_buffer[lookahead_idx+1] - self.lat_accel_request_buffer[lookahead_idx-1]) / (2 * self.dt)

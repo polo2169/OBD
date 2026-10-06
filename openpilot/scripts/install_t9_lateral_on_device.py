@@ -25,7 +25,7 @@ def sha(path):
 
 def installed_source_hashes(live, manifest, previous_manifest_sha256=None):
   if previous_manifest_sha256 is None:
-    return {name: entry['before'] for name, entry in manifest.items()}
+    return {name: {entry['before'], *entry.get('upgrade_from', [])} for name, entry in manifest.items()}
   # An upgrade must name the exact previously reviewed installed overlay.
   # The new manifest still preserves the original base hashes for provenance.
   if sha(live/'manifest.json') != previous_manifest_sha256:
@@ -33,7 +33,11 @@ def installed_source_hashes(live, manifest, previous_manifest_sha256=None):
   previous = json.loads((live/'manifest.json').read_text())
   if not set(previous) <= set(manifest):
     raise RuntimeError('Upgrade cannot drop previously overlaid sources')
-  return {name: previous[name]['after'] if name in previous else entry['before']
+  # A file may already equal the reviewed target when an optional component
+  # was installed after the previous manifest. That state is safe to upgrade:
+  # the bytes are exactly those authenticated by the new manifest.
+  return {name: {previous[name]['after'] if name in previous else entry['before'],
+                 entry['after'], *entry.get('upgrade_from', [])}
           for name, entry in manifest.items()}
 
 
@@ -95,7 +99,7 @@ def main():
         raise RuntimeError('Staged source changed: '+name)
       target = LIVE/name
       before = sha(target) if target.exists() else None
-      if before != expected_installed[name]:
+      if before not in expected_installed[name]:
         raise RuntimeError('Installed source changed: '+name)
     for name, checksum in result['artifacts'].items():
       if sha(tree/name) != checksum:

@@ -46,8 +46,8 @@ série ou le HIL. Sur le banc utilisé jusqu'ici,
 rebranchement USB.
 
 Pour ajouter la Matek F722-SE et son BN-880, fermer Betaflight/iNav Configurator,
-puis définir son port USB. Si la carte est fixée à plat avec la flèche vers
-l'avant :
+puis définir son port USB. Sur le montage actuel, la carte est fixée à plat avec
+la flèche vers l'arrière : le projet applique `180°` par défaut.
 
 ```bash
 export MATEK_SENSOR_PORT=/dev/cu.usbmodemXXXX
@@ -98,7 +98,7 @@ corrigée de la vitesse du véhicule précédent.
   --port "$LKA_CAN_PORT" \
   --sensor-port "$MATEK_SENSOR_PORT" \
   --sensor-protocol matek-msp \
-  --sensor-mount-yaw 0 \
+  --sensor-mount-yaw 180 \
   --until-stop \
   --overlay \
   --output-dir data/runtime/openpilot_live
@@ -146,7 +146,7 @@ sert à corriger la vitesse absolue estimée du véhicule précédent.
   --port "$LKA_CAN_PORT" \
   --sensor-port "$MATEK_SENSOR_PORT" \
   --sensor-protocol matek-msp \
-  --sensor-mount-yaw 0 \
+  --sensor-mount-yaw 180 \
   --model-hz 20 \
   --record \
   --overlay \
@@ -187,6 +187,26 @@ open "$SESSION/overlay.mp4"
   ou l'ESP32 capteur est activé.
 - `meta.json` : paramètres, résumé, pertes éventuelles et ancre de
   synchronisation caméra/CAN.
+
+## Rejouer le RVV en shadow longitudinal
+
+Le simulateur longitudinal reste entièrement hors ligne. Il compare le RVV PSA,
+le véhicule précédent détecté par openpilot et une politique adaptative limitée
+au frein moteur :
+
+```bash
+SESSION="$(find data/runtime/openpilot_live -maxdepth 1 -type d -name 'live-*' -print | sort | tail -1)"
+
+backend/.venv/bin/python openpilot/tools/simulate_t9_rvv.py \
+  "$SESSION" \
+  --output "data/runtime/t9_rvv_shadow/$(basename "$SESSION")"
+
+open "data/runtime/t9_rvv_shadow/$(basename "$SESSION")/report.html"
+```
+
+Les décisions `service_brake_required` sont volontairement non exécutables : le
+harnais RVV ne commande pas les freins. Voir
+[docs/T9_RVV_SHADOW.md](docs/T9_RVV_SHADOW.md) pour les hypothèses et limites.
 
 ## Signification des vitesses affichées
 

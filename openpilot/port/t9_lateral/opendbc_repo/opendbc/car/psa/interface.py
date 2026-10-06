@@ -107,24 +107,34 @@ class CarInterface(CarInterfaceBase):
         elif feedback.stock_state not in (3, 4):
           lateral.lateral._block('stock_lka_not_authorized')
       result.psaEpsCycling = lateral.lateral.cycling
+      result.psaEpsCyclePending = lateral.lateral.cycle_pending
       blocked = lateral.lateral.phase == LkaPhase.BLOCKED
       driver_cut = blocked and lateral.lateral.reason == 'driver_override'
+      released_pause = lateral.lateral.phase in (LkaPhase.BLINKER_PENDING, LkaPhase.BLINKER_PAUSED)
+      intentional_manual = released_pause or lateral.lateral.cycling
       # Match the immediate raw-effort cut in the host/Panda, including while
       # steeringPressed's debounce is still false. A latched driver cut is a
       # disengagement, not an EPS fault or a resumable lateral override.
-      result.steeringDisengage = bool(abs(result.steeringTorque) > DRIVER_TORQUE_LIMIT
-                                     or result.steeringPressed or driver_cut)
+      result.steeringDisengage = bool(driver_cut or (not intentional_manual and
+        (abs(result.steeringTorque) > DRIVER_TORQUE_LIMIT or result.steeringPressed)))
       # Driver cuts have a persistent native NO_ENTRY event. Keep the physical
       # cruise edge visible so a refused attempt shows "Steering Pressed".
       result.blockPcmEnable = bool(blocked and not driver_cut)
+      expected_eps_release = intentional_manual
+      eps_state = lateral.observer.feedback.eps_state
       result.steerFaultTemporary = bool(result.steerFaultTemporary or (blocked and not driver_cut)
-                                       or lateral.observer.feedback.eps_state not in (1, 2, 3))
+                                       or (eps_state not in (1, 2, 3)
+                                           and not (expected_eps_release and eps_state == 0)))
       if split_axes(self.CP):
-        pause_session = (lateral.lateral.phase in (LkaPhase.ACTIVE, LkaPhase.PAUSED)
+        pause_session = (lateral.lateral.phase in (LkaPhase.ACTIVE, LkaPhase.PAUSED,
+                                                   LkaPhase.BLINKER_PENDING, LkaPhase.BLINKER_PAUSED,
+                                                   LkaPhase.CYCLE_ARMING, LkaPhase.CYCLE_RELEASING,
+                                                   LkaPhase.PREPARING, LkaPhase.WAITING_EPS)
           and result.cruiseState.enabled and result.canValid and not result.canTimeout
           and not result.steerFaultTemporary and not result.steerFaultPermanent
-          and lateral.observer.feedback.eps_state == 3 and fresh(now, lateral.observer.feedback.eps_nanos))
-        result.psaLateralPaused = bool(pause_session and (lateral.lateral.phase == LkaPhase.PAUSED
+          and (intentional_manual or eps_state == 3) and fresh(now, lateral.observer.feedback.eps_nanos))
+        result.psaLateralPaused = bool(pause_session and (lateral.lateral.cycling or lateral.lateral.phase in (LkaPhase.PAUSED,
+          LkaPhase.BLINKER_PENDING, LkaPhase.BLINKER_PAUSED)
           or result.leftBlinker or result.rightBlinker or result.steeringPressed
           or abs(result.steeringTorque) > DRIVER_TORQUE_LIMIT))
         if result.psaLateralPaused:
@@ -193,14 +203,17 @@ class CarInterface(CarInterfaceBase):
         ret.steerLimitTimer = 0.4
         ret.minSteerSpeed = 67.1 / 3.6
         ret.minEnableSpeed = (40. if profile in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM) else 67.1) / 3.6
-        ret.maxLateralAccel = 0.63
+        # The recent routes repeatedly reached the previous +/-17 raw ceiling
+        # in requested bends. The requested +/-20 experiment corresponds to
+        # about 0.82 m/s^2; the speed-squared curvature bound remains active.
+        ret.maxLateralAccel = 0.82
         ret.lateralTuning.init('torque')
-        ret.lateralTuning.torque.latAccelFactor = 0.63
+        ret.lateralTuning.torque.latAccelFactor = 0.82
         ret.lateralTuning.torque.latAccelOffset = 0.0
-        # Active high-speed logs show the 1.4 raw friction prior reinforcing
-        # the 0.6-0.7 Hz correction cycle. Keep 0.7 raw to cross rack friction
-        # without dominating the quantized CAN yaw feedback near center.
-        ret.lateralTuning.torque.friction = 0.07
+        # Signed controlsState traces show a residual 0.5-1.0 Hz correction
+        # cycle around a nearly straight request. Keep enough compensation to
+        # cross rack friction without dominating quantized CAN-yaw feedback.
+        ret.lateralTuning.torque.friction = 0.05
         ret.lateralTuning.torque.steeringAngleDeadzoneDeg = 0.0
 
     return ret

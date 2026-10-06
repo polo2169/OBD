@@ -11,7 +11,7 @@ from opendbc.car import structs
 from opendbc.car.psa import rvv_wire
 from opendbc.car.psa.rvv import RvvInputs, T9RvvAdapter
 from opendbc.car.psa.rvv_control import T9RvvControl, decode_stock, replacement_payload, setpoint_parity
-from opendbc.car.psa.rvv_following import RvvLead, T9RvvFollowing, T9RvvFollowingObserver
+from opendbc.car.psa.rvv_following import RvvLead, T9RvvFollowing, T9RvvFollowingObserver, following_profile
 
 
 BASE = 1_000_000_000
@@ -141,7 +141,7 @@ class TestRvvPayload(unittest.TestCase):
     self.assertFalse(proposed.tx_allowed)
 
     reduced = follow(T9RvvFollowing(), 0, speed_kph=140., stock_setpoint_kph=140.,
-      lead=lead(BASE, speed_ms=140/3.6, distance_m=5. + 2 * (140/3.6) - 1.))
+      lead=lead(BASE, speed_ms=140/3.6, distance_m=5. + 2. * (140/3.6) - 1.))
     self.assertEqual(reduced.reason, 'vision_following_candidate')
     self.assertEqual(reduced.target_kph, 139)
 
@@ -283,7 +283,9 @@ class TestRvvControl(unittest.TestCase):
     self.assertEqual(decode_stock(bytes.fromhex(control.candidate['data_hex'])).setpoint_kph, 80)
     now = BASE + 3210 * 1_000_000
     lost = follow(planner, 3210, lead=lead(now, present=False))
-    self.assertEqual(control.update_following(now, inputs(now), lost)['reason'], 'lead_lost')
+    self.assertTrue(lost.degraded_hold)
+    self.assertEqual(lost.target_kph, 79)
+    self.assertEqual(control.update_following(now, inputs(now), lost)['reason'], 'waiting_for_stock_frame')
     self.assertIsNone(control.candidate)
 
   def test_explicit_target_is_bounded_by_driver_and_finite(self):
@@ -346,20 +348,27 @@ class TestRvvControl(unittest.TestCase):
     self.assertFalse(status['tx_allowed'])
 
   def test_loss_of_lead_or_its_data_never_restores_stock_target(self):
+    for changes in ({'present': False}, {'probability': .6}, {'probability': .74}):
+      with self.subTest(changes=changes):
+        control, planner = armed(), T9RvvFollowing()
+        for ms in range(2200, 3701, 10):
+          following_tick(control, planner, ms)
+        status = following_tick(control, planner, 3800, lead_changes=changes)
+        self.assertEqual(status['candidate_setpoint_kph'], 79)
+        self.assertIsNotNone(control.candidate)
+        self.assertTrue(status['candidate_increase_permitted'])
+        self.assertFalse(status['rearm_required'])
     now = BASE + 3710 * 1_000_000
-    for changes, reason in (({'present': False}, 'lead_lost'),
-                            ({'probability': .74}, 'lead_low_confidence'),
-                            ({'model_ns': now - 500_000_001}, 'lead_invalid_or_stale'),
-                            ({'valid': False}, 'lead_invalid_or_stale')):
-      with self.subTest(reason=reason):
+    for changes in ({'model_ns': now - 500_000_001}, {'valid': False}):
+      with self.subTest(changes=changes):
         control, planner = armed(), T9RvvFollowing()
         for ms in range(2200, 3701, 10):
           following_tick(control, planner, ms)
         status = following_tick(control, planner, 3710, lead_changes=changes)
-        self.assertEqual(status['reason'], reason)
+        self.assertEqual(status['reason'], 'lead_invalid_or_stale')
         self.assertIsNone(control.candidate)
         self.assertFalse(status['candidate_increase_permitted'])
-        self.assertEqual(following_tick(control, planner, 3720)['reason'], reason)
+        self.assertEqual(following_tick(control, planner, 3720)['reason'], 'lead_invalid_or_stale')
 
   def test_timeout_during_following_is_not_a_recovery_request(self):
     control, planner = armed(), T9RvvFollowing()
@@ -372,7 +381,6 @@ class TestRvvControl(unittest.TestCase):
   def test_physical_rvv_restart_clears_previous_following_interruptions(self):
     cases = [({'brake_pressed': True}, {}), ({'gas_pressed': True}, {}),
              ({'cancel': True}, {}), ({'can_valid': False}, {}),
-             ({}, {'present': False}), ({}, {'probability': .74}),
              ({}, {'distance_m': 10.}), ({}, {'valid': False})]
     for input_changes, lead_changes in cases:
       with self.subTest(inputs=input_changes, lead=lead_changes):
@@ -410,6 +418,20 @@ class TestRvvControl(unittest.TestCase):
 
 
 class TestAnticipatedFollowing(unittest.TestCase):
+  def test_two_second_gap_and_speed_dependent_anticipation(self):
+    self.assertEqual(following_profile(40.), (2., 4.))
+    self.assertEqual(following_profile(80.), (2., 4.))
+    self.assertEqual(following_profile(105.), (2., 5.))
+    self.assertEqual(following_profile(130.), (2., 6.))
+    self.assertEqual(following_profile(160.), (2., 6.))
+
+  def test_two_second_gap_retains_critical_fault_boundary(self):
+    result = follow(T9RvvFollowing(), 0, speed_kph=100., stock_setpoint_kph=100.,
+      lead=lead(BASE, distance_m=31., speed_ms=100/3.6, relative_speed_ms=0.))
+    self.assertEqual(result.reason, 'vision_following_candidate')
+    self.assertFalse(result.rearm_required)
+    self.assertAlmostEqual(result.desired_gap_m, 5. + 2. * (100./3.6))
+
   def test_large_closing_speed_reduces_at_a_still_comfortable_gap(self):
     now = BASE
     result = follow(T9RvvFollowing(), 0, speed_kph=130., stock_setpoint_kph=130.,
@@ -420,6 +442,9 @@ class TestAnticipatedFollowing(unittest.TestCase):
     self.assertTrue(result.anticipation_only)
     self.assertIsNone(result.requested_accel_ms2)
     self.assertFalse(result.rearm_required)
+    self.assertEqual(result.target_kph, 94)
+    self.assertAlmostEqual(result.desired_gap_m, 5. + 2. * (130./3.6))
+    self.assertAlmostEqual(result.anticipated_gap_m, result.desired_gap_m + 6. * (40./3.6))
 
   def test_lower_target_cannot_recover_while_still_closing(self):
     planner = T9RvvFollowing()
@@ -501,8 +526,10 @@ class TestRvvFollowing(unittest.TestCase):
     self.assertTrue(decision.recovery_waiting)
     self.assertEqual(decision.reason, 'vision_following_candidate')
     decision = follow(planner, 20, lead=lead(BASE + 20_000_000, probability=.74))
-    self.assertEqual(decision.reason, 'lead_low_confidence')
-    self.assertTrue(decision.rearm_required)
+    self.assertEqual(decision.reason, 'vision_following_candidate')
+    self.assertEqual(decision.target_kph, 79)
+    self.assertFalse(decision.rearm_required)
+    self.assertFalse(decision.degraded_hold)
 
   def test_first_detection_waits_for_confidence_without_rearming(self):
     planner = T9RvvFollowing()
@@ -526,17 +553,41 @@ class TestRvvFollowing(unittest.TestCase):
     self.assertTrue(faster.candidate_increase_permitted)
     self.assertFalse(faster.tx_allowed)
 
-  def test_lost_low_confidence_and_stale_model_need_physical_rearm(self):
+  def test_recorded_confidence_dip_retains_existing_target(self):
+    planner = T9RvvFollowing()
+    self.assertEqual(follow(planner, 0, speed_kph=126., stock_setpoint_kph=126.,
+      lead=lead(BASE, distance_m=177., speed_ms=90/3.6, relative_speed_ms=-10.)).target_kph, 121)
     now = BASE + 10_000_000
-    for observation, reason in ((lead(now, present=False), 'lead_lost'),
-                                (lead(now, probability=.74), 'lead_low_confidence'),
-                                (lead(now, model_ns=1), 'lead_invalid_or_stale'),
-                                (lead(now, rx_ns=now+1), 'lead_invalid_or_stale')):
+    decision = follow(planner, 10, speed_kph=126., stock_setpoint_kph=126.,
+      lead=lead(now, distance_m=177., speed_ms=90/3.6, relative_speed_ms=-10., probability=.749641))
+    self.assertEqual(decision.reason, 'vision_following_candidate')
+    self.assertEqual(decision.target_kph, 121)
+    self.assertFalse(decision.rearm_required)
+    self.assertFalse(decision.degraded_hold)
+
+  def test_brief_degradation_holds_lower_target_but_sustained_loss_rearms(self):
+    for changes, reason in (({'present': False}, 'lead_lost'), ({'probability': .6}, 'lead_low_confidence')):
+      with self.subTest(reason=reason):
+        planner = T9RvvFollowing(); self.assertEqual(follow(planner, 0).target_kph, 79)
+        for ms in range(10, 510, 100):
+          now = BASE + ms * 1_000_000
+          decision = follow(planner, ms, lead=lead(now, **changes))
+          self.assertEqual(decision.target_kph, 79)
+          self.assertTrue(decision.degraded_hold)
+          self.assertFalse(decision.rearm_required)
+        now = BASE + 510_000_000
+        decision = follow(planner, 510, lead=lead(now, **changes))
+        self.assertEqual(decision.reason, reason)
+        self.assertTrue(decision.rearm_required)
+        follow(planner, 520, active=False)
+        self.assertEqual(follow(planner, 530).target_kph, 79)
+
+  def test_stale_or_future_lead_still_needs_physical_rearm_immediately(self):
+    now = BASE + 10_000_000
+    for observation in (lead(now, model_ns=1), lead(now, rx_ns=now+1)):
       planner = T9RvvFollowing(); follow(planner, 0)
-      self.assertEqual(follow(planner, 10, lead=observation).reason, reason)
+      self.assertEqual(follow(planner, 10, lead=observation).reason, 'lead_invalid_or_stale')
       self.assertIsNone(follow(planner, 20).target_kph)
-      follow(planner, 30, active=False)
-      self.assertEqual(follow(planner, 40).target_kph, 79)
 
   def test_critical_or_invalid_lead_still_requests_driver(self):
     cases = [({'distance_m': 10.}, 'fixed_cruise_cannot_handle_critical_lead'),
@@ -567,7 +618,7 @@ class TestRvvFollowing(unittest.TestCase):
     self.assertEqual(rvv_wire.WIRE.unpack(rvv_wire.command(result, now=now, engaged=True, split_axes=True))[1], 93)
 
   def test_speed_difference_alone_does_not_impose_a_two_second_deadline(self):
-    for distance, expected in ((65., 94), (64., 93), (61., 91), (50., 83)):
+    for distance, expected in ((65., 93), (64., 92), (61., 90), (50., 82)):
       with self.subTest(distance=distance):
         result = follow(T9RvvFollowing(), 0, speed_kph=100., stock_setpoint_kph=100.,
           lead=lead(BASE, distance_m=distance, speed_ms=95/3.6, relative_speed_ms=-5/3.6))
@@ -634,6 +685,112 @@ class TestNativeIntegration(unittest.TestCase):
     self.assertEqual(status['reason'], 'lead_invalid_or_stale')
 
 
+class TestResumableSplitFollowing(unittest.TestCase):
+  @staticmethod
+  def messages(now, **changes):
+    sm = observer_messages(now, **changes)
+    sm['modelV2'] = SimpleNamespace()
+    for field in ('valid', 'alive', 'logMonoTime'):
+      getattr(sm, field)['modelV2'] = now if field == 'logMonoTime' else True
+    return sm
+
+  def test_all_first_split_requests_need_stable_fresh_models(self):
+    observer = T9RvvFollowingObserver(split_axes=True)
+    for ms in range(0, 251, 50):
+      now = BASE + ms * 1_000_000
+      observer.update(self.messages(now), now)
+      payload = rvv_wire.command(observer.decision, now=now, engaged=True, split_axes=True)
+      observer.command_published(payload)
+      self.assertEqual(rvv_wire.WIRE.unpack(payload)[1], 79 if ms >= 200 else 0)
+    self.assertTrue(observer.request_episode_started)
+
+  def test_recorded_one_frame_highway_detection_never_acquires(self):
+    observer = T9RvvFollowingObserver(split_axes=True)
+    observer.update(self.messages(BASE, speed_kph=132.2, stock_setpoint_kph=133.,
+      dRel=59.056, vLead=28.518, vRel=-8.2197, modelProb=.9078), BASE)
+    payload = rvv_wire.command(observer.decision, now=BASE, engaged=True, split_axes=True)
+    observer.command_published(payload)
+    self.assertEqual(rvv_wire.WIRE.unpack(payload)[1], 0)
+    now = BASE + 50_000_000
+    observer.update(self.messages(now, speed_kph=132.2, stock_setpoint_kph=133., status=False), now)
+    self.assertEqual(observer.decision.reason, 'waiting_for_lead')
+    self.assertFalse(observer.request_episode_started)
+
+  def test_long_loss_keeps_lower_cap_and_resumes_only_after_stable_reacquisition(self):
+    for changes in ({'present': False}, {'probability': .6}):
+      planner = T9RvvFollowing(split_axes=True)
+      self.assertEqual(follow(planner, 0).target_kph, 79)
+      for ms in range(10, 3011, 100):
+        now = BASE + ms * 1_000_000
+        decision = follow(planner, ms, lead=lead(now, **changes))
+        self.assertEqual(decision.target_kph, 79)
+        self.assertTrue(decision.degraded_hold)
+        self.assertFalse(decision.rearm_required)
+        self.assertEqual(rvv_wire.split_status(rvv_wire.command(decision, now=now,
+          engaged=True, split_axes=True), now), (False, False, True))
+      for ms in range(3060, 3260, 50):
+        decision = follow(planner, ms, lead=lead(BASE + ms * 1_000_000, distance_m=100.))
+        self.assertTrue(decision.degraded_hold)
+        self.assertEqual(decision.target_kph, 79)
+      for ms in range(3260, 4260, 50):
+        decision = follow(planner, ms, lead=lead(BASE + ms * 1_000_000, distance_m=100.))
+        self.assertEqual(decision.target_kph, 79)
+      decision = follow(planner, 4260, lead=lead(BASE + 4260_000_000, distance_m=100.))
+      self.assertEqual(decision.target_kph, 90)
+      self.assertFalse(decision.degraded_hold)
+
+  def test_lower_driver_ceiling_and_low_reacquisition_confidence_keep_cap(self):
+    planner = T9RvvFollowing(split_axes=True)
+    follow(planner, 0)
+    for ms in range(50, 1051, 50):
+      now = BASE + ms * 1_000_000
+      decision = follow(planner, ms, stock_setpoint_kph=70., lead=lead(now, present=False))
+      self.assertEqual(decision.target_kph, 70)
+    for ms in range(1100, 1601, 50):
+      decision = follow(planner, ms, lead=lead(BASE + ms * 1_000_000, distance_m=100., probability=.7))
+      self.assertEqual(decision.target_kph, 70)
+      self.assertTrue(decision.degraded_hold)
+
+  def test_repeated_model_does_not_prove_reacquisition_or_restore_recovery_timer(self):
+    planner = T9RvvFollowing(split_axes=True)
+    follow(planner, 0)
+    for ms in range(50, 1000, 50):
+      follow(planner, ms, lead=lead(BASE + ms * 1_000_000, distance_m=100.))
+    lost = follow(planner, 1000, lead=lead(BASE + 1000_000_000, present=False))
+    self.assertEqual(lost.target_kph, 79)
+    for ms in range(1050, 1401, 50):
+      decision = follow(planner, ms, lead=lead(BASE + ms * 1_000_000,
+        distance_m=100., model_ns=BASE + 1050_000_000))
+      self.assertEqual(decision.target_kph, 79)
+      self.assertTrue(decision.degraded_hold)
+
+  def test_recorded_receding_highway_leads_reduce_speed_without_latching(self):
+    for speed, distance, lead_speed, relative, probability in (
+      (132.52, 39.236, 41.0567, 4.2595, .9585),
+      (106.51, 31.716, 32.8784, 3.3082, .9868),
+      (102.04, 30.021, 29.6351, 1.2979, .9882),
+    ):
+      result = follow(T9RvvFollowing(split_axes=True), 0, speed_kph=speed, stock_setpoint_kph=math.ceil(speed),
+        lead=lead(BASE, distance_m=distance, speed_ms=lead_speed, relative_speed_ms=relative, probability=probability))
+      self.assertFalse(result.rearm_required)
+      self.assertLess(result.target_kph, speed)
+
+  def test_critical_approach_minimum_distance_and_stale_data_still_stop(self):
+    for observation, reason in (
+      (lead(BASE, distance_m=20.), 'fixed_cruise_cannot_handle_critical_lead'),
+      (lead(BASE, distance_m=4., speed_ms=80/3.6+1., relative_speed_ms=1.), 'fixed_cruise_cannot_handle_critical_lead'),
+      (lead(BASE, distance_m=60., speed_ms=1., relative_speed_ms=1.-80/3.6), 'fixed_cruise_cannot_handle_critical_lead'),
+      (lead(BASE, model_ns=1), 'lead_invalid_or_stale'),
+    ):
+      result = follow(T9RvvFollowing(split_axes=True), 0, lead=observation)
+      self.assertEqual(result.reason, reason)
+      self.assertTrue(result.rearm_required)
+    planner = T9RvvFollowing(split_axes=True)
+    follow(planner, 0)
+    follow(planner, 50, lead=lead(BASE + 50_000_000, present=False))
+    self.assertEqual(follow(planner, 100, car_valid=False).reason, 'car_state_invalid_or_stale')
+
+
 class TestNativeFollowingRequestEpisodes(unittest.TestCase):
   @staticmethod
   def publish(observer, now, engaged):
@@ -659,12 +816,18 @@ class TestNativeFollowingRequestEpisodes(unittest.TestCase):
 
   def test_published_episode_keeps_loss_fault_across_native_disable_until_stock_off(self):
     for changes, reason in (({'status': False}, 'lead_lost'),
-                            ({'modelProb': .74}, 'lead_low_confidence')):
+                            ({'modelProb': .6}, 'lead_low_confidence')):
       with self.subTest(reason=reason):
         observer = T9RvvFollowingObserver()
         observer.update(observer_messages(BASE), BASE)
         self.assertEqual(self.publish(observer, BASE, True), 79)
-        now = BASE + 10_000_000
+        for ms in range(10, 510, 100):
+          now = BASE + ms * 1_000_000
+          observer.update(observer_messages(now, **changes), now)
+          self.assertTrue(observer.decision.degraded_hold)
+          self.assertFalse(observer.decision.rearm_required)
+          self.assertEqual(self.publish(observer, now, True), 79)
+        now = BASE + 510_000_000
         observer.update(observer_messages(now, **changes), now)
         self.assertEqual(observer.decision.reason, reason)
         self.assertTrue(observer.decision.rearm_required)

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import unittest
 
 from openpilot.selfdrive.ui.mici.onroad.lead_indicator import lead_speed_text, visible_lead
+from openpilot.selfdrive.ui.mici.onroad.rvv_status import perception_text
 
 
 class RadarState(dict):
@@ -17,6 +18,13 @@ class RadarState(dict):
 
 
 class TestLeadIndicator(unittest.TestCase):
+  def test_missing_or_uncertain_target_is_not_displayed_as_confident_tracking(self):
+    self.assertIn('Cible absente', perception_text(None))
+    lead = RadarState()['radarState'].leadOne
+    self.assertEqual(perception_text(lead), '')
+    lead.modelProb = .6
+    self.assertIn('Cible incertaine', perception_text(lead))
+
   def test_estimated_speed_uses_absolute_lead_speed_and_display_units(self):
     lead = RadarState()['radarState'].leadOne
     self.assertEqual(lead_speed_text(lead, True), '~72 km/h')

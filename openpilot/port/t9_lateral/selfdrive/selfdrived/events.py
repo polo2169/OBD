@@ -427,6 +427,11 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
                       AlertStatus.userPrompt, AlertSize.mid, Priority.HIGH,
                       VisualAlert.steerRequired, AudibleAlert.none, .2),
   },
+  EventName.psaEpsCyclePending: {
+    ET.WARNING: Alert("EPS cycle imminent", "Prepare to steer manually",
+                      AlertStatus.userPrompt, AlertSize.mid, Priority.HIGH,
+                      VisualAlert.steerRequired, AudibleAlert.warningSoft, .2),
+  },
   EventName.psaLateralPaused: {
     ET.WARNING: Alert("Steering Assist Paused", "Steer manually - automatic resume when ready",
                       AlertStatus.normal, AlertSize.mid, Priority.LOW,

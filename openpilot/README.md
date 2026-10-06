@@ -1,62 +1,60 @@
-# Laboratoire OpenPilot PSA T9
+# Openpilot — Peugeot 308 T9
 
-Ce dossier regroupe tout ce qui concerne l'observation openpilot, les capteurs
-auxiliaires, la simulation de couple latéral et la passerelle expérimentale PSA.
-Il est volontairement séparé de l'application de diagnostic OBD située à la
-racine du dépôt.
+Ce laboratoire contient le port expérimental de la Peugeot 308 II T9,
+les outils d’acquisition et de rejeu, les tests et les sources du harnais PSA.
+Il partage la base véhicule `database/` avec l’application de diagnostic OBD.
 
-## Périmètre
+## Commencer ici
+
+- [Comportement du code et limites](docs/ETAT_308_T9.md)
+- [Protocole : direction dès 50 km/h, puis clignotant](docs/ESSAIS_308_T9.md)
+- [Sources de l’overlay actif et construction](port/t9_lateral/README.md)
+- [Collecte des journaux et export d’un dataset](docs/DATASET_308_T9.md)
+- [Commandes caméra, GoPro, CAN passif et capteurs](COMMANDES.md)
+- [Index technique](docs/README.md)
+
+Le code conserve le plancher latéral de **67,1 km/h**, le RVV dès **40 km/h**
+et la pause de direction au clignotant. Le pilotage dès 50 km/h et le changement
+de voie après deux secondes restent des fonctions à étudier.
+
+## Organisation
 
 ```text
 openpilot/
-├── tools/       acquisition, synchronisation, vidéo et simulation hors ligne
-├── tests/       tests Python propres au laboratoire
-├── scripts/     lanceurs caméra, GoPro, CAN passif et capteurs
-├── docs/        protocoles Matek, MADS, RVV et résultats T9
-├── firmware/    passerelle PSA à deux ESP32 et enregistreur GPS/IMU
-└── hardware/    sources et production du harnais PSA OBD-C
+├── port/t9_lateral/   overlay actif 308, tests et politique Panda
+├── port/t9_shadow/    intégration en observation
+├── tools/            acquisition, analyse, simulation et packaging
+├── scripts/          collecte, construction, installation et vérification
+├── tests/            tests du laboratoire hors véhicule
+├── docs/             guides techniques et protocoles
+├── parameters/       paramètres de simulation
+├── examples/         exemples synthétiques
+├── firmware/         passerelle PSA ESP32 et enregistreur GPS/IMU
+└── hardware/         sources et production du harnais PSA OBD-C
 ```
 
-L'application OBD et ce laboratoire partagent uniquement les interfaces
-documentées suivantes :
+Les comptes rendus, diagnostics, captures, vidéos, paquets compilés,
+sauvegardes et sorties d’analyse restent locaux et sont exclus de Git.
+Les sorties des outils utilisent `data/runtime/` ou `data/diagnostics/`.
 
-- `database/` pour les profils véhicule, DBC et connaissances vérifiées ;
-- `data/sessions/` pour les captures brutes ;
-- `data/runtime/` pour les sorties locales non versionnées ;
-- `backend/.venv/` comme environnement Python local lorsque les scripts le
-  demandent explicitement.
+Le dépôt comma/openpilot servant aux modèles et à la compilation est un dépôt
+distinct, généralement `../openpilot`. Ce laboratoire distribue un overlay
+contre une base précise.
 
-Le dépôt comma/openpilot utilisé pour exécuter `driving_supercombo` reste un
-dépôt frère, par défaut `../openpilot`. Ce dossier-ci n'en est pas une copie.
+## Vérifier le laboratoire
 
-## Installation et tests
+Depuis la racine OBD, avec l’environnement Python existant :
 
-Depuis la racine du dépôt :
-
-```bash
+```sh
 backend/.venv/bin/pip install -r openpilot/requirements.txt
 cd openpilot
 ../backend/.venv/bin/pytest -p no:cacheprovider -q
 ```
 
-La vérification globale reste disponible avec :
+La construction de l’overlay exige la base et les empreintes documentées dans
+[son README](port/t9_lateral/README.md). La validation native sur cette base
+est distincte des tests du laboratoire.
 
-```bash
-./scripts/check_project.sh
-```
-
-## Points d'entrée
-
-- [Commandes caméra, GoPro et CAN passif](COMMANDES.md)
-- [Capteur Matek F722-SE et GPS BN-880](docs/MATEK_F722_SE_SENSORS.md)
-- [Analyse couple openpilot/sunnypilot](docs/T9_OPENPILOT_TORQUE_SHADOW.md)
-- [Engagement latéral MADS-T9](docs/PSA_MADS_T9.md)
-- [Passerelle RVV à deux ESP32](docs/PSA_RVV_ESP32_BRIDGE.md)
-- [Audit du harnais OBD-C](docs/PSA_HARNESS_OBDC_AUDIT.md)
-
-## Limite de sécurité
-
-Les outils d'acquisition et de simulation restent passifs ou hors ligne. Les
-profils de couple non nul et de RVV modifié sont réservés au banc isolé tant que
-la réponse réelle de l'EPS, les mécanismes de repli et la sécurité longitudinale
-n'ont pas été validés sur matériel instrumenté.
+Le port actif reste expérimental. Les contrôles logiciels et USB ne constituent
+pas une validation en conduite ; les essais physiques demandent un terrain fermé.
+Le RVV agit sur la consigne Peugeot sans commande du frein de service.

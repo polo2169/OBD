@@ -10,8 +10,9 @@
 #define RVV_LEASE_US 150000U
 #define RVV_STEP_US 500000U
 #define RVV_DOWN_STEP_US 100000U
+#define RVV_RETURN_STEP_US 500000U
 
-static bool rvv_probe, rvv_fault, rvv_rearm, rvv_pending, rvv_prev_engaged, rvv_settled;
+static bool rvv_probe, rvv_fault, rvv_rearm, rvv_pending, rvv_prev_engaged, rvv_settled, rvv_returning;
 static bool rvv_seen[8], rvv_seen_seq, rvv_requested, rvv_applied_seen;
 static bool rvv_host_engaged_seen;
 static bool rvv_t15, rvv_reverse, rvv_doors, rvv_stock_active, rvv_stock_off, rvv_pedal_invalid;
@@ -75,6 +76,10 @@ static bool rvv_ready(uint32_t now) {
 
 static void rvv_release(bool disengage) {
   rvv_requested = false;
+  if (disengage || (t9_split_profile() && !controls_allowed)) {
+    rvv_returning = false;
+    rvv_applied_seen = false;
+  }
   if (disengage) {
     if (t9_split_profile()) { t9_split_common_stop(); }
     else { controls_allowed = false; }
@@ -88,6 +93,14 @@ static bool rvv_allowed(void) {
 
 static void rvv_split_axis_release(void) {
   t9_split_sync_common_stop();
+  uint32_t now = microsecond_timer_get();
+  if (!rvv_returning && rvv_applied_seen && rvv_stock_active &&
+      (rvv_applied < rvv_ceiling) && t9_split_lateral_allowed) {
+    // Continue forwarding a bounded rewrite while returning to the driver's
+    // stock ceiling. Repeated host stop heartbeats must not restart the ramp.
+    rvv_returning = true;
+    rvv_step_ts = now;
+  }
   rvv_requested = false;
   rvv_pending = false;
   t9_split_rvv_allowed = false;
@@ -97,6 +110,8 @@ static void rvv_split_axis_release(void) {
 
 static void rvv_rx(const CANPacket_t *msg) {
   uint32_t now = microsecond_timer_get();
+  t9_expire_lateral_lease(now);
+  t9_split_sync_common_stop();
   int slot = -1;
   if (msg->addr == 0x30DU) {
     slot = 0; int sum = 0, low = 65535, high = 0;
@@ -162,6 +177,7 @@ static void rvv_rx(const CANPacket_t *msg) {
 // the lease. A target of zero releases; it cannot activate stock cruise.
 static uint8_t rvv_request(uint16_t command, uint16_t sequence) {
   uint32_t now = microsecond_timer_get();
+  t9_expire_lateral_lease(now);
   t9_split_sync_common_stop();
   if (!rvv_profile() || rvv_probe) { return 1U; }
   if (t9_split_profile() &&
@@ -209,7 +225,7 @@ static uint8_t rvv_control_request(uint16_t command, uint16_t sequence) {
   if (command == 0U) {
     if (sequence == 0U) { return 6U; }
     if (sequence == 2U) { return 7U; }
-    if (sequence == 4U) { return 8U; }
+    if (sequence == 4U) { return 9U; }  // 3/12 s EPS renewal, no activity-bit admission gate
   }
   return rvv_request(command, sequence);
 }
@@ -219,11 +235,31 @@ static uint8_t rvv_control_request(uint16_t command, uint16_t sequence) {
 // Preserve counter, mode, activation and every other unknown bit verbatim.
 static bool rvv_rewrite(CANPacket_t *msg, int destination) {
   uint32_t now = microsecond_timer_get();
+  t9_expire_lateral_lease(now);
   t9_split_sync_common_stop();
   if (!rvv_profile() || rvv_probe || (msg->bus != 2U) || (destination != 0) || (msg->addr != 0x50EU)) { return false; }
-  if (!rvv_requested) { return false; }
+  if (!rvv_requested && !rvv_returning) { return false; }
   bool stock_active = rvv_stock_valid(msg) && (((msg->data[7] >> 5) & 7U) == 5U) &&
     (msg->data[6] >= 40U) && (msg->data[6] <= 140U);
+  if (rvv_returning) {
+    if (!controls_allowed || !t9_split_lateral_allowed || !t9_common_ready(now) || !stock_active) {
+      rvv_returning = false; rvv_applied_seen = false;
+      return false;
+    }
+    rvv_applied = SAFETY_MIN(rvv_applied, msg->data[6]);
+    if (safety_get_ts_elapsed(now, rvv_step_ts) >= RVV_RETURN_STEP_US) {
+      if (rvv_applied < msg->data[6]) { rvv_applied++; }
+      rvv_step_ts = now;
+    }
+    msg->data[6] = rvv_applied;
+    msg->data[0] = (msg->data[0] & 0xCFU) | (rvv_parity(rvv_applied) << 4);
+    rvv_rewrites++;
+    if (rvv_applied >= rvv_ceiling) {
+      rvv_returning = false;
+      rvv_applied_seen = false;
+    }
+    return true;
+  }
   if (!rvv_allowed() || !rvv_ready(now) || !stock_active ||
       (safety_get_ts_elapsed(now, rvv_request_ts) > RVV_LEASE_US)) {
     rvv_release(true); return false;
@@ -261,6 +297,7 @@ static bool rvv_fwd(int bus, int addr) {
 static safety_config rvv_init(uint16_t param) {
   rvv_probe = param == PSA_T9_RVV_PROBE_PARAM;
   rvv_settled = false; rvv_fault = false; rvv_rearm = false; rvv_pending = false; rvv_prev_engaged = false;
+  rvv_returning = false;
   rvv_seen_seq = false; rvv_requested = false; rvv_applied_seen = false;
   rvv_host_engaged_seen = false;
   rvv_t15 = false; rvv_reverse = false; rvv_doors = false; rvv_stock_active = false; rvv_stock_off = false; rvv_pedal_invalid = true;

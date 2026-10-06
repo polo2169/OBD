@@ -88,5 +88,39 @@ int main() {
   inactive_controller.on_stock_frame(inactive, sizeof(inactive), 10);
   assert(!inactive_controller.ready_for_takeover(10));
 
+  // A new physical driver ceiling takes priority before the next ramp tick.
+  uint8_t lowered[8];
+  memcpy(lowered, captured, sizeof(lowered));
+  lowered[6] = 75;
+  lowered[0] = static_cast<uint8_t>((lowered[0] & 0xCFU) | (reference_checksum(75) << 4));
+  Controller ceiling_controller;
+  ceiling_controller.reset();
+  assert(ceiling_controller.set_command(true, 80, 100));
+  ceiling_controller.on_stock_frame(captured, 8, 100);
+  assert(ceiling_controller.begin_takeover(100));
+  assert(ceiling_controller.set_command(true, 80, 150));
+  ceiling_controller.on_stock_frame(lowered, 8, 150);
+  assert(ceiling_controller.build_from_stock(lowered, 8, output, 150) != FrameAction::Reject);
+  assert(output[6] == 75U);
+  for (uint32_t now = 200; now <= 2200; now += 100) {
+    assert(ceiling_controller.set_command(true, 80, now));
+    ceiling_controller.on_stock_frame(lowered, 8, now);
+    assert(ceiling_controller.build_from_stock(lowered, 8, output, now) != FrameAction::Reject);
+    assert(output[6] <= lowered[6]);
+  }
+
+  // A target above the original driver ceiling cannot raise that ceiling.
+  Controller high_target_controller;
+  high_target_controller.reset();
+  assert(high_target_controller.set_command(true, 90, 100));
+  high_target_controller.on_stock_frame(captured, 8, 100);
+  assert(high_target_controller.begin_takeover(100));
+  for (uint32_t now = 200; now <= 2100; now += 100) {
+    assert(high_target_controller.set_command(true, 90, now));
+    high_target_controller.on_stock_frame(captured, 8, now);
+    assert(high_target_controller.build_from_stock(captured, 8, output, now) != FrameAction::Reject);
+    assert(output[6] == 85U);
+  }
+
   return 0;
 }

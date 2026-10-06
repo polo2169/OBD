@@ -148,9 +148,14 @@ class Controller {
       applied_valid_ = true;
       last_step_ms_ = now;
     }
+    // The physical BSI setpoint is the driver's ceiling. A lower manual
+    // setting overrides the previous output immediately, even between ticks;
+    // an old or excessive host target must never raise it again.
+    if (applied_kph_ > stock[6]) applied_kph_ = stock[6];
+    const uint8_t bounded_target = target_kph_ < stock[6] ? target_kph_ : stock[6];
     if (now - last_step_ms_ >= SETPOINT_STEP_INTERVAL_MS) {
-      if (applied_kph_ < target_kph_) ++applied_kph_;
-      else if (applied_kph_ > target_kph_) --applied_kph_;
+      if (applied_kph_ < bounded_target) ++applied_kph_;
+      else if (applied_kph_ > bounded_target) --applied_kph_;
       last_step_ms_ = now;
     }
 

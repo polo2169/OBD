@@ -142,20 +142,21 @@ class TestRvvCerealTransport(unittest.TestCase):
     self.assertFalse(cc.latActive)
     self.assertFalse(controls.LaC.update.call_args.args[0])
     cs.steeringTorque = 15
-    for ms in range(50, 551, 50):
+    for ms in range(50, 351, 50):
       now = start + ms * 1_000_000
       sm.logMonoTime['modelV2'] = now
       with patch('openpilot.selfdrive.controls.controlsd.time.monotonic_ns', return_value=now):
         cc, _ = controls.state_control()
-      self.assertEqual(cc.psaLateralPause, ms < 550)
-      self.assertEqual(cc.latActive, ms == 550)
+      self.assertEqual(cc.psaLateralPause, ms < 350)
+      self.assertEqual(cc.latActive, ms == 350)
 
     from opendbc.car.psa.eps_cycle import T9EpsCycleGate
     controls.CP.safetyConfigs[0].safetyParam = rvv_wire.EPS_CYCLE_SAFETY_PARAM
     controls.t9_eps_cycle = T9EpsCycleGate()
-    sm['modelV2'].orientationRate.t = [0., .5, 1., 1.5, 2.]
-    sm['modelV2'].orientationRate.z = [0.] * 5
-    sm['modelV2'].velocity.x = [25.] * 5
+    controls.t9_eps_gate_log_ns = 0
+    sm['modelV2'].orientationRate.t = [i * .5 for i in range(11)]
+    sm['modelV2'].orientationRate.z = [0.] * 10 + [.02]
+    sm['modelV2'].velocity.x = [25.] * 11
     for ms in range(600, 1151, 50):
       now = start + ms * 1_000_000
       sm.logMonoTime['modelV2'] = now

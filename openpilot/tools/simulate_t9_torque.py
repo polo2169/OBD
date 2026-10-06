@@ -239,9 +239,9 @@ def _finite_number(value: Any) -> float | None:
 def decode_eps_status_495(data: bytes) -> EpsStatus495:
     """Decode the useful read-only fields of PSA ``IS_DAT_DIRA`` (0x495).
 
-    The bit positions come from the R3 reference DBC.  State meanings are kept
-    raw because the T9 R2 traces demonstrably do not use the R3 ``3=active``
-    convention during their factory 0x3F2 torque bursts.
+    The bit positions come from the R3 reference DBC. August and September T9
+    factory-LKA recordings confirm state 3 during acknowledged actuation.
+    Torque's physical scale remains a candidate, independent of that state.
     """
     if len(data) != 4:
         raise ValueError(f"0x495 doit contenir 4 octets, reçu {len(data)}")
@@ -1518,6 +1518,7 @@ def compare_controller_profiles(
     sessions: Sequence[Sequence[ReplaySample]],
     selected: ControllerParameters,
     config: SimulatorConfig,
+    factory_response: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, list[list[SimulationRow]]]]:
     gain = selected.plant_gain_ms2_per_raw
     definitions = [
@@ -1576,6 +1577,20 @@ def compare_controller_profiles(
             gain, 1.10 / gain, 0.60 / gain, 0.10 / gain,
         )),
     ]
+    if factory_response is not None:
+        # These are sensitivity runs. The simple simulated plant does not
+        # reproduce measured hysteresis; its ranking cannot validate friction.
+        for friction_raw in factory_response["friction_sensitivity_raw"]:
+            definitions.append((
+                f"t9_factory_20260917_friction_{friction_raw:g}",
+                f"T9 LKA usine septembre — frottement {friction_raw:g} raw",
+                "openpilot_lataccel_torque_factory_candidate",
+                OpenpilotTorqueParameters(
+                    gain, feedforward_scale=0.55, kp_schedule_scale=0.015,
+                    ki_scale=0.0, friction=friction_raw / config.max_torque_raw,
+                    lateral_delay_s=factory_response["lateral_delay_s"],
+                ),
+            ))
     profiles: list[dict[str, Any]] = []
     profile_rows: dict[str, list[list[SimulationRow]]] = {}
     for profile_id, label, controller_family, parameters in definitions:
@@ -1673,6 +1688,7 @@ def compare_controller_profiles(
     ]
     return {
         "central_plant_gain_ms2_per_raw": gain,
+        "factory_response_candidate": factory_response,
         "profiles": profiles,
         "shadow_preferred_profile": shadow_preferred["profile_id"],
         "numerically_qualified_profiles": numerically_qualified,
@@ -2789,11 +2805,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Capture JSONL usine T9 contenant les commandes 0x3F2",
     )
     parser.add_argument("--no-factory-evidence", action="store_true")
+    parser.add_argument("--factory-response-profile", type=Path,
+                        help="Profil JSON mesuré sur le LKA usine : gain/délai et sensibilité au frottement hors ligne")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    factory_response = None
+    if args.factory_response_profile is not None:
+        factory_response = json.loads(args.factory_response_profile.read_text())
+        if factory_response.get("schema") != "t9_factory_response_v1":
+            raise SystemExit("Format de profil usine T9 inconnu")
+        for key in ("plant_gain_ms2_per_raw", "plant_time_constant_s", "lateral_delay_s"):
+            value = float(factory_response[key])
+            if not math.isfinite(value) or value <= 0:
+                raise SystemExit(f"Profil usine : {key} doit être positif et fini")
+        friction_values = factory_response["friction_sensitivity_raw"]
+        if not friction_values or any(not math.isfinite(float(v)) or float(v) < 0 for v in friction_values):
+            raise SystemExit("Profil usine : frottements attendus positifs ou nuls et finis")
+        if args.central_plant_gain is None:
+            args.central_plant_gain = factory_response["plant_gain_ms2_per_raw"]
+        if args.plant_gains is None:
+            args.plant_gains = str(args.central_plant_gain)
     if args.max_torque_raw <= 0.0 or args.min_speed_kph < 0.0 or args.rearm_period_s <= 0.0:
         raise SystemExit("Les limites vitesse/couple doivent être positives")
     if args.central_plant_gain is not None and (
@@ -2812,6 +2846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = SimulatorConfig(
         min_speed_kph=args.min_speed_kph,
         max_torque_raw=args.max_torque_raw,
+        plant_time_constant_s=(factory_response["plant_time_constant_s"] if factory_response else 0.30),
     )
     dbc_path = args.dbc.resolve()
     if not dbc_path.is_file():
@@ -2862,6 +2897,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     controller_comparison, profile_rows = compare_controller_profiles(
         all_sessions, selected_parameters, config,
+        factory_response=factory_response,
     )
     curve_events: list[dict[str, Any]] = []
     oscillation_windows: list[dict[str, Any]] = []

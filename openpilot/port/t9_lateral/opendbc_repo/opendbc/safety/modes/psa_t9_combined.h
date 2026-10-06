@@ -25,6 +25,7 @@ static bool t9_combined_tx(const CANPacket_t *msg) {
 }
 
 static bool t9_combined_fwd(int bus, int addr) {
+  t9_expire_lateral_lease(microsecond_timer_get());
   t9_split_sync_common_stop();
   bool lateral_block = t9_fwd(bus, addr);
   bool rvv_block = rvv_fwd(bus, addr);

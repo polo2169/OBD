@@ -1,0 +1,9 @@
+{
+  "opendbc_repo/opendbc/car/psa/carcontroller.py": "0555924a775070861aa73054cf58ba0624ba6c1d63d10616e8104b2ceb08841b",
+  "opendbc_repo/opendbc/car/psa/carstate.py": "fa5eb5a7dc3f0048f302ee7e2f35ccb7361f13bf3830ad408852d1bdbaa0557e",
+  "opendbc_repo/opendbc/car/psa/interface.py": "6ce5391affe4889fb0882443511d54d1e48dff97e5dc4a4ebc8793c108f6af43",
+  "openpilot/system/manager/process_config.py": "2e20c497f48f13e336bdc15b62154aba96c7ac7fa432fad811aad512fc77834f",
+  "opendbc_repo/opendbc/dbc/psa_308_t9_2018.dbc": "42f9398f4020fc5cd08da1d492a3215ba5cf631287112cfa6a58dfe8a8af374a",
+  "opendbc_repo/opendbc/car/psa/psacan.py": "922a5dff3a2cbd874889589114d30b98b079e57c2aeeeef32426b73a604d159f",
+  "opendbc_repo/opendbc/car/psa/tests/test_peugeot_308_t9.py": "888cbddc71d4e82774e9f144a4e388fa18033a4d55d8857924a13ff9a6a30d1e"
+}

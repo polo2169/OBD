@@ -24,6 +24,14 @@ class TestSplitHost(unittest.TestCase):
     observer.command_published(payload)
     return rvv_wire.split_status(payload,now)
 
+  def acquire(self, observer, start=BASE):
+    for ms in range(0, 251, 50):
+      now = start + ms * 1_000_000
+      observer.update(self.messages(now), now)
+      status = self.publish(observer, now)
+    self.assertEqual(status, (False, False, True))
+    return now
+
   def test_new_profile_requires_all_three_explicit_flags(self):
     for lateral,rvv,split,expected in (('0','0','1',0),('0','1','1',0x1310),
         ('1','0','1',0x1308),('1','1','0',0x1312),('1','1','1',0x1314)):
@@ -50,16 +58,16 @@ class TestSplitHost(unittest.TestCase):
         self.assertEqual(observer.decision.reason,'fixed_cruise_cannot_handle_critical_lead')
         self.assertEqual(self.publish(observer,now),(False,True,False))
       else:
-        self.assertEqual(self.publish(observer,now),(False,False,True))
+        self.assertEqual(self.publish(observer,now),(False,False,False))
+        self.acquire(observer, start=now)
 
   def test_local_stop_does_not_hide_new_common_model_car_or_calibration_failure(self):
     for service in ('modelV2','carState','liveCalibration'):
       observer=T9RvvFollowingObserver(split_axes=True)
-      observer.update(self.messages(BASE),BASE)
-      self.assertEqual(self.publish(observer,BASE),(False,False,True))
-      now=BASE+10_000_000
+      now = self.acquire(observer) + 10_000_000
       observer.update(self.messages(now,status=False),now)
-      self.assertEqual(self.publish(observer,now),(False,True,False))
+      # A short perception dropout holds the already reduced request.
+      self.assertEqual(self.publish(observer,now),(False,False,True))
       now+=10_000_000
       sm=self.messages(now); sm.alive[service]=False
       observer.update(sm,now)
@@ -67,17 +75,18 @@ class TestSplitHost(unittest.TestCase):
 
   def test_recovered_lead_does_not_clear_published_stop(self):
     observer=T9RvvFollowingObserver(split_axes=True)
-    observer.update(self.messages(BASE),BASE); self.publish(observer,BASE)
-    now=BASE+10_000_000
-    observer.update(self.messages(now,status=False),now); self.publish(observer,now)
+    now = self.acquire(observer) + 10_000_000
+    # A true critical approach remains a latched local stop. Routine loss
+    # now pauses perception while preserving the lower speed request.
+    observer.update(self.messages(now,dRel=10.),now)
+    self.assertEqual(self.publish(observer,now),(False,True,False))
     now+=10_000_000
     observer.update(self.messages(now),now)
     self.assertEqual(self.publish(observer,now),(False,True,False))
     now+=10_000_000
     observer.update(self.messages(now,active=False),now); self.publish(observer,now,False)
     now+=10_000_000
-    observer.update(self.messages(now),now)
-    self.assertEqual(self.publish(observer,now),(False,False,True))
+    self.acquire(observer, start=now)
 
   def test_eps_withdrawal_reason_is_local_but_shared_faults_are_not(self):
     self.assertIn('eps_not_authorized',LOCAL_LATERAL_STOP_REASONS)
