@@ -226,6 +226,7 @@ static uint8_t rvv_control_request(uint16_t command, uint16_t sequence) {
     if (sequence == 0U) { return 6U; }
     if (sequence == 2U) { return 7U; }
     if (sequence == 4U) { return 9U; }  // 3/12 s EPS renewal, no activity-bit admission gate
+    if (sequence == 6U) { return 10U; } // isolated 50 km/h / single-indicator experiments
   }
   return rvv_request(command, sequence);
 }

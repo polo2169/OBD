@@ -15,6 +15,13 @@ void feed(PsaT9Guard &guard, uint64_t ms, int stock_bus = 2, int eps_bus = 0, bo
 }
 
 int main() {
+  for (uint16_t param : {0x1318, 0x131A, 0x131C}) {
+    PsaT9Guard experiment(true, true, true, true, param);
+    assert(experiment.active_param() == param && experiment.probe_param() == param + 1);
+    assert(experiment.stage == PsaT9Guard::Stage::WAITING && !experiment.tx_ready);
+  }
+  PsaT9Guard invalid(true, true, true, false, 0x1318);
+  assert(invalid.stage == PsaT9Guard::Stage::FAILED && !invalid.tx_ready);
   PsaT9Guard cycle(true, true, true, true);
   assert(cycle.active_param() == 0x1316 && cycle.probe_param() == 0x1317);
   assert(cycle.split_axes() && !cycle.tx_ready);

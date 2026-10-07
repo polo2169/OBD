@@ -20,6 +20,7 @@ TransmissionType = structs.CarParams.TransmissionType
 
 # Everything outside the known EPS / driver episode remains a common stop.
 LOCAL_LATERAL_STOP_REASONS = frozenset({
+  'hazards_or_invalid_blinker',
   'driver_override', 'eps_not_authorized', 'eps_fault', 'eps_feedback_invalid', 'eps_activation_lost',
   'eps_activation_timeout', 'eps_release_timeout', 'eps_not_released',
   'eps_active_before_request', 'stock_lka_not_authorized', 'new_request_required',
@@ -96,15 +97,17 @@ class CarInterface(CarInterfaceBase):
         # a lateral request. A later EPS/driver/stock-LKA recovery alone must
         # not create the authorization that the MCU withheld on this edge.
         feedback = lateral.observer.feedback
-        if round(result.vEgoRaw * 3.6, 4) < MIN_SPEED_KPH:
+        if round(result.vEgoRaw * 3.6, 4) < lateral.profile.min_speed_kph:
           lateral.lateral._block('speed_below_lateral_envelope')
         elif result.steeringPressed or abs(result.steeringTorque) > DRIVER_TORQUE_LIMIT:
           lateral.lateral._block('driver_override')
-        elif result.leftBlinker or result.rightBlinker:
+        elif ((result.leftBlinker or result.rightBlinker) and not lateral.profile.blinker_assist
+              or result.leftBlinker and result.rightBlinker):
           lateral.lateral._block('new_request_required')
         elif feedback.eps_state not in (1, 2):
           lateral.lateral._block('eps_not_released' if feedback.eps_state == 3 else 'eps_not_authorized')
-        elif feedback.stock_state not in (3, 4):
+        elif not lateral.profile.stock_authorized(feedback.stock_state, round(result.vEgoRaw * 3.6, 4),
+              int(result.leftBlinker) | (int(result.rightBlinker) << 1)):
           lateral.lateral._block('stock_lka_not_authorized')
       result.psaEpsCycling = lateral.lateral.cycling
       result.psaEpsCyclePending = lateral.lateral.cycle_pending
@@ -135,7 +138,7 @@ class CarInterface(CarInterfaceBase):
           and (intentional_manual or eps_state == 3) and fresh(now, lateral.observer.feedback.eps_nanos))
         result.psaLateralPaused = bool(pause_session and (lateral.lateral.cycling or lateral.lateral.phase in (LkaPhase.PAUSED,
           LkaPhase.BLINKER_PENDING, LkaPhase.BLINKER_PAUSED)
-          or result.leftBlinker or result.rightBlinker or result.steeringPressed
+          or (not lateral.profile.blinker_assist and (result.leftBlinker or result.rightBlinker)) or result.steeringPressed
           or abs(result.steeringTorque) > DRIVER_TORQUE_LIMIT))
         if result.psaLateralPaused:
           result.steeringDisengage = False
@@ -194,15 +197,23 @@ class CarInterface(CarInterfaceBase):
         # Conventional Peugeot cruise still actuates throttle. No service
         # brake or steering command is claimed by this isolated profile.
       elif lateral_requested and not docs:
+        from opendbc.car.psa.lateral_profiles import selected
+        experiment = selected(os.getenv('PSA_T9_LATERAL_EXPERIMENT', 'off'))
         profile = COMBINED_SAFETY_PARAM if rvv_requested else SAFETY_PARAM
         if rvv_requested and os.getenv('PSA_T9_SPLIT_AXES_TEST') == '1':
           profile = EPS_CYCLE_SAFETY_PARAM if os.getenv('PSA_T9_EPS_CYCLE_TEST') == '1' else SPLIT_SAFETY_PARAM
+        if experiment.name != 'off':
+          if not (rvv_requested and os.getenv('PSA_T9_SPLIT_AXES_TEST') == '1'
+                  and os.getenv('PSA_T9_EPS_CYCLE_TEST') == '1'):
+            raise ValueError('T9 lateral experiments require the split EPS-cycle profile')
+          profile = experiment.safety_param
         ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.psa, profile)]
         ret.dashcamOnly = False
         ret.steerActuatorDelay = 0.15
         ret.steerLimitTimer = 0.4
-        ret.minSteerSpeed = 67.1 / 3.6
-        ret.minEnableSpeed = (40. if profile in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM) else 67.1) / 3.6
+        ret.minSteerSpeed = experiment.min_speed_kph / 3.6
+        ret.minEnableSpeed = (40. if profile in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM)
+                             or experiment.name != 'off' else 67.1) / 3.6
         # The recent routes repeatedly reached the previous +/-17 raw ceiling
         # in requested bends. The requested +/-20 experiment corresponds to
         # about 0.82 m/s^2; the speed-squared curvature bound remains active.

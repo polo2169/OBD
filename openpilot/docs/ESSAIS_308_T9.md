@@ -3,7 +3,8 @@
 Ordre des essais : conserver la version actuelle, vérifier
 le pilotage à partir de 50 km/h, puis étudier le changement de voie demandé
 au clignotant. Le plancher actif de 67,1 km/h et la pause au clignotant restent
-en place dans les sources publiées.
+en place dans la configuration normale. Les profils distincts et le superviseur
+en observation sont décrits dans [PREPARATION_LATERALE_308_T9.md](PREPARATION_LATERALE_308_T9.md).
 
 ## Distinguer les deux états
 

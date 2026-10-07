@@ -13,6 +13,7 @@ from opendbc.car.carlog import carlog
 from opendbc.car.psa.lka import ACTIVE_TORQUE_LIMIT, LkaInputs, LkaPhase, T9LkaLifecycle, fresh
 from opendbc.car.psa.lka_feedback import T9LkaCanObserver
 from opendbc.car.psa.rvv_wire import COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM
+from opendbc.car.psa.lateral_profiles import EXPERIMENT_PARAMS, from_safety_param, signal
 
 SAFETY_PARAM = 0x1308
 TORQUE_SCALE = ACTIVE_TORQUE_LIMIT
@@ -23,7 +24,7 @@ MIN_PERIOD_NS = 45_000_000
 def enabled(CP):
   return (not CP.dashcamOnly and not CP.openpilotLongitudinalControl and
           len(CP.safetyConfigs) == 1 and CP.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.psa
-          and CP.safetyConfigs[0].safetyParam in (SAFETY_PARAM, COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM))
+          and CP.safetyConfigs[0].safetyParam in (SAFETY_PARAM, COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM, *EXPERIMENT_PARAMS))
 
 
 def steering_frame(template, state, factor, torque):
@@ -48,8 +49,9 @@ class T9LateralTestController:
     self.pause_supported = pause_supported
     self.cycle_supported = cycle_supported
     self.safety_param = safety_param
+    self.profile = from_safety_param(safety_param)
     self.observer = T9LkaCanObserver()
-    self.lateral = T9LkaLifecycle(torque_limit=TORQUE_SCALE, cycle_supported=cycle_supported)
+    self.lateral = T9LkaLifecycle(torque_limit=TORQUE_SCALE, cycle_supported=cycle_supported, profile=self.profile)
     self.template = None
     self.last_wrong_side = 0
     self.first_observation = None
@@ -191,7 +193,9 @@ class T9LateralTestController:
       driver_activity=self.driver_activity(now) is True,
       resume_allowed=bool(self.pause_supported and CC.psaLateralResume and CC.latActive),
       pause_requested=pause_requested,
-      blinker_pause_requested=bool(self.pause_supported and (state.leftBlinker or state.rightBlinker)),
+       blinker_pause_requested=bool(self.pause_supported and not self.profile.blinker_assist
+                                    and (state.leftBlinker or state.rightBlinker)),
+       blinker_signal=signal(state.leftBlinker, state.rightBlinker),
       # Remove float32 m/s conversion noise, below the wheel CAN resolution.
       speed_kph=round(float(state.vEgoRaw)*3.6, 4), driver_torque_raw=float(state.steeringTorque),
       driver_override=bool(state.steeringPressed), brake_pressed=bool(state.brakePressed),
@@ -247,6 +251,7 @@ class T9LateralTestController:
       'queued_steering_frames': len(messages), 'longitudinal_enabled': False,
       'torque_raw_queued': self.last_applied_raw, 'expected_safety_param': self.safety_param}
     self.status.update(eps_cycle_enabled=self.cycle_supported, eps_cycling=self.lateral.cycling,
+                        lateral_experiment=self.profile.name, min_lateral_speed_kph=self.profile.min_speed_kph,
                        eps_cycle_count=self.lateral.cycle_count, physical_rearm_count=self.physical_rearm_count,
                        last_rearm_ns=self.last_rearm_ns, previous_stop_reason=self.previous_stop_reason)
     self.log_status(now, inputs, state)

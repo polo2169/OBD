@@ -27,3 +27,8 @@ export PSA_T9_LATERAL_TEST=1
 export PSA_T9_RVV_TEST=1
 export PSA_T9_SPLIT_AXES_TEST=1
 export PSA_DASHCAM_ONLY=0
+
+# Preparation only: staging tools select experiments in isolated copies.
+# Ignore an inherited shell setting in the normal installed launch.
+export PSA_T9_LATERAL_EXPERIMENT=off
+export PSA_T9_LANE_CHANGE_MODE=off

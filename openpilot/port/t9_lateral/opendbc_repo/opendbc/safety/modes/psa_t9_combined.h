@@ -4,7 +4,9 @@
 // RVV may only reduce/recover a stock setpoint while those same gates hold.
 // Only the explicit 0x1316/17 profile permits the bounded planned EPS cycle.
 static safety_config t9_combined_init(uint16_t param) {
-  bool probe = (param == PSA_T9_COMBINED_PROBE_PARAM) || (param == PSA_T9_SPLIT_PROBE_PARAM) || (param == PSA_T9_CYCLE_PROBE_PARAM);
+  bool probe = (param == PSA_T9_COMBINED_PROBE_PARAM) || (param == PSA_T9_SPLIT_PROBE_PARAM) ||
+    (param == PSA_T9_CYCLE_PROBE_PARAM) || (param == PSA_T9_LOW_SPEED_PROBE_PARAM) ||
+    (param == PSA_T9_BLINKER_PROBE_PARAM) || (param == PSA_T9_LOW_SPEED_BLINKER_PROBE_PARAM);
   safety_config config = t9_init(probe ? PSA_T9_PROBE_PARAM : PSA_T9_LATERAL_PARAM);
   // The lateral RX list already includes every RVV input and its checks.
   (void)rvv_init(probe ? PSA_T9_RVV_PROBE_PARAM : PSA_T9_RVV_PARAM);

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 import math
 
+from opendbc.car.psa.lateral_profiles import DEFAULT, LateralProfile
+
 
 PERIOD_NS = 50_000_000
 INPUT_TIMEOUT_NS = 250_000_000
@@ -65,6 +67,7 @@ class LkaInputs:
   pause_supported: bool = False
   pause_requested: bool = False
   blinker_pause_requested: bool = False
+  blinker_signal: int = 0
   resume_allowed: bool = False
   cycle_ready: bool = False
   driver_activity: bool = False
@@ -107,10 +110,13 @@ class T9LkaLifecycle:
   candidate; they remain inputs of the separate longitudinal supervisor.
   """
 
-  def __init__(self, torque_limit: int = TORQUE_LIMIT, *, cycle_supported: bool = False):
+  def __init__(self, torque_limit: int = TORQUE_LIMIT, *, cycle_supported: bool = False,
+               profile: LateralProfile = DEFAULT):
     if not isinstance(torque_limit, int) or not 1 <= torque_limit <= ACTIVE_TORQUE_LIMIT:
       raise ValueError(f"Candidate torque limit must be 1..{ACTIVE_TORQUE_LIMIT} raw")
     self.torque_limit = torque_limit
+    self.profile = profile
+    self._stock_pending_started = 0
     self.phase = LkaPhase.DISABLED
     self.reason = "not_requested"
     self.factor = 0
@@ -220,8 +226,7 @@ class T9LkaLifecycle:
       return "eps_feedback_invalid"
     return None
 
-  @staticmethod
-  def _released_vehicle_problem(inputs: LkaInputs, *, allow_driver: bool) -> str | None:
+  def _released_vehicle_problem(self, inputs: LkaInputs, *, allow_driver: bool) -> str | None:
     if not all(math.isfinite(value) for value in (inputs.torque, inputs.speed_kph, inputs.driver_torque_raw)):
       return "nonfinite_input"
     if inputs.brake_pressed:
@@ -230,12 +235,13 @@ class T9LkaLifecycle:
       return "driver_override"
     if not inputs.vehicle_ready:
       return "vehicle_not_ready"
-    if not MIN_SPEED_KPH <= inputs.speed_kph <= MAX_SPEED_KPH:
-      return "speed_below_lateral_envelope" if inputs.speed_kph < MIN_SPEED_KPH else "speed_outside_candidate_envelope"
+    if not self.profile.min_speed_kph <= inputs.speed_kph <= MAX_SPEED_KPH:
+      return "speed_below_lateral_envelope" if inputs.speed_kph < self.profile.min_speed_kph else "speed_outside_candidate_envelope"
+    if self.profile.blinker_assist and inputs.blinker_signal not in (0, 1, 2):
+      return 'hazards_or_invalid_blinker'
     return None
 
-  @staticmethod
-  def _engagement_problem(inputs: LkaInputs, *, allow_override=False) -> str | None:
+  def _engagement_problem(self, inputs: LkaInputs, *, allow_override=False) -> str | None:
     if not all(math.isfinite(value) for value in (inputs.torque, inputs.speed_kph, inputs.driver_torque_raw)):
       return "nonfinite_input"
     if inputs.brake_pressed:
@@ -245,11 +251,13 @@ class T9LkaLifecycle:
       return "driver_override"
     if not inputs.vehicle_ready:
       return "vehicle_not_ready"
-    if inputs.pause_supported and inputs.speed_kph < MIN_SPEED_KPH:
+    if inputs.pause_supported and inputs.speed_kph < self.profile.min_speed_kph:
       return "speed_below_lateral_envelope"
-    if not MIN_SPEED_KPH <= inputs.speed_kph <= MAX_SPEED_KPH:
+    if not self.profile.min_speed_kph <= inputs.speed_kph <= MAX_SPEED_KPH:
       return "speed_outside_candidate_envelope"
-    if inputs.feedback.stock_state not in (3, 4):
+    if self.profile.blinker_assist and inputs.blinker_signal not in (0, 1, 2):
+      return 'hazards_or_invalid_blinker'
+    if not self.profile.stock_authorized(inputs.feedback.stock_state, inputs.speed_kph, inputs.blinker_signal):
       return "stock_lka_not_authorized"
     return None
 
@@ -386,8 +394,34 @@ class T9LkaLifecycle:
         self._block("eps_release_timeout")
       return self._decision()
 
+    if self._stock_pending_started and now_nanos - self._stock_pending_started >= BLINKER_CONFIRM_NS:
+      self._block('stock_lka_not_authorized')
+      return self._decision()
+    if self.profile.name != 'off':
+      problem = self._released_vehicle_problem(inputs, allow_driver=inputs.pause_supported)
+      if problem:
+        self._block(problem)
+        return self._decision()
     can_pause = inputs.pause_supported and self.phase in (LkaPhase.ACTIVE, LkaPhase.PAUSED)
-    if can_pause and (inputs.blinker_pause_requested or inputs.feedback.stock_state == 2):
+    stock_authorized = self.profile.stock_authorized(inputs.feedback.stock_state, inputs.speed_kph, inputs.blinker_signal)
+    # The BSI may withdraw factory LKA just before publishing the indicator.
+    # This experiment keeps the existing ACK for <=150 ms with ZERO torque.
+    # It neither invents an indicator nor accepts a new EPS authorization.
+    if (can_pause and self.profile.blinker_assist and inputs.feedback.stock_state == 2
+        and inputs.blinker_signal == 0 and not stock_authorized):
+      if not self._stock_pending_started:
+        self._stock_pending_started = now_nanos
+      self.torque_raw = 0
+      problem = self._released_vehicle_problem(inputs, allow_driver=True)
+      if problem or not inputs.requested or inputs.feedback.eps_state != 3:
+        self._block(problem or ('eps_activation_lost' if inputs.requested else 'new_request_required'))
+      elif now_nanos - self._stock_pending_started >= BLINKER_CONFIRM_NS:
+        self._block('stock_lka_not_authorized')
+      else:
+        self.reason = 'experiment_blinker_pending_zero'
+      return self._decision()
+    self._stock_pending_started = 0
+    if can_pause and (inputs.blinker_pause_requested or (inputs.feedback.stock_state == 2 and not stock_authorized)):
       self.phase = LkaPhase.BLINKER_PAUSED if inputs.blinker_pause_requested else LkaPhase.BLINKER_PENDING
       self._blinker_pending_started = now_nanos
       self.factor = self.torque_raw = 0
@@ -432,6 +466,7 @@ class T9LkaLifecycle:
     # Current EPS authorization, driver priority and every hard gate above
     # still apply; a revoked authorization or latched stop cannot be rearmed.
     if (self.cycle_supported and self.phase == LkaPhase.ACTIVE and not self.cycling
+        and (not self.profile.blinker_assist or inputs.blinker_signal == 0)
         and self._active_since and tick
         and (now_nanos - self._active_since >= EPS_CYCLE_PERIOD_NS
              or (inputs.cycle_ready and now_nanos - self._active_since >= EPS_CYCLE_EARLIEST_NS))):

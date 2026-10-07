@@ -422,7 +422,8 @@ int set_safety_hooks(uint16_t mode, uint16_t param) {
     {SAFETY_CHRYSLER_CUSW, &chrysler_cusw_hooks},
     {SAFETY_PSA, ((param == PSA_T9_COMBINED_PARAM) || (param == PSA_T9_COMBINED_PROBE_PARAM) ||
                  (param == PSA_T9_SPLIT_PARAM) || (param == PSA_T9_SPLIT_PROBE_PARAM) ||
-                 (param == PSA_T9_CYCLE_PARAM) || (param == PSA_T9_CYCLE_PROBE_PARAM)) ? &psa_t9_combined_hooks :
+                 (param == PSA_T9_CYCLE_PARAM) || (param == PSA_T9_CYCLE_PROBE_PARAM) ||
+                 (param >= PSA_T9_LOW_SPEED_PARAM && param <= PSA_T9_LOW_SPEED_BLINKER_PROBE_PARAM)) ? &psa_t9_combined_hooks :
                 ((param == PSA_T9_RVV_PARAM) || (param == PSA_T9_RVV_PROBE_PARAM)) ? &psa_t9_rvv_hooks :
                 ((param == PSA_T9_LATERAL_PARAM) || (param == PSA_T9_PROBE_PARAM)) ? &psa_t9_hooks : &psa_hooks},
     {SAFETY_SUBARU_PREGLOBAL, &subaru_preglobal_hooks},

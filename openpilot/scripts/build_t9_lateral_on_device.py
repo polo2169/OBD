@@ -29,6 +29,8 @@ env.pop('PSA_DASHCAM_ONLY', None)
 env.pop('PSA_T9_RVV_TEST', None)
 env.pop('PSA_T9_SPLIT_AXES_TEST', None)
 env.pop('PSA_T9_EPS_CYCLE_TEST', None)
+env.pop('PSA_T9_LATERAL_EXPERIMENT', None)
+env.pop('PSA_T9_LANE_CHANGE_MODE', None)
 commands = [
   ['/usr/local/venv/bin/scons', '-j4', 'selfdrive/pandad/pandad',
    'panda/board/obj/panda_h7.bin.signed', 'panda/board/obj/bootstub.panda_h7.bin'] +
@@ -37,7 +39,7 @@ commands = [
   ['./test_psa_t9_guard'],
   ['c++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-I.', 'selfdrive/pandad/tests/test_psa_t9_rvv_wire.cc', '-o', 'test_psa_t9_rvv_wire'],
   ['./test_psa_t9_rvv_wire'],
-  ['/usr/local/venv/bin/python', '-m', 'unittest', 'opendbc.safety.tests.test_psa_t9', 'opendbc.safety.tests.test_psa_t9_rvv', 'opendbc.safety.tests.test_psa_t9_combined', 'opendbc.safety.tests.test_psa_t9_split', 'opendbc.safety.tests.test_psa', '-q'],
+  ['/usr/local/venv/bin/python', '-m', 'unittest', 'opendbc.safety.tests.test_psa_t9', 'opendbc.safety.tests.test_psa_t9_rvv', 'opendbc.safety.tests.test_psa_t9_combined', 'opendbc.safety.tests.test_psa_t9_split', 'opendbc.safety.tests.test_psa_t9_experiments', 'opendbc.safety.tests.test_psa', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'discover', '-s', 'opendbc_repo/opendbc/car/psa/tests', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'selfdrive.controls.tests.test_psa_t9_torque', 'selfdrive.controls.tests.test_psa_t9_rvv_transport', 'selfdrive.controls.tests.test_psa_t9_split_transport', '-q'],
   ['/usr/local/venv/bin/python', '-m', 'unittest', 'selfdrive.car.tests.test_psa_t9_events', 'selfdrive.car.tests.test_psa_t9_rvv_events', 'selfdrive.car.tests.test_psa_t9_split_events', 'selfdrive.car.tests.test_psa_t9_split_integration', '-q'],

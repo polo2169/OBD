@@ -8,6 +8,7 @@ import struct
 
 from opendbc.car import structs
 from opendbc.car.psa.values import CAR
+from opendbc.car.psa.lateral_profiles import EXPERIMENT_PARAMS, from_safety_param
 
 SAFETY_PARAM = 0x1310
 COMBINED_SAFETY_PARAM = 0x1312
@@ -21,7 +22,7 @@ def enabled(CP):
   return (CP.carFingerprint == CAR.PSA_PEUGEOT_308_T9 and not CP.dashcamOnly
           and not CP.openpilotLongitudinalControl and len(CP.safetyConfigs) == 1
           and CP.safetyConfigs[0].safetyModel == structs.CarParams.SafetyModel.psa
-          and CP.safetyConfigs[0].safetyParam in (SAFETY_PARAM, COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM))
+          and CP.safetyConfigs[0].safetyParam in (SAFETY_PARAM, COMBINED_SAFETY_PARAM, SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM, *EXPERIMENT_PARAMS))
 
 
 def only(CP):
@@ -29,11 +30,15 @@ def only(CP):
 
 
 def split(CP):
-  return enabled(CP) and CP.safetyConfigs[0].safetyParam in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM)
+  return enabled(CP) and CP.safetyConfigs[0].safetyParam in (SPLIT_SAFETY_PARAM, EPS_CYCLE_SAFETY_PARAM, *EXPERIMENT_PARAMS)
 
 
 def eps_cycle(CP):
-  return split(CP) and CP.safetyConfigs[0].safetyParam == EPS_CYCLE_SAFETY_PARAM
+  return split(CP) and CP.safetyConfigs[0].safetyParam in (EPS_CYCLE_SAFETY_PARAM, *EXPERIMENT_PARAMS)
+
+
+def lateral_profile(CP):
+  return from_safety_param(CP.safetyConfigs[0].safetyParam if split(CP) else 0)
 
 
 # These failures concern shared vehicle/perception/timing inputs. Unknown

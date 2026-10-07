@@ -458,7 +458,17 @@ void pandad_run(Panda *panda) {
   const bool split_axes_test = combined_test && split_mode != nullptr && std::string(split_mode) == "1";
   const char *cycle_mode = getenv("PSA_T9_EPS_CYCLE_TEST");
   const bool eps_cycle_test = split_axes_test && cycle_mode != nullptr && std::string(cycle_mode) == "1";
-  PsaT9Guard t9_guard(rvv_test, combined_test, split_axes_test, eps_cycle_test);
+  const char *experiment_mode = getenv("PSA_T9_LATERAL_EXPERIMENT");
+  uint16_t experiment_param = 0;
+  if (experiment_mode != nullptr && std::string(experiment_mode) != "off") {
+    const std::string mode(experiment_mode);
+    if (mode == "low_speed") experiment_param = 0x1318;
+    else if (mode == "blinker") experiment_param = 0x131A;
+    else if (mode == "low_speed_blinker") experiment_param = 0x131C;
+    else { LOGE("Unknown T9 lateral experiment"); return; }
+    if (!eps_cycle_test) { LOGE("T9 lateral experiment requires split EPS-cycle profile"); return; }
+  }
+  PsaT9Guard t9_guard(rvv_test, combined_test, split_axes_test, eps_cycle_test, experiment_param);
   const bool no_fan_control = getenv("NO_FAN_CONTROL") != nullptr;
   const bool spoofing_started = getenv("STARTED") != nullptr;
   const bool fake_send = psa_dashcam_only || getenv("FAKESEND") != nullptr;
@@ -466,8 +476,8 @@ void pandad_run(Panda *panda) {
   if (rvv_test) {
     // Prove new-profile support BEFORE selecting even the probe parameter.
     // An old firmware could route an unknown PSA parameter to generic hooks.
-    auto protocol = panda->t9_rvv_request(0U, eps_cycle_test ? 4U : split_axes_test ? 2U : 0U);
-    if (!protocol || (*protocol)[1] != (eps_cycle_test ? 9U : split_axes_test ? 7U : 6U)) {
+    auto protocol = panda->t9_rvv_request(0U, experiment_param ? 6U : eps_cycle_test ? 4U : split_axes_test ? 2U : 0U);
+    if (!protocol || (*protocol)[1] != (experiment_param ? 10U : eps_cycle_test ? 9U : split_axes_test ? 7U : 6U)) {
       LOGE("T9 RVV mailbox capability check failed");
       return;
     }

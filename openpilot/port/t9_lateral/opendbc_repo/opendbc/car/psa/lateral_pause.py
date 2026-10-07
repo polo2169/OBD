@@ -28,7 +28,8 @@ def lanes_ready(model):
 
 
 class T9LateralPause:
-  def __init__(self):
+  def __init__(self, *, blinker_assist=False):
+    self.blinker_assist = blinker_assist
     self.paused = False
     self.clear_since = 0
     self.last_clock = 0
@@ -45,7 +46,8 @@ class T9LateralPause:
       self.clear_since = self.last_model = 0
       return False
     driver = float(car.steeringTorque)
-    trigger = (car.leftBlinker or car.rightBlinker or car.steeringPressed
+    indicator_pause = (car.leftBlinker and car.rightBlinker) if self.blinker_assist else (car.leftBlinker or car.rightBlinker)
+    trigger = (indicator_pause or car.steeringPressed
                or not math.isfinite(driver) or abs(driver) > DRIVER_PAUSE_RAW)
     if not car.psaLateralPaused:
       self.resume_requested = False

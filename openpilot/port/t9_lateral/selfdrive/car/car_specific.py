@@ -231,7 +231,7 @@ class CarSpecificEvents:
     # Handle permanent and temporary steering faults
     self.steering_unpressed = 0 if CS.steeringPressed else self.steering_unpressed + 1
     if self.t9_split_axes:
-      lateral_speed_available = round(CS.vEgoRaw * 3.6, 4) >= MIN_SPEED_KPH
+      lateral_speed_available = round(CS.vEgoRaw * 3.6, 4) >= self.CP.minSteerSpeed * 3.6 - 0.0001
       if (CS.cruiseState.enabled and lateral_speed_available
           and (CS.steeringDisengage or (CS.steeringPressed and not CS.psaLateralPaused)
                or CS.steerFaultTemporary or CS.steerFaultPermanent)):

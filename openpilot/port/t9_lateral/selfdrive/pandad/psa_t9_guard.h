@@ -25,10 +25,15 @@ public:
   enum class Stage { WAITING, PROBING, ACTIVE, FAILED };
   static constexpr uint16_t ACTIVE_PARAM = 0x1308;
   static constexpr uint16_t PROBE_PARAM = 0x1309;
-  explicit PsaT9Guard(bool rvv_only = false, bool combined = false, bool split_axes = false, bool eps_cycle = false)
-    : rvv_only_(rvv_only && !combined), combined_(combined), split_axes_(combined && split_axes), eps_cycle_(combined && split_axes && eps_cycle) {}
-  uint16_t active_param() const { return eps_cycle_ ? 0x1316 : split_axes_ ? 0x1314 : combined_ ? 0x1312 : rvv_only_ ? 0x1310 : ACTIVE_PARAM; }
-  uint16_t probe_param() const { return eps_cycle_ ? 0x1317 : split_axes_ ? 0x1315 : combined_ ? 0x1313 : rvv_only_ ? 0x1311 : PROBE_PARAM; }
+  explicit PsaT9Guard(bool rvv_only = false, bool combined = false, bool split_axes = false, bool eps_cycle = false,
+                     uint16_t experiment = 0)
+    : rvv_only_(rvv_only && !combined), combined_(combined), split_axes_(combined && split_axes),
+      eps_cycle_(combined && split_axes && eps_cycle), experiment_(experiment) {
+    if (experiment_ && (!eps_cycle_ || (experiment_ != 0x1318 && experiment_ != 0x131A && experiment_ != 0x131C)))
+      fail("invalid_lateral_experiment");
+  }
+  uint16_t active_param() const { return experiment_ ? experiment_ : eps_cycle_ ? 0x1316 : split_axes_ ? 0x1314 : combined_ ? 0x1312 : rvv_only_ ? 0x1310 : ACTIVE_PARAM; }
+  uint16_t probe_param() const { return active_param() + 1; }
   bool rvv_only() const { return rvv_only_; }
   bool split_axes() const { return split_axes_; }
   std::atomic<bool> tx_ready{false};
@@ -126,6 +131,7 @@ private:
   const bool combined_;
   const bool split_axes_;
   const bool eps_cycle_;
+  const uint16_t experiment_;
   uint64_t rvv_stock_ = 0, rvv_engine_ = 0;
   unsigned int rvv_stock_count_ = 0, rvv_engine_count_ = 0;
 };

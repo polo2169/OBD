@@ -69,7 +69,7 @@ class Controls:
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.t9_split_axes = rvv_wire.split(self.CP)
-    self.t9_lateral_pause = T9LateralPause()
+    self.t9_lateral_pause = T9LateralPause(blinker_assist=rvv_wire.lateral_profile(self.CP).blinker_assist)
     self.t9_eps_cycle = T9EpsCycleGate()
     self.t9_eps_gate_log_ns = 0
     self.t9_rvv_following = T9RvvFollowingObserver(split_axes=self.t9_split_axes) if self.CP.carFingerprint == PSA_CAR.PSA_PEUGEOT_308_T9 else None
