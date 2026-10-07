@@ -2,15 +2,12 @@ import numpy as np
 import pyray as rl
 from cereal import car, log
 from msgq.visionipc import VisionStreamType
-from opendbc.car.psa import rvv_wire
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.mici.onroad import SIDE_PANEL_WIDTH
 from openpilot.selfdrive.ui.mici.onroad.alert_renderer import AlertRenderer
 from openpilot.selfdrive.ui.mici.onroad.driver_state import DriverStateRenderer
 from openpilot.selfdrive.ui.mici.onroad.hud_renderer import HudRenderer
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
-from openpilot.selfdrive.ui.mici.onroad.lead_indicator import visible_lead
-from openpilot.selfdrive.ui.mici.onroad.rvv_status import draw_rvv_only, perception_text
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent
@@ -218,10 +215,6 @@ class AugmentedRoadView(CameraView):
 
     # Fade out bottom of overlays for looks
     rl.draw_texture_ex(self._fade_texture, rl.Vector2(self._content_rect.x, self._content_rect.y), 0.0, 1.0, rl.WHITE)
-    if ui_state.CP is not None and rvv_wire.enabled(ui_state.CP):
-      lead = visible_lead(ui_state.sm, ui_state.started_frame)
-      draw_rvv_only(self._content_rect, combined=not rvv_wire.only(ui_state.CP), perception=perception_text(lead))
-
     alert_to_render, not_animating_out = self._alert_renderer.will_render()
 
     # Hide DMoji when disengaged unless AlwaysOnDM is enabled
