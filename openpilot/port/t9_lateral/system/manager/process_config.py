@@ -74,6 +74,10 @@ procs = [
   PythonProcess("psa_recorder", "system.psa_recorder", always_run,
                 enabled=os.getenv("PSA_DASHCAM_ONLY") == "1" or os.getenv("PSA_T9_LATERAL_TEST") == "1" or os.getenv("PSA_T9_RVV_TEST") == "1",
                 restart_if_crash=True),
+  PythonProcess("psa_t9_observer", "system.psa_t9_experiment_observer", always_run,
+                enabled=os.getenv("PSA_T9_OBSERVE", "1") == "1" and
+                  (os.getenv("PSA_T9_LATERAL_TEST") == "1" or os.getenv("PSA_T9_RVV_TEST") == "1"),
+                restart_if_crash=True),
 
   NativeProcess("camerad", "system/camerad", ["./camerad"], driverview, enabled=not WEBCAM),
   PythonProcess("webcamerad", "tools.webcam.camerad", driverview, enabled=WEBCAM),

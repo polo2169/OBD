@@ -6,6 +6,38 @@ le clignotant suspend toujours la direction. La pédale conserve son comportemen
 actuel : elle permet l'utilisation du RVV Peugeot seul, sans réadmission
 automatique de l'assistance à son relâchement.
 
+## Observation passive sur la configuration actuelle
+
+Le processus indépendant `psa_t9_observer` observe les trois profils, même
+quand la direction actuelle est inactive. Il reçoit les CAN existants, le modèle,
+les états Panda et les commandes du contrôleur actuel. Il ne publie aucune
+commande, ne lit pas `carState` et ne modifie aucun réglage du RVV ou de la pédale.
+
+Les observations contiennent la vitesse, les états usine LKA/EPS, le côté du
+clignotant, la fraîcheur des entrées et les motifs de refus de chaque hypothèse.
+À deux secondes de signal continu, un échantillon conserve la présence d'une
+voie candidate et les états physiques. Le contexte routier et le trafic arrière
+restent inconnus : cette observation n'autorise aucun changement de voie.
+Une disponibilité EPS observée ne prouve pas l'acceptation d'une commande
+à basse vitesse ou pendant le clignotant. `physical_acceptance_validated` reste
+toujours `false`.
+
+Cette installation passive ajoute seulement le module d'observation et ses
+trois modules auxiliaires (`lateral_profiles.py`, `lane_change.py`,
+`t9_lane_change.py`), puis son enregistrement dans `process_config.py`.
+Elle conserve les contrôleurs, `modeld`, le lancement, l'interface, les binaires
+et les paramètres actuels. Elle ne nécessite pas le nouveau firmware ni
+l'installation d'un profil expérimental. Le gestionnaire démarre l'observation
+automatiquement avec les modes T9/RVV ; `PSA_T9_OBSERVE=0` la désactive.
+
+Les données restent dans `/data/psa-observation/` : `status.json` permet de
+vérifier la réception et les fichiers `observation-*.jsonl` conservent les
+décisions. La rétention est limitée à huit fichiers de 16 Mio et laisse 1 Gio
+libre. Les mêmes décisions sont envoyées dans les journaux existants avec le
+préfixe `psa_t9_observation`. Aucun texte supplémentaire n'est affiché sur
+l'écran. Les captures récupérées et les comptes rendus restent sous
+`data/runtime/`, hors Git.
+
 ## Profils isolés
 
 | Sélecteur | Paramètre actif / observation Panda | Plancher direction | Clignotant |

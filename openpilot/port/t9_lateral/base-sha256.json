@@ -84,6 +84,8 @@
   "system/manager/process_config.py": "d6453964037c3a6089048ac480186adb19cf867f2fdff31393fe4771f2effc9a",
   "system/manager/psa_t9_settings.py": null,
   "system/psa_recorder.py": "65aa5507bdca9f97c4e5507dca63d50253ea617896f3797aa8b5c2f11415bdcf",
+  "system/psa_t9_experiment_observer.py": null,
   "system/tests/test_home_uploader.py": null,
-  "system/tests/test_psa_recorder.py": "aedcc473cef1c1f0a3c5265caa62cb80f8e390e0b8d5d4a54e0a679e319c0ee5"
+  "system/tests/test_psa_recorder.py": "aedcc473cef1c1f0a3c5265caa62cb80f8e390e0b8d5d4a54e0a679e319c0ee5",
+  "system/tests/test_psa_t9_observer.py": null
 }
